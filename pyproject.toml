@@ -1,0 +1,16 @@
+[project]
+name = "teesri-nazar"
+version = "0.1.0"
+description = "Feature-testing agent toolkit for Android: drive the device by selector, record evidence, report pass/fail."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+tnazar = "teesri_nazar.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["teesri_nazar"]

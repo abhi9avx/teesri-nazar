@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./tnazar:*)",
+      "Bash(adb devices:*)"
+    ]
+  },
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && ./tnazar stop --if-active --quiet"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+# Copy to testdata.yaml (gitignored) and fill in. Read by the agent, not by tnazar.
+app:
+  package: com.example.app
+  environment: staging            # never production
+
+accounts:                         # secrets go in .env, referenced by name
+  - role: regular user
+    phone: "9000000001"
+    mpin_env: APP_MPIN
+  - role: overdue credit card user
+    phone: "9000000002"
+    mpin_env: APP_MPIN
+
+otp:
+  how: fixed in staging           # or: read from DB (see db.otp_query)
+  value_env: APP_OTP
+
+db:                               # read-only user, test environment only
+  engine: postgres
+  host: staging-db.internal
+  database: app
+  user_env: DB_RO_USER
+  password_env: DB_RO_PASSWORD
+  otp_query: "select otp from otp_requests where phone = :phone order by created_at desc limit 1"
+
+figma:
+  file: https://www.figma.com/design/<file-key>/<name>

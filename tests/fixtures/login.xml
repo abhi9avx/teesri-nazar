@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.example.app" content-desc="" clickable="false" enabled="true" bounds="[0,0][1080,2400]">
+    <node index="0" text="Welcome back" resource-id="com.example.app:id/title" class="android.widget.TextView" package="com.example.app" content-desc="" clickable="false" enabled="true" bounds="[60,200][1020,300]" />
+    <node index="1" text="" resource-id="com.example.app:id/phone_input" class="android.widget.EditText" package="com.example.app" content-desc="Phone number" clickable="true" enabled="true" focused="true" bounds="[60,400][1020,520]" />
+    <node index="2" text="" resource-id="com.example.app:id/mpin_input" class="android.widget.EditText" package="com.example.app" content-desc="" clickable="true" enabled="true" password="true" bounds="[60,560][1020,680]" />
+    <node index="3" text="Login" resource-id="com.example.app:id/btn_login" class="android.widget.Button" package="com.example.app" content-desc="" clickable="true" enabled="false" bounds="[60,800][1020,920]" />
+    <node index="4" text="Help" resource-id="com.example.app:id/link" class="android.widget.TextView" package="com.example.app" content-desc="" clickable="true" enabled="true" bounds="[60,1000][500,1060]" />
+    <node index="5" text="Terms of service" resource-id="com.example.app:id/link" class="android.widget.TextView" package="com.example.app" content-desc="" clickable="true" enabled="true" bounds="[580,1000][1020,1060]" />
+    <node index="6" text="" resource-id="" class="android.view.View" package="com.example.app" content-desc="" clickable="false" enabled="true" bounds="[0,0][0,0]" />
+  </node>
+</hierarchy>
