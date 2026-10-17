@@ -17,7 +17,8 @@ Follow `CLAUDE.md` (the playbook). In short:
    (ui / db / figma), plus added edge cases and an explicit "not testing" list.
    Wait for approval unless the user said to go ahead.
 4. **Run.** `./tnazar start <name> --package <pkg> --prompt "<request>"`, then per case:
-   `case start` → actions → `check`s → `case end`. Keep going after a failure; a failed
+   `case start` → `say` + actions → `check`s → `case end`. Narrate each step with
+   `./tnazar say`, and act on any `>> USER (dashboard)` / `PAUSED` output (CLAUDE.md §Live dashboard). Keep going after a failure; a failed
    case doesn't stop the run. If a precondition breaks (login, backend down), mark the
    dependent cases `blocked` with the reason.
 5. **Finish.** `./tnazar stop`, then report in chat: summary line, case table

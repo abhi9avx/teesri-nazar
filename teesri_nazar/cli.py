@@ -7,10 +7,12 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
 from . import device as dev
+from . import live
 from . import report as rpt
 from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
@@ -18,6 +20,9 @@ from .session import NAME_RE, Run, clear_active, get_active, home, now_iso, runs
 
 EXIT_FAIL = 1
 EXIT_ERROR = 2
+TIMED = {"launch", "open_url", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb"}
+# Commands that act on the device: a pause or an unread user message holds them back.
+HELD = {"launch", "open-url", "observe", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb"}
 
 
 class UserError(Exception):
@@ -34,6 +39,7 @@ class Ctx:
     def __init__(self, adb: Adb, run: Run | None):
         self.adb = adb
         self.run = run
+        self._mark = time.monotonic()
 
     @classmethod
     def from_args(cls, device_arg: str | None) -> "Ctx":
@@ -45,6 +51,10 @@ class Ctx:
         if self.run:
             if event["type"] in ("check", "note", "shot") and "case" not in event:
                 event["case"] = self.run.current_case()
+            if event["type"] in TIMED:
+                now = time.monotonic()
+                event["dur_ms"] = round((now - self._mark) * 1000)
+                self._mark = now
             self.run.log(event)
 
     def capture(self) -> scr.Screen:
@@ -184,6 +194,8 @@ def cmd_start(args) -> int:
         meta["animations_before"] = dev.animations_off(adb)
     run = Run.create(args.name, meta)
     set_active(run, serial)
+    live.mark_all_read()  # messages typed before this run are not instructions for it
+    live.set_paused(False)
     dev.logcat_clear(adb)
     print(f"run: {run.name}  device: {serial} {model}".rstrip())
     print(f"dir: {run.path}")
@@ -215,6 +227,7 @@ def finish_run(quiet: bool = False) -> Run | None:
         print(f"warning: device cleanup skipped: {exc}", file=sys.stderr)
     run.update_meta(finished_at=now_iso())
     clear_active()
+    live.set_paused(False)
     paths = rpt.write(run)
     if not quiet:
         summary = rpt.summarize(run)
@@ -303,9 +316,11 @@ def cmd_tap(args) -> int:
 def cmd_type(args) -> int:
     ctx = Ctx.from_args(args.device)
     if args.env:
-        if args.env not in os.environ:
-            raise UserError(f"environment variable {args.env} is not set")
-        text = os.environ[args.env]
+        text = os.environ.get(args.env)
+        if text is None:
+            text = live.secret(args.env)
+        if text is None:
+            raise UserError(f"{args.env} is not set in the environment, .env or the dashboard")
     elif args.text is not None:
         text = args.text
     else:
@@ -402,9 +417,10 @@ def cmd_swipe(args) -> int:
 def cmd_wait(args) -> int:
     ctx = Ctx.from_args(args.device)
     _, sel = parse_target(args.target, args)
-    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone)
+    stats: dict = {}
+    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats)
     ctx.log({"type": "wait", "selector": sel.to_dict(), "gone": args.gone,
-             "timeout": args.timeout, "ok": ok})
+             "timeout": args.timeout, "ok": ok, "polls": stats.get("polls")})
     state = "gone" if args.gone else "visible"
     if ok:
         print(f"ok: {sel} is {state}" + (f" {el.describe()}" if el else ""))
@@ -430,7 +446,8 @@ def cmd_check(args) -> int:
         return 0 if ok else EXIT_FAIL
 
     _, sel = parse_target(args.target, args)
-    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone)
+    stats: dict = {}
+    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats)
     if ok and el is not None:
         for flag, actual in (("checked", el.checked), ("enabled", el.enabled)):
             want = getattr(args, flag)
@@ -439,7 +456,7 @@ def cmd_check(args) -> int:
     what = args.what or _describe_check(sel, args)
     label = "pass" if ok else "fail"
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
-             "gone": args.gone, "checked": args.checked, "enabled": args.enabled}
+             "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls")}
     if shot := evidence_shot(ctx, f"check-{label}"):
         event["shot"] = shot
     if ctx.run and not ok:
@@ -535,8 +552,41 @@ def cmd_adb(args) -> int:
     if not args.args:
         raise UserError("usage: tnazar adb <adb args...>")
     proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args])
-    ctx.log({"type": "adb", "args": args.args, "exit": proc.returncode})
+    ctx.log({"type": "adb", "args": redact(args.args), "exit": proc.returncode})
     return proc.returncode
+
+
+def redact(argv: list[str]) -> list[str]:
+    """Hide any .env value or dashboard secret that appears in a recorded command line."""
+    values = [os.environ[k] for k in _DOTENV_KEYS if k in os.environ] + live.secret_values()
+    values = sorted({v for v in values if len(v) >= 3}, key=len, reverse=True)
+    out = []
+    for a in argv:
+        for v in values:
+            a = a.replace(v, "••••")
+        out.append(a)
+    return out
+
+
+def cmd_say(args) -> int:
+    ctx_run = get_active()
+    if ctx_run:
+        ctx_run[0].log({"type": "say", "text": args.text})
+    print(f"» {args.text}")
+    return 0
+
+
+def cmd_wait_resume(args) -> int:
+    if live.wait_resume():
+        print("resumed")
+        return 0
+    print("still paused by the user; run `./tnazar wait-resume` again before the next step")
+    return live.EXIT_HELD
+
+
+def cmd_ui(args) -> int:
+    from . import ui
+    return ui.serve(args.port, open_browser=not args.no_open)
 
 
 def cmd_report(args) -> int:
@@ -688,6 +738,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("adb", cmd_adb, "run a raw adb command on the device (recorded)")
     p.add_argument("args", nargs=argparse.REMAINDER)
 
+    p = add("say", cmd_say, "narrate what you are about to do (shown in the dashboard timeline)")
+    p.add_argument("text")
+    add("wait-resume", cmd_wait_resume, f"wait up to {int(live.PAUSE_WAIT)}s for the user to resume a paused run")
+    p = add("ui", cmd_ui, "live dashboard on localhost: screen, timeline, messages to the agent")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-open", action="store_true", help="do not open the browser")
+
     p = add("report", cmd_report, "(re)write the report for a run")
     p.add_argument("run", nargs="?")
     p = add("runs", cmd_runs, "list recent runs")
@@ -709,6 +766,9 @@ def _bool(v: str) -> bool:
     raise argparse.ArgumentTypeError("expected true or false")
 
 
+_DOTENV_KEYS: set[str] = set()
+
+
 def load_dotenv() -> None:
     """KEY=VALUE lines from ./.env, without overriding the real environment."""
     f = home() / ".env"
@@ -718,6 +778,7 @@ def load_dotenv() -> None:
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
+            _DOTENV_KEYS.add(key.strip())
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
@@ -725,7 +786,16 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     load_dotenv()
     try:
-        return args.fn(args) or 0
+        active = get_active() if args.cmd in HELD else None
+        if active and (held := _hold(active[0])) is not None:
+            return held
+        try:
+            return args.fn(args) or 0
+        finally:
+            # Shown, not consumed: the next device command is still held until the agent re-plans.
+            if get_active():
+                for m in live.unread():
+                    print(f">> USER (dashboard, pending): {m['text']}")
     except NotFound as exc:
         print(str(exc))
         return EXIT_FAIL
@@ -734,6 +804,27 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_ERROR
     except KeyboardInterrupt:
         return 130
+
+
+def _hold(run: Run) -> int | None:
+    """Stop a device command when the user paused the run or left a message it has not seen."""
+    if live.paused():
+        print(f"|| paused from the dashboard; waiting up to {int(live.PAUSE_WAIT)}s for resume")
+        began = time.monotonic()
+        resumed = live.wait_resume()
+        run.log({"type": "hold", "reason": "paused", "resumed": resumed,
+                 "waited_ms": round((time.monotonic() - began) * 1000)})
+        if not resumed:
+            live.deliver(run.log)
+            print("PAUSED: the user paused this run. Command NOT run. "
+                  "Run `./tnazar wait-resume` until it prints `resumed`, then continue.")
+            return live.EXIT_HELD
+        print("resumed")
+    if live.deliver(run.log):
+        print("Command NOT run: read the user's message above and decide the next step "
+              "(re-run the command if it still applies).")
+        return live.EXIT_HELD
+    return None
 
 
 if __name__ == "__main__":

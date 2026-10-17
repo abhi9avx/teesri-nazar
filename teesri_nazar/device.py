@@ -216,10 +216,13 @@ def crashes(adb: Adb, package: str | None = None) -> str:
 
 
 def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
-             interval: float = 0.4) -> tuple[bool, scr.Screen, scr.Element | None]:
+             interval: float = 0.4, stats: dict | None = None) -> tuple[bool, scr.Screen, scr.Element | None]:
     deadline = time.monotonic() + timeout
     screen = el = None
+    stats = {} if stats is None else stats
+    stats["polls"] = 0
     while True:
+        stats["polls"] += 1
         try:
             screen = scr.capture(adb)
         except AdbError:

@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teesri Nazar Live</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6ea; --text: #1d2228; --muted: #6b7480;
+  --accent: #3b5bdb; --ok: #2f9e44; --bad: #e03131; --warn: #e8590c; --amber: #f08c00;
+  --chip: #eef1f5; --say: #f1f3ff; --msg: #fff4e6; --shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418; --panel: #191d23; --line: #2a3038; --text: #e6e9ed; --muted: #8b95a1;
+    --accent: #748ffc; --ok: #51cf66; --bad: #ff6b6b; --warn: #ff922b; --amber: #fcc419;
+    --chip: #232931; --say: #1e2433; --msg: #2b2218; --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 15px; margin: 0; font-weight: 650; white-space: nowrap; }
+header .spacer { flex: 1; }
+select, input, textarea, button { font: inherit; color: inherit; }
+select, input, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+button { background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { background: var(--warn); border-color: var(--warn); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.dot.live { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.dot.paused { background: var(--amber); }
+#status { display: flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap; }
+main { display: grid; grid-template-columns: minmax(320px, 1fr) 6px var(--w-control, 340px) 6px var(--w-screen, 380px); height: calc(100% - 51px); }
+section { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.gutter { cursor: col-resize; background: var(--line); position: relative; touch-action: none; }
+.gutter::after { content: ""; position: absolute; inset: 0 -4px; }
+.gutter:hover, .gutter:focus-visible, .gutter.dragging { background: var(--accent); outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe, body.resizing img { pointer-events: none; }
+.pane-head { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.pane-head .sub { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: auto; }
+#screen-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 14px; position: relative; }
+#screen { max-width: 100%; max-height: 100%; border-radius: 18px; border: 1px solid var(--line); box-shadow: var(--shadow); background: #000; }
+#screen-msg { position: absolute; inset: 14px; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--muted); }
+#screen-msg.on { display: flex; }
+#screen-msg .box { background: var(--panel); border: 1px dashed var(--line); border-radius: 12px; padding: 18px; max-width: 280px; overflow-wrap: anywhere; }
+#screen-foot { padding: 8px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+#timeline { flex: 1; overflow-y: auto; padding: 10px 14px 40px; }
+.empty { color: var(--muted); padding: 30px 6px; text-align: center; }
+.case { margin: 16px 0 6px; padding: 6px 10px; border-radius: 6px; background: var(--chip); font-weight: 600; display: flex; gap: 8px; }
+.case .id { color: var(--accent); }
+.case-end { margin: 4px 0 10px; padding: 4px 10px; font-size: 13px; }
+.group { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.group > .ghead { background: var(--say); padding: 6px 10px; display: flex; gap: 8px; align-items: baseline; }
+.group > .ghead .txt { font-weight: 600; flex: 1; }
+.group > .gbody { padding: 2px 0; }
+.row { display: grid; grid-template-columns: 62px 18px minmax(0, 1fr) auto; gap: 6px; padding: 3px 10px; align-items: baseline; }
+.row:hover { background: var(--chip); }
+.row.has-shot { cursor: pointer; }
+.row .when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.row .what { overflow-wrap: anywhere; }
+.row .what .detail { display: block; color: var(--muted); font-size: 12px; }
+.row.bad .what { color: var(--bad); }
+.row.ok-check .ico { color: var(--ok); }
+.row.bug { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.row.user { background: var(--msg); border-radius: 6px; margin: 6px 0; }
+.dur { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; padding: 0 6px; border-radius: 10px; background: var(--chip); white-space: nowrap; }
+.dur.slow { color: #fff; background: var(--amber); }
+.pill { font-size: 12px; padding: 1px 8px; border-radius: 10px; color: #fff; }
+.pill.pass { background: var(--ok); } .pill.fail { background: var(--bad); }
+.pill.blocked, .pill.skipped { background: var(--muted); }
+#control { overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.card h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.kv { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 2px 8px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+textarea { width: 100%; resize: vertical; min-height: 64px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chips button { font-size: 12px; padding: 3px 8px; border-radius: 12px; }
+.inline { display: flex; gap: 6px; } .inline input { min-width: 0; flex: 1; }
+.hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.err { color: var(--bad); font-size: 12px; margin-top: 6px; min-height: 1em; }
+.msglist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.msglist li { background: var(--msg); border-radius: 6px; padding: 5px 8px; }
+.msglist .st { display: block; font-size: 11px; color: var(--muted); }
+#paused-banner { display: none; background: var(--amber); color: #000; padding: 6px 16px; font-weight: 600; text-align: center; }
+#paused-banner.on { display: block; }
+@media (max-width: 1000px) {
+  main { grid-template-columns: 1fr; height: auto; }
+  section { border-bottom: 1px solid var(--line); }
+  .gutter { display: none; }
+  #screen-wrap { height: 70vh; }
+  #timeline { max-height: 70vh; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>👁 Teesri Nazar</h1>
+  <span id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></span>
+  <span class="spacer"></span>
+  <select id="run-select" aria-label="Run"></select>
+</header>
+<div id="paused-banner">⏸ Paused: the agent holds before its next device step until you resume.</div>
+<main>
+  <section>
+    <div class="pane-head">Timeline <span class="sub" id="tl-sub"></span></div>
+    <div id="timeline"><div class="empty">No run selected. Start one with <code>./tnazar start &lt;name&gt; --package &lt;pkg&gt;</code>.</div></div>
+  </section>
+  <div class="gutter" id="gutter-control" role="separator" aria-orientation="vertical" aria-label="Resize timeline and control" tabindex="0" title="Drag to resize · double-click to reset"></div>
+  <section>
+    <div class="pane-head">Control</div>
+    <div id="control">
+      <div class="card" id="run-card"><h3>Run</h3><dl class="kv" id="run-kv"><dt>—</dt><dd>no run</dd></dl></div>
+      <div class="card">
+        <h3>Steer the agent</h3>
+        <div class="inline" style="margin-bottom:8px">
+          <button id="pause-btn" class="danger">⏸ Pause</button>
+        </div>
+        <textarea id="msg" placeholder="e.g. try the OTP flow again, then log out"></textarea>
+        <div class="chips" id="chips"></div>
+        <button class="primary" id="send-btn">Send to agent</button>
+        <div class="err" id="msg-err"></div>
+        <div class="hint">Delivered at the agent's next step; that step is held back so it can re-plan. While the agent is idle (its turn ended) messages wait.</div>
+      </div>
+      <div class="card">
+        <h3>Secret value (OTP, MPIN…)</h3>
+        <div class="inline">
+          <input id="sec-name" value="OTP" aria-label="name" style="max-width:90px">
+          <input id="sec-value" type="password" autocomplete="off" placeholder="value" aria-label="value">
+        </div>
+        <input id="sec-note" placeholder="optional instruction, e.g. use it on the OTP screen" style="width:100%;margin-top:6px">
+        <button id="sec-btn" style="margin-top:8px">Send secret</button>
+        <div class="err" id="sec-err"></div>
+        <div class="hint">Kept only in this dashboard's memory; the agent types it with <code>--env UI_&lt;NAME&gt;</code> and logs show ••••. <span id="sec-list"></span></div>
+      </div>
+      <div class="card"><h3>Messages</h3><ul class="msglist" id="msglist"><li style="background:none;color:var(--muted)">None yet</li></ul></div>
+    </div>
+  </section>
+  <div class="gutter" id="gutter-screen" role="separator" aria-orientation="vertical" aria-label="Resize control and screen" tabindex="0" title="Drag to resize · double-click to reset"></div>
+  <section>
+    <div class="pane-head">Screen <span class="sub" id="screen-sub"></span></div>
+    <div id="screen-wrap">
+      <img id="screen" alt="device screen" hidden>
+      <div id="screen-msg" class="on"><div class="box" id="screen-msg-text">Waiting for the device…</div></div>
+    </div>
+    <div id="screen-foot">
+      <label><input type="checkbox" id="live-toggle" checked> Live screen</label>
+      <span class="spacer" style="flex:1"></span>
+      <button id="back-live" hidden>Back to live</button>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+const TOKEN = "__TNAZAR_TOKEN__";
+const $ = (id) => document.getElementById(id);
+const CHIPS = ["Retry the last step", "Take a screenshot now", "Skip this case and move on",
+               "Log out and log back in", "Stop after this case and write the report"];
+
+let state = null, runs = [], view = null, follow = true, offset = 0, events = [], meta = null, report = false;
+let pinnedShot = null, stick = true, lastRender = -1;
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = text;
+  return n;
+}
+async function getJSON(path) {
+  const r = await fetch(path, { cache: "no-store" });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Tnazar-Token": TOKEN },
+                                body: JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+// ------------------------------------------------------------------ formatting
+const fmtDur = (ms) => ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s` : `${(ms / 1000).toFixed(1)}s`;
+const clock = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
+function sel(s) {
+  if (!s) return "";
+  if (s.id) return `id=${s.id}`;
+  if (s.desc) return `desc="${s.desc}"`;
+  if (s.text) return `${s.contains ? "~" : ""}"${s.text}"`;
+  return JSON.stringify(s);
+}
+function describe(e) {
+  switch (e.type) {
+    case "launch": return ["🚀", `Launch ${e.package}${e.fresh ? " (fresh)" : e.restart ? " (restart)" : ""}`];
+    case "open_url": return ["🔗", `Open ${e.url}`];
+    case "tap": return ["👆", `${e.long ? "Long-press" : "Tap"} ${e.label ? `"${e.label}"` : ""}`, e.selector ? sel(e.selector) : `at ${e.xy}`];
+    case "type": {
+      const v = e.secret ? `•••• ${e.env ? `(${e.env})` : "(secret)"}` : `"${e.text}"`;
+      return ["⌨️", `Type ${v}${e.selector ? ` into ${sel(e.selector)}` : ""}${e.enter ? " + enter" : ""}`];
+    }
+    case "key": return ["⏎", `Press ${e.key}`];
+    case "scroll": return ["↕️", `Scroll ${e.direction}${e.to ? ` to ${sel(e.to)}` : ""}${e.to ? (e.found ? " — found" : " — not found") : ""}`];
+    case "swipe": return ["👉", `Swipe ${e.from} → ${e.to}`];
+    case "wait": return [e.ok ? "⏳" : "⌛", `Wait for ${sel(e.selector)} ${e.gone ? "to disappear" : "to appear"} ${e.ok ? "✓" : "✗ timed out"}`,
+                         e.polls ? `${e.polls} screen check${e.polls > 1 ? "s" : ""}` : ""];
+    case "check": return [e.ok ? "✅" : "❌", `${e.kind && e.kind !== "ui" ? `[${e.kind}] ` : ""}${e.what}`, e.detail || ""];
+    case "shot": return ["📸", `Screenshot ${e.label || ""}`];
+    case "note": return [e.kind === "bug" ? "🐞" : "📝", `${e.kind}: ${e.text}`];
+    case "adb": return ["🛠", `adb ${(e.args || []).join(" ")}`, `exit ${e.exit}`];
+    case "hold": return ["⏸", `Held by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : "; agent told to wait-resume"}`];
+    default: return ["•", e.type];
+  }
+}
+
+// ------------------------------------------------------------------ timeline
+function row(e, t0) {
+  const [ico, what, detail] = describe(e);
+  const r = el("div", "row");
+  const when = el("span", "when", clock(e.t));
+  when.title = t0 ? `+${((Date.parse(e.t) - t0) / 1000).toFixed(1)}s from start` : "";
+  r.append(when, el("span", "ico", ico));
+  const w = el("span", "what", what);
+  if (detail) w.append(el("span", "detail", detail));
+  r.append(w);
+  if (typeof e.dur_ms === "number") {
+    const d = el("span", "dur" + (e.dur_ms > 5000 ? " slow" : ""), fmtDur(e.dur_ms));
+    d.title = e.dur_ms > 5000 ? "slow step (> 5 s)" : "how long this step took";
+    r.append(d);
+  } else r.append(el("span"));
+  if (e.type === "check") r.classList.add(e.ok ? "ok-check" : "bad");
+  if (e.type === "wait" && !e.ok) r.classList.add("bad");
+  if (e.type === "note" && e.kind === "bug") r.classList.add("bug");
+  const shot = e.shot || e.file;
+  if (shot && view) {
+    r.classList.add("has-shot");
+    r.title = "show this screenshot";
+    r.onclick = () => pinShot(`/runs/${encodeURIComponent(view)}/${shot}`, `${what}`);
+  }
+  return r;
+}
+
+function render() {
+  if (lastRender === events.length) return;
+  lastRender = events.length;
+  const tl = $("timeline");
+  tl.replaceChildren();
+  if (!events.length) {
+    tl.append(el("div", "empty", view ? "Run started; waiting for the first step…" : "No run selected."));
+    return;
+  }
+  const t0 = meta && meta.started_at ? Date.parse(meta.started_at) : null;
+  let group = null, steps = 0, total = 0;
+  const closeGroup = () => {
+    if (!group) return;
+    group.querySelector(".gmeta").textContent = steps ? `${steps} step${steps > 1 ? "s" : ""} · ${fmtDur(total)}` : "";
+    group = null; steps = 0; total = 0;
+  };
+  for (const e of events) {
+    if (e.type === "case_start") {
+      closeGroup();
+      const c = el("div", "case");
+      c.append(el("span", "id", e.case), el("span", null, e.title || ""));
+      tl.append(c);
+    } else if (e.type === "case_end") {
+      closeGroup();
+      const c = el("div", "case-end");
+      c.append(el("span", `pill ${e.status}`, e.status.toUpperCase()), document.createTextNode(e.reason ? `  ${e.reason}` : ""));
+      tl.append(c);
+    } else if (e.type === "say") {
+      closeGroup();
+      group = el("div", "group");
+      const h = el("div", "ghead");
+      h.append(el("span", "when", clock(e.t)), el("span", "txt", `» ${e.text}`), el("span", "dur gmeta", ""));
+      group.append(h, el("div", "gbody"));
+      tl.append(group);
+    } else if (e.type === "user_msg") {
+      const r = el("div", "row user");
+      r.append(el("span", "when", clock(e.t)), el("span", "ico", "📨"), el("span", "what", `You: ${e.text}`), el("span"));
+      tl.append(r);
+    } else {
+      const r = row(e, t0);
+      if (group) {
+        group.querySelector(".gbody").append(r);
+        steps++; total += e.dur_ms || 0;
+      } else tl.append(r);
+    }
+  }
+  closeGroup();
+  if (stick) tl.scrollTop = tl.scrollHeight;
+}
+$("timeline").addEventListener("scroll", () => {
+  const tl = $("timeline");
+  stick = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 40;
+});
+
+async function switchRun(name, followActive) {
+  view = name; follow = followActive; offset = 0; events = []; meta = null; lastRender = -1; stick = true;
+  pinnedShot = null;
+  render();
+  renderRunSelect();
+  await tickEvents();
+  updateScreenMode();
+}
+
+async function tickEvents() {
+  if (!view) return;
+  try {
+    const name = view;
+    const j = await getJSON(`/api/events?run=${encodeURIComponent(name)}&from=${offset}`);
+    if (name !== view) return;
+    meta = j.meta; report = j.report; offset = j.next;
+    if (j.events.length) events = events.concat(j.events);
+    render();
+    renderRunCard();
+    $("tl-sub").textContent = events.length ? `${events.length} events` : "";
+  } catch (err) { $("tl-sub").textContent = err.message; }
+}
+
+// ------------------------------------------------------------------ state + control
+function isLiveView() { return state && state.active && view === state.active.name; }
+
+function renderRunSelect() {
+  const s = $("run-select");
+  const active = state && state.active ? state.active.name : null;
+  const opts = [];
+  if (active) opts.push([active, `● live: ${active}`]);
+  for (const r of runs) if (r.name !== active) opts.push([r.name, `${r.name} — ${r.summary}`]);
+  if (!opts.length) opts.push(["", "no runs yet"]);
+  const key = JSON.stringify(opts) + view;
+  if (s.dataset.key === key) return;
+  s.dataset.key = key;
+  s.replaceChildren(...opts.map(([v, t]) => { const o = el("option", null, t); o.value = v; return o; }));
+  s.value = view || "";
+}
+$("run-select").addEventListener("change", (ev) => {
+  const name = ev.target.value;
+  if (name) switchRun(name, !!(state && state.active && state.active.name === name));
+});
+
+function renderRunCard() {
+  const kv = $("run-kv");
+  kv.replaceChildren();
+  const add = (k, v, href) => {
+    if (!v) return;
+    kv.append(el("dt", null, k));
+    const dd = el("dd");
+    if (href) { const a = el("a", null, v); a.href = href; a.target = "_blank"; dd.append(a); } else dd.textContent = v;
+    kv.append(dd);
+  };
+  if (!meta) { add("—", "no run"); return; }
+  const live = isLiveView();
+  add("Run", meta.name);
+  add("App", `${meta.package || "—"} ${meta.app_version || ""}`.trim());
+  add("Device", `${meta.model || ""} ${meta.device || ""}`.trim());
+  add("State", live ? `running${state.active.case ? ` · case ${state.active.case}` : ""}` : (meta.finished_at ? "finished" : "not finished"));
+  if (live) add("Result", state.active.summary);
+  else { const r = runs.find((x) => x.name === meta.name); if (r) add("Result", r.summary); }
+  if (meta.prompt) add("Request", meta.prompt);
+  if (report) add("Report", "report.html", `/runs/${encodeURIComponent(meta.name)}/report.html`);
+}
+
+function renderControl() {
+  const active = state && state.active;
+  const paused = state && state.paused;
+  $("dot").className = "dot" + (paused ? " paused" : active ? " live" : "");
+  $("status-text").textContent = !state ? "dashboard offline" : paused ? "paused" : active ? `live · ${active.name}` : "no active run";
+  $("paused-banner").classList.toggle("on", !!paused);
+  const pb = $("pause-btn");
+  pb.textContent = paused ? "▶ Resume" : "⏸ Pause";
+  pb.className = paused ? "primary" : "danger";
+  for (const id of ["pause-btn", "send-btn", "sec-btn"]) $(id).disabled = !active;
+  $("sec-list").textContent = state && state.secrets.length ? `Provided: ${state.secrets.join(", ")}` : "";
+  const ul = $("msglist");
+  const inbox = (state && state.inbox) || [];
+  ul.replaceChildren();
+  if (!inbox.length) { const li = el("li", null, "None yet"); li.style.cssText = "background:none;color:var(--muted)"; ul.append(li); }
+  for (const m of inbox.slice().reverse()) {
+    const li = el("li", null, m.text);
+    li.append(el("span", "st", `${clock(m.t)} · ${m.delivered ? "✓ delivered to the agent" : "waiting for the agent's next step…"}`));
+    ul.append(li);
+  }
+}
+
+async function tickState() {
+  try {
+    state = await getJSON("/api/state");
+  } catch { state = null; renderControl(); return; }
+  const active = state.active ? state.active.name : null;
+  if (active && follow && view !== active) await switchRun(active, true);
+  if (!view && !active && runs.length) await switchRun(runs[0].name, true);
+  renderRunSelect();
+  renderControl();
+  renderRunCard();
+  updateScreenMode();
+}
+async function tickRuns() {
+  try { runs = await getJSON("/api/runs"); renderRunSelect(); } catch {}
+}
+
+$("pause-btn").onclick = async () => {
+  try { await post(state.paused ? "/api/resume" : "/api/pause"); await tickState(); } catch (err) { $("msg-err").textContent = err.message; }
+};
+async function sendMsg() {
+  const text = $("msg").value.trim();
+  if (!text) return;
+  $("msg-err").textContent = "";
+  try { await post("/api/message", { text }); $("msg").value = ""; await tickState(); }
+  catch (err) { $("msg-err").textContent = err.message; }
+}
+$("send-btn").onclick = sendMsg;
+$("msg").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendMsg(); } });
+for (const c of CHIPS) { const b = el("button", null, c); b.onclick = () => { $("msg").value = c; $("msg").focus(); }; $("chips").append(b); }
+$("sec-btn").onclick = async () => {
+  $("sec-err").textContent = "";
+  try {
+    const j = await post("/api/secret", { name: $("sec-name").value, value: $("sec-value").value, note: $("sec-note").value });
+    $("sec-value").value = ""; $("sec-note").value = "";
+    $("sec-err").textContent = ""; $("sec-list").textContent = `Sent as ${j.name}`;
+    await tickState();
+  } catch (err) { $("sec-err").textContent = err.message; }
+};
+
+// ------------------------------------------------------------------ screen
+let screenURL = null, screenBusy = false;
+function screenMessage(text) {
+  $("screen-msg-text").textContent = text;
+  $("screen-msg").classList.toggle("on", !!text);
+}
+function showImage(url) {
+  const img = $("screen");
+  img.src = url; img.hidden = false;
+}
+function pinShot(url, label) {
+  pinnedShot = url;
+  showImage(url);
+  screenMessage("");
+  $("screen-sub").textContent = `evidence: ${label}`.slice(0, 60);
+  updateScreenMode();
+}
+$("back-live").onclick = () => { pinnedShot = null; updateScreenMode(); tickScreen(); };
+function wantLive() { return !pinnedShot && $("live-toggle").checked && (isLiveView() || !(state && state.active)); }
+function updateScreenMode() {
+  $("back-live").hidden = !(pinnedShot && $("live-toggle").checked);
+  if (pinnedShot) return;
+  if (!$("live-toggle").checked) { screenMessage("Live screen off."); $("screen-sub").textContent = ""; return; }
+  if (state && state.active && !isLiveView()) {
+    screenMessage("Viewing a past run. Click a check or screenshot in the timeline to see its evidence.");
+    $("screen").hidden = true; $("screen-sub").textContent = "";
+  }
+}
+$("live-toggle").addEventListener("change", () => { updateScreenMode(); tickScreen(); });
+
+async function tickScreen() {
+  if (screenBusy || document.hidden || !wantLive()) return;
+  screenBusy = true;
+  try {
+    const r = await fetch("/api/screen", { cache: "no-store" });
+    if (!wantLive()) return;
+    const hidden = r.headers.get("X-Screen-Hidden");
+    const error = r.headers.get("X-Screen-Error");
+    if (r.status === 200) {
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      showImage(url);
+      if (screenURL) URL.revokeObjectURL(screenURL);
+      screenURL = url;
+    } else $("screen").hidden = true;
+    if (error) screenMessage(`No device: ${error}`);
+    else if (hidden) screenMessage(`🔒 Screen hidden by the app (secure screen: ${hidden.split("/")[0]}). The timeline keeps going; this is a capture limit, not a test failure.`);
+    else screenMessage("");
+    $("screen-sub").textContent = error ? "" : `live · ${new Date().toLocaleTimeString([], { hour12: false })}`;
+  } catch { screenMessage("Dashboard offline: is `./tnazar ui` still running?"); }
+  finally { screenBusy = false; }
+}
+document.addEventListener("visibilitychange", tickScreen);
+
+// ------------------------------------------------------------------ resizable panes
+const PANES = { control: { min: 260, def: 340 }, screen: { min: 220, def: 380 } };
+const TIMELINE_MIN = 320, GUTTERS = 12;
+const widths = { control: PANES.control.def, screen: PANES.screen.def };
+try { Object.assign(widths, JSON.parse(localStorage.getItem("tnazar.panes") || "{}")); } catch {}
+function applyWidths(save, changed) {
+  const room = document.querySelector("main").clientWidth || window.innerWidth;
+  const avail = room - TIMELINE_MIN - GUTTERS;
+  const clamp = (v, lo, hi) => Math.round(Math.min(Math.max(v, lo), Math.max(lo, hi)));
+  // The pane being resized only takes space from the timeline; its neighbour keeps its width.
+  const moving = changed || "screen";
+  const fixed = moving === "control" ? "screen" : "control";
+  widths[fixed] = clamp(widths[fixed], PANES[fixed].min, avail - PANES[moving].min);
+  widths[moving] = clamp(widths[moving], PANES[moving].min, avail - widths[fixed]);
+  for (const k of ["control", "screen"]) document.documentElement.style.setProperty(`--w-${k}`, `${widths[k]}px`);
+  if (save) { try { localStorage.setItem("tnazar.panes", JSON.stringify(widths)); } catch {} }
+}
+function makeGutter(id, pane) {
+  const g = $(id);
+  g.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    g.setPointerCapture(ev.pointerId);
+    const x0 = ev.clientX, w0 = widths[pane];
+    g.classList.add("dragging"); document.body.classList.add("resizing");
+    const move = (e) => { widths[pane] = w0 + (x0 - e.clientX); applyWidths(false, pane); };
+    const up = () => {
+      g.removeEventListener("pointermove", move); g.removeEventListener("pointerup", up);
+      g.classList.remove("dragging"); document.body.classList.remove("resizing");
+      applyWidths(true, pane);
+    };
+    g.addEventListener("pointermove", move); g.addEventListener("pointerup", up);
+  });
+  g.addEventListener("dblclick", () => { widths[pane] = PANES[pane].def; applyWidths(true, pane); });
+  g.addEventListener("keydown", (ev) => {
+    const step = ev.shiftKey ? 60 : 20;
+    if (ev.key === "ArrowLeft") widths[pane] += step;
+    else if (ev.key === "ArrowRight") widths[pane] -= step;
+    else return;
+    ev.preventDefault(); applyWidths(true, pane);
+  });
+}
+makeGutter("gutter-control", "control");
+makeGutter("gutter-screen", "screen");
+window.addEventListener("resize", () => applyWidths(false));
+applyWidths(false);
+
+// ------------------------------------------------------------------ loops
+(async () => {
+  await tickRuns();
+  await tickState();
+  setInterval(tickState, 1000);
+  setInterval(tickEvents, 800);
+  setInterval(tickRuns, 5000);
+  setInterval(tickScreen, 1500);
+  tickScreen();
+})();
+</script>
+</body>
+</html>

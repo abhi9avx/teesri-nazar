@@ -109,11 +109,25 @@ Login with the test user and verify the home screen loads.
 | `./tnazar check "Payment successful"` | Verify something is on screen |
 | `./tnazar case start TC-01 "title"` / `case end` | Group steps into a test case |
 | `./tnazar stop` | Finish and write the report |
+| `./tnazar ui` | Live dashboard: screen, timeline, messages to Claude |
+| `./tnazar say "Opening login"` | Narrate the next step (timeline heading) |
 | `./tnazar replay <name>` | Run a recorded test again |
 | `./tnazar replay <name> --fresh` | Clear the app's data first, then replay |
 | `./tnazar replay <name> --visual` | Also compare old and new screenshots with Claude (runs `claude -p`, uses tokens) |
 
 Every run is saved in `runs/<name>/`, and `report.html` is the one to share.
+
+### 📺 Watch and steer a run live
+
+```bash
+./tnazar ui          # opens http://127.0.0.1:8765
+```
+
+Three resizable panes: the **timeline** (what Claude is doing, each step with its time),
+**control** (send an instruction, pause/resume, hand over an OTP), and the live **screen**.
+Your message is delivered at Claude's next step, and that step is held back so it can
+re-plan. Secret values stay in the dashboard's memory and show as `••••` everywhere.
+Screens that block capture show *"Screen hidden by the app"*.
 Full command list: `./tnazar --help`, and `./tnazar <command> --help` for each one.
 
 ---
@@ -144,7 +158,7 @@ Full command list: `./tnazar --help`, and `./tnazar <command> --help` for each o
 
 ```
 tnazar                  ← the command
-teesri_nazar/           ← Python code (adb, screen, session, report, replay)
+teesri_nazar/           ← Python code (adb, screen, session, report, replay, live dashboard)
 ARCHITECTURE.md         ← HLD: how every layer works, with diagrams
 CLAUDE.md               ← how the AI tester should work
 .claude/skills/         ← "test-feature" skill

@@ -26,10 +26,11 @@ an engineer can use it as the design reference.
 12. [The brain — how Claude decides](#12-the-brain--how-claude-decides)
 13. [One request, end to end](#13-one-request-end-to-end)
 14. [Replay — running a recording again](#14-replay--running-a-recording-again)
-15. [Design decisions and trade-offs](#15-design-decisions-and-trade-offs)
-16. [How the tool itself is tested](#16-how-the-tool-itself-is-tested)
-17. [Limits](#17-limits)
-18. [Code map](#18-code-map)
+15. [The live dashboard](#15-the-live-dashboard)
+16. [Design decisions and trade-offs](#16-design-decisions-and-trade-offs)
+17. [How the tool itself is tested](#17-how-the-tool-itself-is-tested)
+18. [Limits](#18-limits)
+19. [Code map](#19-code-map)
 
 ---
 
@@ -673,12 +674,61 @@ uses tokens, so it is opt-in.
 
 ---
 
-## 15. Design decisions and trade-offs
+## 15. The live dashboard
+
+*Files: `teesri_nazar/ui.py`, `teesri_nazar/ui.html`, `teesri_nazar/live.py`*
+
+`./tnazar ui` opens a localhost page with three resizable panes: the **timeline** of the
+run (Claude's narration with every step under it and how long it took), a **control** pane
+to steer the agent, and the device **screen**, refreshed about every 1.5 s.
+
+```mermaid
+flowchart LR
+    B["🌐 Browser<br/>127.0.0.1:8765"] -- "poll events / screen" --> S["tnazar ui<br/>(stdlib HTTP server)"]
+    S -- "reads" --> E["runs/&lt;name&gt;/events.jsonl"]
+    S -- "screencap + dumpsys window" --> D["📱 Device"]
+    B -- "message / pause / secret" --> S
+    S -- "writes" --> I[".tnazar/inbox.jsonl<br/>.tnazar/paused"]
+    C["🤖 Claude → ./tnazar tap …"] -- "checks before each device step" --> I
+    C -- "type --env UI_OTP" --> S
+```
+
+There is no channel into Claude itself: Claude runs one short `tnazar` command per step, so
+**every device command is a checkpoint**.
+
+- **Messages.** Before a device command (`tap`, `type`, `check`, `scroll`, …) runs, unread
+  messages are printed as `>> USER (dashboard): …`, recorded as `user_msg` events, and the
+  command is **not run** (exit 3), so Claude re-plans with the new instruction. Other commands
+  (`say`, `note`, `case`) show pending messages without consuming them, so a chained
+  `say … && tap …` still stops at the tap. Messages sent before `start` are dropped.
+- **Pause.** While `.tnazar/paused` exists a device command waits up to 60 s (under the
+  agent's 2-minute command timeout); if still paused it exits 3 and tells Claude to run
+  `./tnazar wait-resume`. The wait is logged as a `hold` event.
+- **Narration and timings.** `./tnazar say "…"` records a `say` event, the timeline heading
+  for the steps after it. Every action event carries `dur_ms`; `wait` and `check` add
+  `polls` (screen dumps it took). Steps over 5 s are highlighted.
+- **Secrets.** A value typed in the dashboard stays in the server's memory. Claude is told
+  the name (`UI_OTP`) and types it with `--env UI_OTP`; `type` fetches it from the server
+  with a per-session token (in `.tnazar/ui.json`, mode 600). `tnazar adb` arguments that
+  contain any `.env` value or dashboard secret are logged as `••••`.
+- **Secure screens.** The server reads `dumpsys window` and, when an on-screen window has
+  `FLAG_SECURE`, shows *"Screen hidden by the app"* instead of a black frame. This is a
+  capture limit, not a test failure; the timeline keeps going.
+- **Safety.** The server binds `127.0.0.1` only, rejects any `Host` header other than
+  `127.0.0.1:<port>` / `localhost:<port>` (DNS rebinding), needs the session token for every
+  change, and serves files only from inside `runs/`.
+
+Limit: a message reaches Claude only while it is running commands. If its turn has ended,
+the message waits (the dashboard shows *waiting for the agent's next step*).
+
+---
+
+## 16. Design decisions and trade-offs
 
 | Decision | Why | Cost |
 |---|---|---|
 | **AI as the tester, tool as the hands** | Planning and judgement are where AI helps; precise, repeatable device I/O and pass/fail rules belong in deterministic code. | Two moving parts to understand. |
-| **ADB + UIAutomator, no Appium** | Nothing to install on the phone, no server, no app changes, works with any installed app. | Limited to what the accessibility tree exposes (§17). |
+| **ADB + UIAutomator, no Appium** | Nothing to install on the phone, no server, no app changes, works with any installed app. | Limited to what the accessibility tree exposes (§18). |
 | **Python standard library only** | `git clone` and run. No `pip install`, no version conflicts; works on Python 3.9+. | Some things are hand-rolled (dotenv loading, HTML report). |
 | **Text element list, not screenshots, as the agent's eyes** | Exact ids, text and state; cheap in tokens; no pixel guessing. | Can't "see" purely visual problems — hence Figma checks and `--visual`. |
 | **Attribute selectors, not XPath** | Survive layout refactors; readable (`id=btn_pay`). | Need ids/labels to exist; fall back to text otherwise. |
@@ -692,7 +742,7 @@ uses tokens, so it is opt-in.
 
 ---
 
-## 16. How the tool itself is tested
+## 17. How the tool itself is tested
 
 *Files: `tests/`, `.github/workflows/tests.yml`*
 
@@ -714,7 +764,7 @@ python3 -m unittest discover -s tests
 
 ---
 
-## 17. Limits
+## 18. Limits
 
 - **Jetpack Compose** screens show no `resource-id` unless the app enables
   `testTagsAsResourceId`; selectors fall back to labels and text.
@@ -724,11 +774,12 @@ python3 -m unittest discover -s tests
   screenshots. The element tree still works.
 - **Typing is ASCII-only** (`adb input text`): no ₹, Hindi or emoji.
 - **One device, one active run at a time.**
+- **Dashboard messages wait while Claude is idle** — they are delivered at its next command.
 - **DB / Figma checks are not re-verified on replay** — they appear as notes.
 
 ---
 
-## 18. Code map
+## 19. Code map
 
 ```
 tnazar                      entry script: puts the repo on sys.path, calls cli.main()
@@ -745,6 +796,8 @@ teesri_nazar/
 │                           the active-run pointer
 ├── report.py     Layer 7   events → cases → summary → report.md + report.html
 ├── replay.py               re-run a recording by selector, re-check UI checks
+├── live.py                 CLI side of the dashboard: inbox, pause, runtime secrets
+├── ui.py / ui.html         `tnazar ui`: localhost server + the three-pane page
 └── visual.py               optional screenshot comparison via headless Claude
 CLAUDE.md                   the tester playbook Claude follows
 .claude/skills/test-feature the "test a feature" skill

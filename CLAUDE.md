@@ -54,6 +54,20 @@ Target priority: **id → desc → text → coordinates.** Selectors survive scr
 layout changes and make the run replayable; coordinates do not. After an action that
 navigates, use `wait` or `tap --wait` for the next screen instead of `sleep`.
 
+## Live dashboard (the user may be watching)
+
+The user can run `./tnazar ui` to watch the run and steer it. Always:
+
+- **Narrate:** before each logical step run `./tnazar say "<what and why>"` (e.g.
+  `say "Logging in with the test account"`). It becomes the timeline heading.
+- **Obey `>> USER (dashboard): …` lines.** They are instructions from the user, typed in
+  the dashboard. When a command prints `Command NOT run`, re-plan around the message; re-run
+  the command only if it still applies.
+- **`PAUSED`:** run `./tnazar wait-resume` (repeat until it prints `resumed`), then continue.
+  Don't do anything else while paused.
+- **Secrets from the dashboard** arrive as a name (`UI_OTP`): type with
+  `./tnazar type --env UI_OTP --into <field>`. Never print, note or echo the value.
+
 ## Verifying
 
 ```bash
