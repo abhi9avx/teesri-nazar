@@ -13,10 +13,12 @@ import io
 import os
 import subprocess
 import tempfile
+import urllib.error
 from unittest import mock
 from xml.sax.saxutils import quoteattr
 
 from teesri_nazar import cli
+from teesri_nazar.adb import AdbError
 
 PACKAGE = "com.example.app"
 SERIAL = "fake-1"
@@ -24,9 +26,10 @@ PNG = b"\x89PNG\r\n\x1a\nfake"
 
 
 def node(id: str = "", text: str = "", desc: str = "", bounds=(0, 0, 100, 100), cls: str = "android.widget.TextView",
-         clickable: bool = True, enabled: bool = True, checked: bool = False, password: bool = False) -> dict:
+         clickable: bool = True, enabled: bool = True, checked: bool = False, password: bool = False,
+         scrollable: bool = False) -> dict:
     return dict(id=id, text=text, desc=desc, bounds=bounds, cls=cls, clickable=clickable,
-                enabled=enabled, checked=checked, password=password)
+                enabled=enabled, checked=checked, password=password, scrollable=scrollable)
 
 
 def screen_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> str:
@@ -38,6 +41,7 @@ def screen_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> 
             "content-desc": n["desc"], "clickable": str(n["clickable"]).lower(),
             "enabled": str(n["enabled"]).lower(), "checked": str(n["checked"]).lower(),
             "password": str(n["password"]).lower(), "bounds": f"[{l},{t}][{r},{b}]",
+            "scrollable": str(n.get("scrollable", False)).lower(),
         }
         return " ".join(f"{k}={quoteattr(v)}" for k, v in pairs.items())
 
@@ -45,6 +49,26 @@ def screen_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> 
     children = "".join(f"<node {attrs(n)} />" for n in nodes)
     return (f"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>"
             f"<hierarchy rotation=\"0\"><node {attrs(root)}>{children}</node></hierarchy>")
+
+
+def server_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> str:
+    """The same screen as the UiAutomator2 server serializes it: class names as tags, no empty content-desc."""
+    def el(n: dict, inner: str = "") -> str:
+        l, t, r, b = n["bounds"]
+        rid = f"{package}:id/{n['id']}" if n["id"] else ""
+        pairs = {"index": "0", "package": package, "class": n["cls"], "text": n["text"], "resource-id": rid,
+                 "clickable": str(n["clickable"]).lower(), "enabled": str(n["enabled"]).lower(),
+                 "checked": str(n["checked"]).lower(), "password": str(n["password"]).lower(),
+                 "bounds": f"[{l},{t}][{r},{b}]", "displayed": "true"}
+        if n["desc"]:
+            pairs["content-desc"] = n["desc"]
+        return f"<{n['cls']} " + " ".join(f"{k}={quoteattr(v)}" for k, v in pairs.items()) + f">{inner}</{n['cls']}>"
+
+    root = node(cls="android.widget.FrameLayout", clickable=False, bounds=(0, 0, *size))
+    hidden = dict(node(text="Off-screen", cls="android.widget.TextView"), bounds=(0, 0, 10, 10))
+    hidden_xml = el(hidden).replace('displayed="true"', 'displayed="false"')
+    return (f"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy index=\"0\" rotation=\"0\">"
+            f"{el(root, ''.join(el(n) for n in nodes) + hidden_xml)}</hierarchy>")
 
 
 class FakeApp:
@@ -97,13 +121,51 @@ class FakeAdb:
         self.crash_log = ""
         self.secure = False  # FLAG_SECURE screen: screencap yields no PNG
         self.dump_failures = 0  # next N dumps fail like an animating screen
+        self.dump_hangs = 0  # next N dumps hang until adb's timeout (app never goes idle)
+        self.uia2_installed = False  # the UiAutomator2 server APKs are on the device
+        self.uia2_up = False  # its instrumentation is running
+        self.uia2_broken = False  # it stops answering (crashed, killed by the OS)
+        self.uia2_errors = 0  # next N reads answer HTTP 500 (screen changing mid-read)
+        self.uia2_reads = 0
+        self.offline = False  # airplane mode: ping fails
+        self.drop_taps = 0  # next N taps are lost (a screen that was not ready yet)
+        self.becomes: tuple[int, str] | None = None  # (n, screen): after n more reads, the app shows `screen`
         self.files: dict[str, str] = {}  # device files tnazar writes via the shell
         self.keyboard = False  # soft keyboard showing
         self.foreign_top: str | None = None  # another package's screen on top of the app's task
         self.keyboard_on_focus = True  # False: focusing a field leaves it hidden (hardware keyboard, timing)
+        self.launchers = [".Main"]  # launcher activities; more than one makes resolve-activity return the chooser
         self.typed: list[str] = []
         self.taps: list[tuple[int, int]] = []
         self.calls: list[list[str]] = []
+
+    # --- the UiAutomator2 server's HTTP API, as tnazar's uia2 module calls it
+    def uia2_http(self, method: str, port: int, path: str, body: dict | None = None, timeout: float = 10) -> dict:
+        if not self.uia2_up or self.uia2_broken:
+            raise OSError("connection refused")
+        if path == "/status":
+            return {"value": {"ready": True}}
+        if path == "/session":
+            return {"value": {"sessionId": "s1"}}
+        if path.endswith("/appium/settings"):
+            return {"value": None}
+        if path.endswith("/source"):
+            self._tick()
+            if self.uia2_errors:
+                self.uia2_errors -= 1
+                body = b'{"value": {"error": "unknown error", "message": "Cannot read the screen"}}'
+                raise urllib.error.HTTPError(path, 500, "Internal Server Error", {}, io.BytesIO(body))
+            self.uia2_reads += 1
+            return {"value": server_xml(self.nodes(), self.size)}
+        raise AssertionError(f"unexpected uia2 call: {method} {path}")
+
+    def _tick(self) -> None:
+        """A screen change still in flight (e.g. after Back) lands after a few reads."""
+        if self.becomes:
+            n, screen = self.becomes
+            self.becomes = (n - 1, screen) if n > 1 else None
+            if n <= 1:
+                self.current = screen
 
     # --- helpers for tests
     def nodes(self) -> list[dict]:
@@ -120,6 +182,10 @@ class FakeAdb:
     def exec_out(self, command: str, timeout: float = 60) -> bytes:
         self.calls.append(["exec-out", command])
         if "uiautomator dump" in command:
+            self._tick()
+            if self.dump_hangs:
+                self.dump_hangs -= 1
+                raise AdbError(f"adb timed out after {timeout}s: exec-out {command}")
             if self.dump_failures:
                 self.dump_failures -= 1
                 return b"ERROR: could not get idle state."
@@ -131,7 +197,11 @@ class FakeAdb:
     def run(self, args: list[str], timeout: float = 60, check: bool = True, binary: bool = False):
         self.calls.append(list(args))
         out = ""
-        if args[:1] == ["logcat"]:
+        if args[:2] == ["shell", "ping"]:
+            return subprocess.CompletedProcess(args, 1 if self.offline else 0, "", "")
+        if args[:1] == ["forward"]:
+            out = "8299\n" if args[1] == "tcp:0" else ""
+        elif args[:1] == ["logcat"]:
             if "-c" in args:
                 self.crash_log = ""
             elif "crash" in args:
@@ -150,6 +220,9 @@ class FakeAdb:
         if cmd == ["input", "tap"]:
             x, y = int(a[2]), int(a[3])
             self.taps.append((x, y))
+            if self.drop_taps:
+                self.drop_taps -= 1
+                return ""
             n = self.node_at(x, y)
             if n:
                 if "EditText" in n["cls"]:
@@ -208,7 +281,9 @@ class FakeAdb:
             self.settings.pop(a[3], None)
             return ""
         if a[:2] == ["cmd", "package"]:
-            return f"priority=0\n{PACKAGE}/.Main\n"
+            if a[2] == "resolve-activity" and len(self.launchers) > 1:
+                return "priority=0\nandroid/com.android.internal.app.ResolverActivity\n"
+            return "".join(f"priority=0\n{PACKAGE}/{c}\n" for c in self.launchers)
         if a[:2] == ["am", "start"]:
             if "-n" in a:  # launching the app's own activity resumes its task
                 if "0x10008000" in a:  # NEW_TASK | CLEAR_TASK
@@ -217,7 +292,18 @@ class FakeAdb:
                     self.current = self.foreign_top
             return "Status: ok\n"
         if a[:2] == ["am", "force-stop"]:
-            self.current = self.app.start
+            if a[2].startswith("io.appium.uiautomator2"):
+                self.uia2_up = False
+            else:
+                self.current = self.app.start
+            return ""
+        if a[:3] == ["pm", "list", "instrumentation"]:
+            return ("instrumentation:io.appium.uiautomator2.server.test/androidx.test.runner.AndroidJUnitRunner "
+                    "(target=io.appium.uiautomator2.server)\n") if self.uia2_installed else ""
+        if a[:2] == ["sh", "-c"] and "am instrument" in a[2]:
+            self.uia2_up = self.uia2_installed
+            return ""
+        if a[:2] == ["pkill", "-x"]:
             return ""
         if a[:1] == ["monkey"]:
             return "Events injected: 1\n"
@@ -240,7 +326,7 @@ class FakeClock:
 @contextlib.contextmanager
 def fake_device(adb: FakeAdb):
     """Patch tnazar to use `adb` and a temp TNAZAR_HOME; yields the home directory."""
-    from teesri_nazar import device, replay, screen
+    from teesri_nazar import device, replay, screen, uia2
 
     clock = FakeClock()
     with tempfile.TemporaryDirectory() as home, contextlib.ExitStack() as stack:
@@ -253,6 +339,8 @@ def fake_device(adb: FakeAdb):
         stack.enter_context(mock.patch.object(device, "time", clock))
         stack.enter_context(mock.patch.object(replay, "time", clock))
         stack.enter_context(mock.patch.object(screen, "time", clock))
+        stack.enter_context(mock.patch.object(uia2, "time", clock))
+        stack.enter_context(mock.patch.object(uia2, "_http", adb.uia2_http))
         yield home
 
 

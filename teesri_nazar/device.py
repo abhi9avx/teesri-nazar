@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from . import screen as scr
+from . import uia2
 from .adb import Adb, AdbError
 
 KEYS = {
@@ -16,6 +17,10 @@ KEYS = {
     "volume_up": 24, "volume_down": 25, "power": 26,
 }
 KEY_MOVE_END = 123
+CLEAR_KEYS = 40  # deletes for `--clear` when the field's length is unknown (password or no target)
+SCROLL_AREA = (0.15, 0.85)  # share of the screen height a scroll swipes in: clear of status and nav bars
+SWIPE_MS = 350
+SCROLL_MAX = 10  # swipes `scroll --to` tries before giving up
 
 _SAFE = re.compile(r"[A-Za-z0-9_.,:/@+=-]")
 ANIMATION_SETTINGS = ("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
@@ -47,9 +52,21 @@ def long_press(adb: Adb, x: int, y: int, ms: int = 800) -> None:
     adb.shell("input", "swipe", str(x), str(y), str(x), str(y), str(ms))
 
 
+CODE_MAX = 8  # OTPs and PINs; a 10-digit phone number still goes in one burst
+KEY_GAP = 0.2
+
+
 def type_text(adb: Adb, text: str) -> None:
-    if text:
-        adb.shell("input", "text", escape_input_text(text))
+    if not text:
+        return
+    if text.isdigit() and len(text) <= CODE_MAX:
+        # Segmented PIN/OTP boxes drop digits that arrive in a single `input text` burst.
+        for i, digit in enumerate(text):
+            if i:
+                time.sleep(KEY_GAP)
+            adb.shell("input", "text", digit)
+        return
+    adb.shell("input", "text", escape_input_text(text))
 
 
 def clear_field(adb: Adb, length: int) -> None:
@@ -69,8 +86,20 @@ def is_back(name: str) -> bool:
     return name.lower() == "back" or name == str(KEYS["back"])
 
 
-def swipe(adb: Adb, x1: int, y1: int, x2: int, y2: int, ms: int = 350) -> None:
+def swipe(adb: Adb, x1: int, y1: int, x2: int, y2: int, ms: int = SWIPE_MS) -> None:
     adb.shell("input", "swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
+
+
+def scroll_area(screen: scr.Screen | None, direction: str, size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Where a scroll swipes: for left/right the screen's horizontal scroller (a tab bar,
+    a carousel), wherever it sits on this screen size; otherwise the middle band."""
+    if direction in ("left", "right") and screen is not None:
+        for e in screen.elements:
+            l, t, r, b = e.bounds
+            if e.scrollable and ("Horizontal" in e.cls or (r - l) > 3 * (b - t)):
+                return e.bounds
+    top, bottom = SCROLL_AREA
+    return 0, int(size[1] * top), size[0], int(size[1] * bottom)
 
 
 def scroll_vector(direction: str, area: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
@@ -98,12 +127,20 @@ def screenshot(adb: Adb, dest: Path) -> Path:
     return dest
 
 
+DEBUG_LAUNCHERS = ("leakcanary", "chucker", "flipper")
+
+
 def launcher_activity(adb: Adb, package: str) -> str | None:
-    out = adb.shell("cmd", "package", "resolve-activity", "--brief",
-                    "-a", "android.intent.action.MAIN",
-                    "-c", "android.intent.category.LAUNCHER", package, check=False)
+    intent = ["-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", package]
+    out = adb.shell("cmd", "package", "resolve-activity", "--brief", *intent, check=False)
     lines = [ln.strip() for ln in out.splitlines() if "/" in ln]
-    return lines[-1] if lines else None
+    if lines and lines[-1].startswith(f"{package}/"):
+        return lines[-1]
+    # Several launcher entries (debug builds add LeakCanary & co.) resolve to the system chooser.
+    out = adb.shell("cmd", "package", "query-activities", "--brief", *intent, check=False)
+    found = [ln.strip() for ln in out.splitlines() if ln.strip().startswith(f"{package}/")]
+    found.sort(key=lambda c: any(tool in c.lower() for tool in DEBUG_LAUNCHERS))
+    return found[0] if found else None
 
 
 def force_stop(adb: Adb, package: str) -> None:
@@ -158,12 +195,6 @@ def keyboard_shown(adb: Adb) -> bool | None:
     return m.group(1) == "true" if m else None
 
 
-def foreground_package(adb: Adb) -> str:
-    out = adb.shell("dumpsys", "activity", "activities", check=False)
-    m = re.search(r"(?:mResumedActivity|topResumedActivity|ResumedActivity).*?\s([\w.]+)/", out)
-    return m.group(1) if m else ""
-
-
 def get_animations(adb: Adb) -> dict[str, str]:
     return {k: adb.shell("settings", "get", "global", k).strip() for k in ANIMATION_SETTINGS}
 
@@ -215,11 +246,31 @@ def crashes(adb: Adb, package: str | None = None) -> str:
     return text
 
 
+def wait_online(adb: Adb, timeout: float, host: str = "8.8.8.8") -> bool:
+    """True once the device can reach `host` (after airplane mode, Wi-Fi takes a while to return)."""
+    deadline = time.monotonic() + timeout
+    while adb.run(["shell", "ping", "-c", "1", "-W", "1", host], check=False).returncode != 0:
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+    return True
+
+
 def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
-             interval: float = 0.4) -> tuple[bool, scr.Screen, scr.Element | None]:
+             interval: float | None = None, stats: dict | None = None,
+             alternatives: list[scr.Selector] | None = None,
+             exact: bool = False) -> tuple[bool, scr.Screen, scr.Element | None]:
+    """Poll until `sel` appears (or is gone). If one of `alternatives` shows up first, stop at once:
+    ok is False and stats["alternative"] says which one (e.g. an error instead of the next screen).
+    `exact`: no partial fallback for an exact selector, as a check needs; "gone" is always exact."""
+    if interval is None:
+        interval = 0.15 if uia2.active(adb) else 0.4  # a fast read makes frequent polling cheap
     deadline = time.monotonic() + timeout
     screen = el = None
+    stats = {} if stats is None else stats
+    stats["polls"] = 0
     while True:
+        stats["polls"] += 1
         try:
             screen = scr.capture(adb)
         except AdbError:
@@ -227,9 +278,13 @@ def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
             if time.monotonic() >= deadline and screen is None:
                 raise
         else:
-            el = scr.find(screen, sel)
+            el = scr.find(screen, sel, strict=gone or exact)
             if (el is None) == gone:
                 return True, screen, el
+            for i, alt in enumerate(alternatives or []):
+                if (found := scr.find(screen, alt)) is not None:
+                    stats["alternative"] = i
+                    return False, screen, found
         if time.monotonic() >= deadline:
             return False, screen, el
         time.sleep(interval)

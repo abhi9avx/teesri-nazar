@@ -7,14 +7,17 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 
+from . import commands
 from . import device as dev
+from . import uia2
 from . import report as rpt
 from . import screen as scr
 from . import visual
 from .adb import Adb, adb_binary, pick_serial
-from .cli import Ctx, _end_case, evidence_shot
+from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, evidence_shot
 from .session import Run, get_active, now_iso, stamp
 
 SETTLE = 0.3
@@ -68,7 +71,7 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
         if e.get("selector") or e.get("xy"):
             dev.tap(adb, *_locate(ctx, e, size, timeout))
         if e.get("clear"):
-            dev.clear_field(adb, 40)
+            dev.clear_field(adb, dev.CLEAR_KEYS)
         dev.type_text(adb, text)
         if e.get("enter"):
             dev.key(adb, "enter")
@@ -85,13 +88,14 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
     elif t == "swipe":
         x1, y1 = _scale(e["from"], e.get("screen"), size)
         x2, y2 = _scale(e["to"], e.get("screen"), size)
-        dev.swipe(adb, x1, y1, x2, y2, e.get("ms", 350))
+        dev.swipe(adb, x1, y1, x2, y2, e.get("ms", dev.SWIPE_MS))
     elif t == "scroll":
-        area = (0, int(size[1] * 0.15), size[0], int(size[1] * 0.85))
-        vec = dev.scroll_vector(e["direction"], area)
+        sideways = e["direction"] in ("left", "right")
+        vec = dev.scroll_vector(e["direction"], dev.scroll_area(scr.capture(adb) if sideways else None,
+                                                                e["direction"], size))
         if e.get("to"):
             sel = scr.Selector.from_dict(e["to"])
-            for _ in range(10):
+            for _ in range(dev.SCROLL_MAX):
                 if scr.find(scr.capture(adb), sel):
                     return
                 dev.swipe(adb, *vec)
@@ -105,17 +109,22 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
         ok, _, _ = dev.wait_for(adb, sel, max(e.get("timeout", 15), timeout), gone=e.get("gone", False))
         if not ok and e.get("ok", True):
             raise StepFailed(f"wait: {sel} never became {'gone' if e.get('gone') else 'visible'}")
+    elif t == "wait_online":
+        if e.get("ok", True) and not dev.wait_online(adb, max(e.get("timeout", 30), timeout)):
+            raise StepFailed("wait-online: the device did not come back online")
     elif t == "adb":
         subprocess.run([adb_binary(), "-s", adb.serial, *e["args"]], capture_output=True)
 
 
 def _recheck(ctx: Ctx, e: dict, timeout: float) -> None:
-    if e.get("kind", "ui") != "ui":
+    kind = e.get("kind", "ui")
+    # A manual `check --result` and a plan runner's failed step are ui checks with no selector.
+    if kind != "ui" or not e.get("selector"):
         ctx.log({"type": "note", "kind": "observation",
-                 "text": f"[{e['kind']}] not re-verified on replay: {e['what']}"})
+                 "text": f"[{kind}] not re-verified on replay: {e['what']}"})
         return
     sel = scr.Selector.from_dict(e["selector"])
-    ok, _, el = dev.wait_for(ctx.adb, sel, max(timeout, 5), gone=e.get("gone", False))
+    ok, _, el = dev.wait_for(ctx.adb, sel, max(timeout, 5), gone=e.get("gone", False), exact=True)
     if ok and el is not None:
         for flag, actual in (("checked", el.checked), ("enabled", el.enabled)):
             if e.get(flag) is not None and e[flag] != actual:
@@ -130,8 +139,8 @@ def _recheck(ctx: Ctx, e: dict, timeout: float) -> None:
 def run(args) -> int:
     source = Run.load(args.run)
     if get_active():
-        print("error: a run is active; `tnazar stop` it before replaying")
-        return 2
+        print("error: a run is active; `tnazar stop` it before replaying", file=sys.stderr)
+        return EXIT_ERROR
     smeta = source.meta()
     adb = Adb(pick_serial(args.device))
     meta = {"replay_of": source.name, "device": adb.serial, "prompt": smeta.get("prompt", ""),
@@ -141,20 +150,21 @@ def run(args) -> int:
         meta["app_version"] = dev.app_version(adb, meta["package"])
         if smeta.get("app_version") and smeta["app_version"] != meta["app_version"]:
             print(f"note: recorded on {smeta['app_version']}, replaying on {meta['app_version']}")
-    meta["animations_before"] = dev.animations_off(adb)
+    meta["animations_before"] = None
     target = Run.create(f"{source.name}-replay-{stamp()}", meta)
     ctx = Ctx(adb, target)
     print(f"replaying {source.name} on {adb.serial} -> {target.name}")
-
-    if args.fresh and meta["package"]:
-        dev.force_stop(adb, meta["package"])
-        dev.clear_data(adb, meta["package"])
-
-    size = adb.screen_size()
     skipping = False
     pairs: list[tuple[str, str]] = []
     step = 0
     try:
+        meta["animations_before"] = dev.animations_off(adb)
+        target.update_meta(animations_before=meta["animations_before"])
+        print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
+        if args.fresh and meta["package"]:
+            dev.force_stop(adb, meta["package"])
+            dev.clear_data(adb, meta["package"])
+        size = adb.screen_size()
         for e in source.events():
             t = e["type"]
             if t == "case_start":
@@ -172,7 +182,7 @@ def run(args) -> int:
                     print(f"  -> {status.upper()}")
                 skipping = False
                 continue
-            if skipping or t in ("note",):
+            if skipping or t in commands.NARRATION_EVENTS:
                 continue
             if t == "check":
                 _recheck(ctx, e, args.step_timeout)
@@ -205,7 +215,9 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
-        dev.animations_restore(adb, meta["animations_before"])
+        uia2.stop(adb)
+        if meta["animations_before"] is not None:
+            dev.animations_restore(adb, meta["animations_before"])
         target.update_meta(finished_at=now_iso())
         paths = rpt.write(target)
 
@@ -214,5 +226,5 @@ def run(args) -> int:
     for p in paths:
         print(f"report: {p}")
     failed = summary["counts"].get("fail", 0) + summary["counts"].get("blocked", 0) + summary["checks_failed"]
-    return 0 if failed == 0 else 1
+    return 0 if failed == 0 else EXIT_FAIL
 

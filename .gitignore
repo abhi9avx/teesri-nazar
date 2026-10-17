@@ -1,4 +1,5 @@
 runs/
+plans/
 .tnazar/
 .env
 testdata.yaml

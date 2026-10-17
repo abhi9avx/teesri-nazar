@@ -26,10 +26,11 @@ an engineer can use it as the design reference.
 12. [The brain — how Claude decides](#12-the-brain--how-claude-decides)
 13. [One request, end to end](#13-one-request-end-to-end)
 14. [Replay — running a recording again](#14-replay--running-a-recording-again)
-15. [Design decisions and trade-offs](#15-design-decisions-and-trade-offs)
-16. [How the tool itself is tested](#16-how-the-tool-itself-is-tested)
-17. [Limits](#17-limits)
-18. [Code map](#18-code-map)
+15. [The live dashboard](#15-the-live-dashboard) (15.1 running a whole plan)
+16. [Design decisions and trade-offs](#16-design-decisions-and-trade-offs)
+17. [How the tool itself is tested](#17-how-the-tool-itself-is-tested)
+18. [Limits](#18-limits)
+19. [Code map](#19-code-map)
 
 ---
 
@@ -247,22 +248,24 @@ Element(index, cls, text, rid, desc, bounds,
 ### 6.4 What Claude actually sees — `observe`
 
 Most nodes are empty layout boxes. `observe` shows only the *interesting* ones —
-anything with text, a label, or that can be tapped, scrolled or typed into:
+anything with text, a label, or that can be tapped, scrolled, typed into or checked
+(switches and checkboxes show `checked` / `unchecked`):
 
 ```
 $ ./tnazar observe
-screen: com.example.app  7 elements (6 shown)
+screen: com.example.app  8 elements (7 shown)
 [1] TextView id=title text="Welcome back" @540,250
 [2] EditText id=phone_input desc="Phone number" @540,460 tap focused
 [3] EditText id=mpin_input @540,620 tap password
 [4] Button id=btn_login text="Login" @540,860 tap disabled
 [5] TextView id=link text="Help" @280,1030 tap
 [6] TextView id=link text="Terms of service" @800,1030 tap
+[7] Switch id=remember_me @960,1180 tap unchecked
 ```
 
 This compact text is the agent's "eyesight". It is cheap (a few hundred tokens), exact
 (no guessing pixels from an image), and carries state a screenshot can't show clearly
-(`disabled`, `password`, `focused`). The full XML is also saved to `runs/<name>/dumps/`
+(`disabled`, `password`, `focused`, `unchecked`). The full XML is also saved to `runs/<name>/dumps/`
 and to `.tnazar/last-screen.xml`, so `#index` taps can reuse it without a new dump.
 
 Screenshots are still taken — as **evidence for humans**, not as the agent's input.
@@ -301,11 +304,16 @@ take its `bounds`, compute the center, tap there.
 attributes given:
 
 - **id:** `btn_login` matches `com.example.app:id/btn_login` (short form is fine).
-- **text / desc:** whitespace-collapsed and case-insensitive. Exact by default;
-  substring with `~` / `--contains`.
-- **Forgiving fallback:** if an exact text match fails, `find()` retries as a partial
-  match — a label typed loosely (`"Pay now"`) often lives inside a longer string
-  (`"Pay now ₹500"`).
+- **text / desc:** whitespace-collapsed, case-insensitive, and curly quotes (`’ “`) equal
+  straight ones (`' "`). Exact by default; substring with `~` / `--contains`.
+- **Forgiving fallback for actions:** for `tap`, `type --into` and `wait`, a
+  bare text selector is tried, in order, as exact text, exact content-desc (Compose apps
+  often put the label only there), partial text, partial content-desc — a label typed
+  loosely (`"Pay now"`) often lives inside a longer string.
+- **Checks are strict:** `check "Pay now"` matches exact text, then exact content-desc, and
+  never falls back to a partial match, so a check can't pass on a different label that
+  merely contains the words. Write `check '~Pay'` to mean "contains". The same goes for
+  `--gone`: `check Save --gone` is not fooled by a new "Couldn’t save? Try again" label.
 
 ### 7.3 The priority rule: id → desc → text → coordinates
 
@@ -360,12 +368,12 @@ flowchart LR
 
 | Command | What it does under the hood |
 |---|---|
-| `tap` | Find → center → `input tap`. `--long` = a swipe that doesn't move for 800 ms. |
-| `type` | Optionally tap the field (`--into`), clear it (`--clear`: move cursor to end, then backspace N times), then `input text`. Spaces and shell-special characters are escaped. ASCII only. |
+| `tap` | Find → center → `input tap`. `--long` = a swipe that doesn't move for 800 ms. A target `x%,y%` (for an element with no label) is converted to pixels on the current screen and recorded with its size, so replay on another phone lands on the same spot. |
+| `type` | Optionally tap the field (`--into`), clear it (`--clear`: move cursor to end, then backspace N times), then `input text`. Spaces and shell-special characters are escaped. ASCII only. Short all-digit values (≤ 8 digits: OTPs, PINs) go one digit at a time, because segmented PIN boxes drop digits that arrive in one burst. |
 | `key` | Named key → Android keycode (`back`=4, `enter`=66, …) → `input keyevent`. |
-| `scroll` | Swipe 30% of the area from the middle. `down` *reveals what's below* (finger moves up). `--to X` repeats until X is visible, and stops early if the screen stops changing (end of list). |
+| `scroll` | Swipe 30% of the area from the middle. `down` *reveals what's below* (finger moves up). `--to X` repeats until X is visible, and stops early if the screen stops changing (end of list). `left`/`right` swipe inside the screen's horizontal scroller (a tab bar, a carousel) when there is one, so plans need no coordinates. |
 | `swipe` | Raw coordinates. Screen size is recorded so replay can scale it. |
-| `launch` | Resolve the app's launcher activity and start it (`--restart` force-stops first, `--fresh` also clears data). |
+| `launch` | Resolve the app's launcher activity and start it. Plain `launch` resumes the app where it was; `--restart` force-stops first, `--fresh` also clears data, and both start with `NEW_TASK\|CLEAR_TASK` so activities left in the task (including other packages' ones) are dropped. |
 | `open-url` | Fire a VIEW intent — for deep links. |
 | `wait` | Poll the screen every 0.4 s until the element appears (or with `--gone`, disappears). |
 
@@ -376,7 +384,10 @@ until the condition is true or the timeout expires.
 **Animations off.** `start` sets the phone's three animation scales to 0 so screens settle
 immediately and dumps don't catch half-drawn screens. The old values are saved in
 `run.json` and restored by `stop` (and by a Claude Code `SessionEnd` hook if a session
-ends with a run still open).
+ends with a run still open). They are also saved on the device itself, in
+`/data/local/tmp/tnazar-animations`: if a run never restored them (device unplugged,
+host killed, a different `TNAZAR_HOME`), the next `start` reads that file instead of
+taking 0 as the baseline. Restoring deletes the file.
 
 **Secrets never touch the log.** `type --env APP_MPIN` reads the value from `.env`; the
 event records `"text": null, "secret": true, "env": "APP_MPIN"` — the name, never the value.
@@ -400,8 +411,11 @@ A test without assertions is just a demo. Every expected result becomes a **chec
 ```
 
 `tnazar` polls the UI tree until the element is found (or gone), then compares the
-`enabled` / `checked` flags. Every check — pass or fail — **saves a screenshot**. A
-failing check also saves the full XML dump, so you can see exactly what *was* on screen.
+`enabled` / `checked` flags. A dump that fails mid-animation is retried until the timeout;
+only a screen that never dumps is an error. Every check — pass or fail — **saves a
+screenshot** when it can: on screens that block capture (`FLAG_SECURE`) the check and case
+result are still recorded, with a warning instead of the shot. A failing check also saves
+the full XML dump, so you can see exactly what *was* on screen.
 
 ### DB / Figma / API checks (agent-verified, tnazar-recorded)
 
@@ -462,7 +476,12 @@ Why an append-only log?
   report from the log at any time.
 
 **One active run at a time.** `.tnazar/active.json` points to the current run and device,
-so every command (`tap`, `check`, …) knows where to log without being told.
+so every command (`tap`, `check`, …) knows where to log without being told. It also records
+the process that started the run (pid and start time, so a reused pid does not count). A
+new `start` or `run` finishes the active run quietly when that process has exited (an agent
+driving commands one by one), and refuses with exit `2` while it is still alive (a `tnazar
+run <plan>` in progress): two runs on one device take the screen from each other.
+`./tnazar stop` still ends it from anywhere.
 
 ---
 
@@ -507,6 +526,21 @@ This is a key safety rail: **the AI decides what to check; the tool decides whet
 
 Finally, Claude reports back in chat: summary line, case table, each failure as
 *expected vs. actual*, bugs, what was not tested, and the path to `report.html`.
+
+### Exit codes
+
+Every `tnazar` command, `tnazar run <plan>` and `tnazar replay` use the same codes, so
+Claude (and CI) can act on them without reading the output:
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `0` | OK: the command worked; for `run` / `replay`, every case passed | Go on. |
+| `1` | Failed: a check failed, an element was not found, or an adb command failed | Read the output; for `run`, see the report. |
+| `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags, another process's run still in progress on the device) | Fix the line or the setup; nothing was tested. For a run in progress, wait for it or `./tnazar stop` it. |
+| `3` | Held: the user sent a dashboard message, so the command was **not run** | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. |
+| `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |
+| `5` | Still paused from the dashboard after 60 s; the command was **not run** | Run `./tnazar wait-resume` until it prints `resumed`, then continue. |
+| `130` | Interrupted (Ctrl-C) | — |
 
 ---
 
@@ -637,6 +671,10 @@ How it works:
      (waiting up to `--step-timeout`, default 10 s), then act on its *new* center.
      No selector? Use the recorded coordinates, **scaled** to the new screen size
      (`x × new_width / old_width`).
+   - **`key back`** → the recording notes whether the keyboard was open. Back over an open
+     keyboard only closes it, so if the keyboard state differs on replay, the back is
+     skipped (keyboard already hidden) or an extra back is pressed first (keyboard open
+     now but not then).
    - **UI checks** → re-verified for real, with new screenshots.
    - **DB / Figma checks** → can't be re-verified automatically; logged as notes.
    - **secrets** → re-read from the same `$ENV` name on the replaying machine.
@@ -661,12 +699,116 @@ uses tokens, so it is opt-in.
 
 ---
 
-## 15. Design decisions and trade-offs
+## 15. The live dashboard
+
+*Files: `teesri_nazar/ui.py`, `teesri_nazar/ui.html`, `teesri_nazar/live.py`*
+
+`./tnazar ui` opens a localhost page with three resizable panes: the **timeline** of the
+run (Claude's narration with every step under it and how long it took), a **control** pane
+to steer the agent, and the device **screen**, refreshed about every 1.5 s.
+
+```mermaid
+flowchart LR
+    B["🌐 Browser<br/>127.0.0.1:8765"] -- "poll events / screen" --> S["tnazar ui<br/>(stdlib HTTP server)"]
+    S -- "reads" --> E["runs/&lt;name&gt;/events.jsonl"]
+    S -- "screencap + dumpsys window" --> D["📱 Device"]
+    B -- "message / pause / secret" --> S
+    S -- "writes" --> I[".tnazar/inbox.jsonl<br/>.tnazar/paused"]
+    C["🤖 Claude → ./tnazar tap …"] -- "checks before each device step" --> I
+    C -- "type --env UI_OTP" --> S
+```
+
+There is no channel into Claude itself: Claude runs one short `tnazar` command per step, so
+**every device command is a checkpoint**.
+
+- **Messages.** Before a device command (`tap`, `type`, `check`, `scroll`, …) runs, unread
+  messages are printed as `>> USER (dashboard): …`, recorded as `user_msg` events, and the
+  command is **not run** (exit 3), so Claude re-plans with the new instruction. Other commands
+  (`say`, `note`, `case`) show pending messages without consuming them, so a chained
+  `say … && tap …` still stops at the tap. Messages sent before `start` are dropped.
+- **Pause.** While `.tnazar/paused` exists a device command waits up to 60 s (under the
+  agent's 2-minute command timeout); if still paused it exits 5 and tells Claude to run
+  `./tnazar wait-resume` (exit 3 if a message arrived during the pause). The wait is logged as a `hold` event.
+- **Fast screen reads.** `uiautomator dump` starts a new process per read (~2 s, unbounded
+  while the app is busy). When the device has the UiAutomator2 server, `start` launches it
+  (`uia2.py`) and every read is an HTTP call to it (~0.05 s, waiting at most 300 ms for the
+  app to settle); waits then poll every 0.15 s. The server and `uiautomator dump` cannot run
+  together, so on a dead server tnazar stops it and falls back, with a warning. A server
+  error while a window changes (Android 14+: `Cannot set AccessibilityNodeInfo's field
+  'mSealed'`) is retried for up to ~3 s first. `stop` shuts the server down.
+- **Fail fast.** `wait A --or B` returns at once (exit 4) when B shows up instead of A.
+  All exit codes: [§11, Exit codes](#exit-codes).
+- **Slow steps.** Any step over 5 s prints `SLOW: <step> took Xs (N screen reads)` as it
+  happens and is listed in the report's *Slow steps* table. A screen read costs ~2 s, so
+  `tests/test_cli.py::DeviceBudgetTest` pins how many reads each command makes. A dump
+  that hangs (the app never goes idle) is cut at 10 s, killed on the device
+  (`pkill -x uiautomator`) and retried.
+- **Token cost per test case.** The real model usage per case — turns, new tokens, cached context re-read — comes from Claude
+  Code's session log for this folder; a case owns the requests since the previous case
+  ended. Shown on the case's line in the timeline and in the report's *Tokens* column.
+- **Narration and timings.** `./tnazar say "…"` records a `say` event, the timeline heading
+  for the steps after it. Every action event carries `dur_ms`; `wait` and `check` add
+  `polls` (screen dumps it took). Steps over 5 s are highlighted.
+- **Secrets.** A value typed in the dashboard stays in the server's memory. Claude is told
+  the name (`UI_OTP`) and types it with `--env UI_OTP`; `type` fetches it from the server
+  with a per-session token (in `.tnazar/ui.json`, mode 600). `tnazar adb` arguments that
+  contain any `.env` value or dashboard secret are logged as `••••`. Masking covers printed output
+  and saved UI trees, not images: a secret typed into a plain (non-password) field is on the
+  device screen, so screenshots can show it.
+- **Secure screens.** The server reads `dumpsys window` and, when an on-screen window has
+  `FLAG_SECURE`, shows *"Screen hidden by the app"* instead of a black frame. This is a
+  capture limit, not a test failure; the timeline keeps going.
+- **Safety.** The server binds `127.0.0.1` only, rejects any `Host` header other than
+  `127.0.0.1:<port>` / `localhost:<port>` (DNS rebinding), needs the session token for every
+  change, and serves files only from inside `runs/`.
+
+Limit: a message reaches Claude only while it is running commands. If its turn has ended,
+the message waits (the dashboard shows *waiting for the agent's next step*).
+
+---
+
+### 15.1 Running a whole plan
+
+*Files: `teesri_nazar/plan.py`, `teesri_nazar/runner.py`*
+
+Driving a test step by step costs a model turn per command, and each turn re-reads the whole
+conversation. `tnazar run <plan>` executes a plan file instead: the same commands, written
+once, run back to back in one process. Claude writes the plan, the user approves it, and
+Claude only looks at the result (or steps in when the user sends a dashboard message).
+
+```
+app com.android.settings
+flow home
+  launch --restart
+  wait "Search Settings"
+end
+case TC-01 "Network & internet opens"
+  run home
+  tap "Network & internet"
+  check "Internet"
+```
+
+- **Checked first.** The whole file is parsed and every step's flags are validated by the
+  CLI's own parser before anything runs; errors name the line. A case without a `check`
+  is rejected (it would end blocked), as is a `check` inside `retry`.
+- **Blocks.** `flow`/`run` reuse steps; `retry N … end` repeats a block until all its steps
+  pass (failed attempts are not recorded); `if "<target>" … else … end` reads the screen
+  once and never fails the case; `if "A" --or "B" --wait 10` keeps reading until A or B shows
+  (or time runs out) and takes the `else` branch unless A is there. Use it to branch:
+  `wait A --or B` fails the case when B shows (exit 4).
+- **Failures.** A failed `check` is recorded and the case goes on. A failed action ends its
+  case (recorded as a failed check naming the line); the run goes on with the next case, or
+  stops with `--stop-on-fail`.
+- **Dashboard.** Pause holds the runner for as long as the user keeps it paused. A message
+  stops the run after the current step, marks the case blocked and leaves the run open
+  (exit 3); `--from <case>` continues in the same run.
+
+## 16. Design decisions and trade-offs
 
 | Decision | Why | Cost |
 |---|---|---|
 | **AI as the tester, tool as the hands** | Planning and judgement are where AI helps; precise, repeatable device I/O and pass/fail rules belong in deterministic code. | Two moving parts to understand. |
-| **ADB + UIAutomator, no Appium** | Nothing to install on the phone, no server, no app changes, works with any installed app. | Limited to what the accessibility tree exposes (§17). |
+| **ADB + UIAutomator, no Appium required** | Nothing to install on the phone, no app changes, works with any installed app. If Appium's UiAutomator2 server is already installed, a run uses it for screen reads (~0.05 s instead of ~2 s) and stops it at the end; without it, `uiautomator dump`. | Limited to what the accessibility tree exposes (§18). |
 | **Python standard library only** | `git clone` and run. No `pip install`, no version conflicts; works on Python 3.9+. | Some things are hand-rolled (dotenv loading, HTML report). |
 | **Text element list, not screenshots, as the agent's eyes** | Exact ids, text and state; cheap in tokens; no pixel guessing. | Can't "see" purely visual problems — hence Figma checks and `--visual`. |
 | **Attribute selectors, not XPath** | Survive layout refactors; readable (`id=btn_pay`). | Need ids/labels to exist; fall back to text otherwise. |
@@ -680,7 +822,7 @@ uses tokens, so it is opt-in.
 
 ---
 
-## 16. How the tool itself is tested
+## 17. How the tool itself is tested
 
 *Files: `tests/`, `.github/workflows/tests.yml`*
 
@@ -692,7 +834,11 @@ A testing tool that needs a phone to be tested is hard to trust in CI. So:
   recording every command — and the clock is patched so waits finish instantly.
 - Unit tests cover the screen parser and selectors, device helpers, run storage, every
   CLI command end to end, the case-result rules, report generation, and replay
-  (faithful replay, regression detection, secret handling).
+  (faithful replay, regression detection, secret handling). Newer suites cover the
+  dashboard and its server (`test_live.py`), fast reads and their fallback
+  (`test_uia2.py`), token cost per case (`test_usage.py`) and plan files
+  (`test_plan.py`: parsing, validation and running). `DeviceBudgetTest` pins how many
+  screen reads each command makes.
 - **GitHub Actions** runs the suite on Python 3.9 and 3.13 on every push and PR — no
   Android SDK needed.
 
@@ -702,7 +848,7 @@ python3 -m unittest discover -s tests
 
 ---
 
-## 17. Limits
+## 18. Limits
 
 - **Jetpack Compose** screens show no `resource-id` unless the app enables
   `testTagsAsResourceId`; selectors fall back to labels and text.
@@ -712,31 +858,43 @@ python3 -m unittest discover -s tests
   screenshots. The element tree still works.
 - **Typing is ASCII-only** (`adb input text`): no ₹, Hindi or emoji.
 - **One device, one active run at a time.**
+- **Dashboard messages wait while Claude is idle** — they are delivered at its next command.
 - **DB / Figma checks are not re-verified on replay** — they appear as notes.
 
 ---
 
-## 18. Code map
+## 19. Code map
 
 ```
 tnazar                      entry script: puts the repo on sys.path, calls cli.main()
 teesri_nazar/
 ├── adb.py        Layer 1   find adb, pick the device, run commands with timeouts
-├── screen.py     Layer 2–3 dump + parse the UI tree; Element, Screen, Selector;
+├── screen.py     Layer 2–3 read + parse the UI tree; Element, Screen, Selector;
 │                           find / find_all / stable_selector
+├── uia2.py       Layer 2   fast reads via the UiAutomator2 server (start/stop, fallback)
 ├── device.py     Layer 4   tap, type (escaping), keys, swipe/scroll vectors, screenshot,
 │                           launch, clear data, deep links, animations, logcat, crashes,
 │                           wait_for (polling)
-├── cli.py        Layer 4–5 every `tnazar` command; target parsing and resolution;
-│                           checks; case start/end and the pass/fail rules; .env loading
+├── cli.py        Layer 4–5 argument parsing and every `tnazar` command's handler
+├── targets.py    Layer 3   targets as typed ("Text", ~partial, id=…, #index, x,y) → on screen
+├── judge.py      Layer 7   ending a case: the pass/fail rules, evidence for failures
+├── env.py                  .env loading; hiding secret values in commands, output, UI trees
+├── commands.py             every command and the event it records (one list for all modules)
+├── errors.py               exceptions the CLI turns into exit codes
 ├── session.py    Layer 6   run folder, run.json, append-only events.jsonl, artifacts,
 │                           the active-run pointer
 ├── report.py     Layer 7   events → cases → summary → report.md + report.html
 ├── replay.py               re-run a recording by selector, re-check UI checks
+├── live.py                 CLI side of the dashboard: inbox, pause, runtime secrets
+├── ui.py / ui.html         `tnazar ui`: localhost server + the three-pane page
+├── usage.py                token cost per test case, from the Claude Code session log
+├── plan.py                 plan files: parse and validate (`tnazar run`)
+├── runner.py               run every case of a plan; hand back on a dashboard message
 └── visual.py               optional screenshot comparison via headless Claude
 CLAUDE.md                   the tester playbook Claude follows
 .claude/skills/test-feature the "test a feature" skill
 .claude/settings.json       permissions + SessionEnd safety hook
+examples/settings.plan      an example plan (your own plans go in plans/, gitignored)
 tests/                      unit tests + fakedevice.py (a fake phone for CI)
 ```
 

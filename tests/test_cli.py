@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from fakedevice import PACKAGE, FakeAdb, FakeApp, fake_device, login_app, node, tnazar
+from teesri_nazar import cli
 from teesri_nazar import report as rpt
 from teesri_nazar.session import Run, get_active
 
@@ -31,6 +32,54 @@ class CliTestCase(unittest.TestCase):
 
     def case_end_event(self, run, case):
         return [e for e in run.events() if e["type"] == "case_end" and e["case"] == case][-1]
+
+
+class ScreenReadTest(CliTestCase):
+    def test_a_hung_screen_read_is_killed_and_retried(self):
+        self.adb.dump_hangs = 1  # the app never went idle, so uiautomator never returned
+        out = self.ok("observe")
+        self.assertIn("Welcome back", out)
+        self.assertIn(["shell", "pkill", "-x", "uiautomator"], self.adb.calls)
+
+
+class ScreenFingerprintTest(CliTestCase):
+    def test_checks_on_the_same_screen_share_a_fingerprint(self):
+        run = self.start()
+        self.ok("check", "Login")
+        self.ok("check", "Welcome back")
+        self.ok("tap", "Login")
+        self.ok("check", "Pay now")
+        sigs = [e["screen_sig"] for e in run.events() if e["type"] == "check"]
+        self.assertEqual(sigs[0], sigs[1])
+        self.assertNotEqual(sigs[1], sigs[2])
+
+
+class SlowStepTest(CliTestCase):
+    def test_step_over_five_seconds_is_flagged_as_it_happens(self):
+        self.start()
+        clock = mock.Mock(side_effect=[0.0, 6.2])  # Ctx created, then the step is logged 6.2 s later
+        with mock.patch.object(cli.time, "monotonic", clock):
+            _, _, err = tnazar("tap", "Login")
+        self.assertIn("SLOW: tap took 6.2s", err)
+
+
+class DeviceBudgetTest(CliTestCase):
+    """Every screen read costs ~2 s on a real device: these counts are a performance budget."""
+
+    def reads(self, *argv):
+        before = len(self.adb.calls)
+        self.ok(*argv)
+        return sum(1 for c in self.adb.calls[before:] if "uiautomator dump" in " ".join(c))
+
+    def test_screen_reads_per_command(self):
+        self.start()
+        self.assertEqual(self.reads("observe"), 1)
+        self.assertEqual(self.reads("check", "Login"), 1)
+        self.assertEqual(self.reads("type", "hello", "--into", "id=phone_input"), 1)
+        self.assertEqual(self.reads("key", "back"), 0)
+        self.assertEqual(self.reads("tap", "Login"), 1)
+        self.assertEqual(self.reads("say", "next"), 0)
+        self.assertEqual(self.reads("shot"), 0)
 
 
 class LifecycleTest(CliTestCase):
@@ -105,6 +154,20 @@ class LifecycleTest(CliTestCase):
         self.adb.foreign_top = "search"
         self.ok("launch", PACKAGE)
         self.assertEqual(self.adb.current, "search")
+
+    def test_tap_waits_a_moment_for_a_screen_that_is_still_changing(self):
+        self.adb.becomes = (2, "home")  # Back was pressed; the previous screen is still on its way out
+        self.ok("tap", "Pay now")
+
+    def test_tap_on_something_that_never_comes_still_fails(self):
+        code, out, _ = tnazar("tap", "Nowhere")
+        self.assertEqual(code, 1)
+        self.assertIn("not found", out)
+
+    def test_debug_build_with_a_second_launcher_opens_the_app_not_the_chooser(self):
+        self.adb.launchers = ["leakcanary.internal.activity.LeakLauncherActivity", ".Main"]
+        out = self.ok("launch", PACKAGE, "--restart")
+        self.assertIn(f"launched {PACKAGE}/.Main", out)
 
     def test_stop_without_run(self):
         self.assertEqual(tnazar("stop")[0], 2)
@@ -437,9 +500,19 @@ class TypeTest(CliTestCase):
             out = self.ok("type", "--env", "APP_MPIN", "--into", "id=mpin_input")
         e = self.last_type()
         self.assertEqual((e["text"], e["secret"], e["env"]), (None, True, "APP_MPIN"))
-        self.assertEqual(self.adb.typed, ["2468"])
+        self.assertEqual(self.adb.typed, list("2468"))
         self.assertNotIn("2468", out)
         self.assertNotIn("2468", self.run.events_path.read_text())
+
+    def test_short_digit_codes_are_typed_one_key_at_a_time(self):
+        # PIN/OTP boxes often drop digits that arrive in one `input text` burst.
+        self.ok("type", "4071", "--into", "id=mpin_input")
+        self.assertEqual(self.adb.typed, ["4", "0", "7", "1"])
+
+    def test_phone_numbers_and_text_still_go_in_one_burst(self):
+        self.ok("type", "9876543210", "--into", "id=phone_input")
+        self.ok("type", "ab12", "--into", "id=phone_input")
+        self.assertEqual(self.adb.typed, ["9876543210", "ab12"])
 
     def test_password_field_is_secret_automatically(self):
         out = self.ok("type", "1357", "--into", "id=mpin_input")
@@ -460,7 +533,7 @@ class TypeTest(CliTestCase):
         with mock.patch.dict(os.environ, {}):
             os.environ.pop("APP_OTP", None)
             self.ok("type", "--env", "APP_OTP")
-        self.assertEqual(self.adb.typed, ["123456"])
+        self.assertEqual(self.adb.typed, list("123456"))
 
     def test_clear_and_enter(self):
         self.ok("type", "hi there", "--into", "id=phone_input", "--clear", "--enter")
@@ -497,6 +570,29 @@ class NavigationTest(CliTestCase):
         self.assertIn("not found", out)
         swipes = [c for c in self.adb.calls if c[:3] == ["shell", "input", "swipe"]]
         self.assertEqual(len(swipes), 2)  # stops once the screen no longer changes
+
+    def test_plain_scroll_does_not_read_the_screen(self):
+        # Reading the screen costs ~2 s per swipe; a scroll with no target has nothing to look for.
+        self.ok("scroll", "down", "--times", "3")
+        dumps = [c for c in self.adb.calls if "uiautomator dump" in " ".join(c)]
+        swipes = [c for c in self.adb.calls if c[:3] == ["shell", "input", "swipe"]]
+        self.assertEqual((len(dumps), len(swipes)), (0, 3))
+
+    def test_gone_check_is_not_fooled_by_a_longer_label(self):
+        # After a failed save the button goes and a "Couldn't save? Try again" message appears.
+        self.adb.app.screens["top"].append(node(desc="Couldn\u2019t save? Try again", bounds=(0, 500, 1080, 600)))
+        self.ok("check", "Save", "--gone", "--timeout", "1")
+
+    def test_wait_stops_at_once_when_an_alternative_shows_up(self):
+        # e.g. waiting for Home after a PIN, while the app is already showing an error
+        code, out, _ = tnazar("wait", "Transaction history", "--or", "Item 1", "--timeout", "15")
+        self.assertEqual(code, 4)
+        self.assertIn('found instead: "Item 1"', out)
+        polls = [c for c in self.adb.calls if "uiautomator dump" in " ".join(c)]
+        self.assertEqual(len(polls), 1)
+
+    def test_wait_with_alternatives_still_succeeds_on_the_main_target(self):
+        self.ok("wait", "Item 1", "--or", "Some error")
 
     def test_wait_timeout(self):
         self.assertEqual(tnazar("wait", "Transaction history", "--timeout", "2")[0], 1)

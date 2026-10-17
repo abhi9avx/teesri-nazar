@@ -3,29 +3,35 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
-import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
+from . import commands
 from . import device as dev
+from . import live
+from . import uia2
 from . import report as rpt
 from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
-from .session import NAME_RE, Run, clear_active, get_active, home, now_iso, runs_dir, set_active, state_dir
+from .env import describe, load_dotenv, mask_xml, redact, secret_values
+from .errors import NotFound, UserError
+from .judge import _end_case, evidence_shot
+from .session import NAME_RE, Run, active_owner, clear_active, get_active, now_iso, runs_dir, set_active, state_dir
+from .targets import _not_found_msg, parse_target, resolve, selector_of
 
 EXIT_FAIL = 1
 EXIT_ERROR = 2
-
-
-class UserError(Exception):
-    pass
-
-
-class NotFound(Exception):
-    pass
+EXIT_INSTEAD = 4  # `wait A --or B`: B showed up, so A is not coming
+# tap / type --into look for their target for this long: right after Back or a tap, the next
+# screen is often not there yet. Costs nothing when the target is already on screen.
+TARGET_WAIT = 3.0
+TIMED = commands.TIMED_EVENTS
+HELD = commands.DEVICE_COMMANDS
 
 
 # ---------------------------------------------------------------- context
@@ -34,6 +40,7 @@ class Ctx:
     def __init__(self, adb: Adb, run: Run | None):
         self.adb = adb
         self.run = run
+        self._mark = time.monotonic()
 
     @classmethod
     def from_args(cls, device_arg: str | None) -> "Ctx":
@@ -45,11 +52,18 @@ class Ctx:
         if self.run:
             if event["type"] in ("check", "note", "shot") and "case" not in event:
                 event["case"] = self.run.current_case()
+            if event["type"] in TIMED:
+                now = time.monotonic()
+                event["dur_ms"] = round((now - self._mark) * 1000)
+                self._mark = now
+                if event["dur_ms"] > rpt.SLOW_MS:
+                    why = f" ({event['polls']} screen reads)" if event.get("polls") else ""
+                    print(f"SLOW: {event['type']} took {event['dur_ms'] / 1000:.1f}s{why}", file=sys.stderr)
             self.run.log(event)
 
     def capture(self) -> scr.Screen:
         screen = scr.capture(self.adb)
-        (state_dir() / "last-screen.xml").write_text(screen.xml)
+        save_xml(state_dir() / "last-screen.xml", screen.xml)
         return screen
 
     def last_screen(self) -> scr.Screen:
@@ -67,76 +81,12 @@ class Ctx:
         return self.run.rel(p) if self.run else str(p)
 
 
-# ---------------------------------------------------------------- targets
-
-_XY = re.compile(r"^(\d+)\s*,\s*(\d+)$")
-
-
-def parse_target(raw: str | None, args: argparse.Namespace) -> tuple[str, object]:
-    """Return ("xy", (x,y)) | ("index", n) | ("selector", Selector)."""
-    nth = getattr(args, "nth", 0) or 0
-    sel = scr.Selector(id=getattr(args, "id", None), desc=getattr(args, "desc", None),
-                       text=getattr(args, "text", None), nth=nth)
-    if raw:
-        if m := _XY.match(raw):
-            return "xy", (int(m.group(1)), int(m.group(2)))
-        if raw.startswith("#") and raw[1:].isdigit():
-            return "index", int(raw[1:])
-        if raw.startswith("~"):
-            sel.text, sel.contains = raw[1:], True
-        elif "=" in raw and raw.split("=", 1)[0] in ("id", "desc", "text"):
-            k, v = raw.split("=", 1)
-            setattr(sel, k, v)
-        else:
-            sel.text = raw
-    if getattr(args, "contains", False):
-        sel.contains = True
-    if sel.is_empty():
-        raise UserError("give a target: \"Text\", ~partial, id=..., desc=..., #index or x,y")
-    return "selector", sel
+def save_xml(path: Path, xml: str) -> None:
+    # A secret typed into a plain field is plain text in the tree.
+    path.write_text(mask_xml(xml))
 
 
-def resolve(ctx: Ctx, raw: str | None, args, timeout: float = 0) -> dict:
-    """Find where to act. Returns {xy, selector, label, element, screen}."""
-    kind, value = parse_target(raw, args)
-    if kind == "xy":
-        return {"xy": value, "selector": None, "label": raw, "element": None, "screen": None}
-    if kind == "index":
-        screen = ctx.last_screen()
-        if value >= len(screen.elements):
-            raise NotFound(f"#{value} is not on the last observed screen")
-        el = screen.elements[value]
-        sel = scr.stable_selector(screen, el)
-    else:
-        sel = value
-        if timeout:
-            ok, screen, el = dev.wait_for(ctx.adb, sel, timeout)
-        else:
-            screen = ctx.capture()
-            el = scr.find(screen, sel)
-        if el is None:
-            raise NotFound(_not_found_msg(sel, screen))
-    label = el.text or el.desc or el.short_id or el.short_cls
-    return {"xy": el.center, "selector": sel.to_dict() or None, "label": label,
-            "element": el, "screen": screen}
-
-
-def _not_found_msg(sel: scr.Selector, screen: scr.Screen) -> str:
-    labels = [e.text or e.desc for e in screen.interesting() if e.text or e.desc]
-    seen = ", ".join(f'"{x}"' for x in dict.fromkeys(labels[:20]))
-    return f"not found: {sel}\nvisible: {seen or '(no labelled elements)'}"
-
-
-def evidence_shot(ctx: Ctx, label: str) -> str | None:
-    """Screenshot for evidence; a screen that blocks capture (FLAG_SECURE) must not lose the result."""
-    try:
-        return ctx.rel(dev.screenshot(ctx.adb, ctx.artifact("shots", label, "png")))
-    except AdbError as exc:
-        print(f"warning: no screenshot ({exc}); the app may block capture on this screen", file=sys.stderr)
-        return None
-
-
-def _screen_size(target: dict, ctx: Ctx) -> list[int]:
+def _screen_size(ctx: Ctx) -> list[int]:
     # The dump's extent is the top window, which is smaller than the display for dialogs.
     return list(ctx.adb.screen_size())
 
@@ -163,7 +113,8 @@ def cmd_packages(args) -> int:
 def cmd_start(args) -> int:
     if not NAME_RE.match(args.name):
         raise UserError("run name must be letters, digits, '-' or '_' (max 64)")
-    if get_active():
+    if active := get_active():
+        refuse_if_owned(active[0])
         finish_run(quiet=True)
     serial = pick_serial(args.device)
     adb = Adb(serial)
@@ -184,6 +135,8 @@ def cmd_start(args) -> int:
         meta["animations_before"] = dev.animations_off(adb)
     run = Run.create(args.name, meta)
     set_active(run, serial)
+    live.mark_all_read()  # messages typed before this run are not instructions for it
+    live.set_paused(False)
     dev.logcat_clear(adb)
     print(f"run: {run.name}  device: {serial} {model}".rstrip())
     print(f"dir: {run.path}")
@@ -195,7 +148,14 @@ def cmd_start(args) -> int:
             print("app data cleared")
     if not args.keep_animations:
         print("animations: off (restored on stop)")
+    print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
     return 0
+
+
+def refuse_if_owned(run: Run) -> None:
+    """Two runs on one device steal the screen from each other: never take over a live one."""
+    if (pid := active_owner()) is not None:
+        raise UserError(f"a run is in progress on this device: {run.name} (pid {pid}); stop it or wait")
 
 
 def finish_run(quiet: bool = False) -> Run | None:
@@ -206,6 +166,7 @@ def finish_run(quiet: bool = False) -> Run | None:
     meta = run.meta()
     try:
         adb = Adb(serial)
+        uia2.stop(adb)
         if meta.get("animations_before"):
             dev.animations_restore(adb, meta["animations_before"])
         if run.current_case():
@@ -215,6 +176,7 @@ def finish_run(quiet: bool = False) -> Run | None:
         print(f"warning: device cleanup skipped: {exc}", file=sys.stderr)
     run.update_meta(finished_at=now_iso())
     clear_active()
+    live.set_paused(False)
     paths = rpt.write(run)
     if not quiet:
         summary = rpt.summarize(run)
@@ -275,11 +237,11 @@ def cmd_observe(args) -> int:
     fg = screen.package or "?"
     print(f"screen: {fg}  "
           f"{len(screen.elements)} elements ({len(shown)} shown)")
+    values = secret_values()
     for e in shown:
-        print(e.describe())
+        print(describe(e, values))
     if ctx.run:
-        dump = ctx.artifact("dumps", args.label or "observe", "xml")
-        dump.write_text(screen.xml)
+        save_xml(ctx.artifact("dumps", args.label or "observe", "xml"), screen.xml)
     if args.shot:
         path = dev.screenshot(ctx.adb, ctx.artifact("shots", args.label or "observe", "png"))
         print(f"shot: {path}")
@@ -295,7 +257,7 @@ def cmd_tap(args) -> int:
     else:
         dev.tap(ctx.adb, x, y)
     ctx.log({"type": "tap", "selector": t["selector"], "xy": [x, y], "label": t["label"],
-             "long": args.long, "screen": _screen_size(t, ctx)})
+             "long": args.long, "screen": _screen_size(ctx)})
     print(f"{'long-pressed' if args.long else 'tapped'} {t['label']!r} at {x},{y}")
     return 0
 
@@ -303,9 +265,11 @@ def cmd_tap(args) -> int:
 def cmd_type(args) -> int:
     ctx = Ctx.from_args(args.device)
     if args.env:
-        if args.env not in os.environ:
-            raise UserError(f"environment variable {args.env} is not set")
-        text = os.environ[args.env]
+        text = os.environ.get(args.env)
+        if text is None:
+            text = live.secret(args.env)
+        if text is None:
+            raise UserError(f"{args.env} is not set in the environment, .env or the dashboard")
     elif args.text is not None:
         text = args.text
     else:
@@ -319,9 +283,9 @@ def cmd_type(args) -> int:
         secret = secret or bool(el and el.password)
         dev.tap(ctx.adb, *target["xy"])
         if args.clear:
-            dev.clear_field(ctx.adb, len(el.text) if el and el.text and not el.password else 40)
+            dev.clear_field(ctx.adb, len(el.text) if el and el.text and not el.password else dev.CLEAR_KEYS)
     elif args.clear:
-        dev.clear_field(ctx.adb, 40)
+        dev.clear_field(ctx.adb, dev.CLEAR_KEYS)
     dev.type_text(ctx.adb, text)
     if args.enter:
         dev.key(ctx.adb, "enter")
@@ -332,7 +296,7 @@ def cmd_type(args) -> int:
         "env": args.env,
         "selector": target["selector"] if target else None,
         "xy": list(target["xy"]) if target else None,
-        "screen": _screen_size(target, ctx) if target else None,
+        "screen": _screen_size(ctx) if target else None,
         "clear": args.clear,
         "enter": args.enter,
     })
@@ -356,25 +320,29 @@ def cmd_key(args) -> int:
 
 
 def cmd_scroll(args) -> int:
+    within = selector_of(args.within) if args.within else None
+    goal = selector_of(args.to, contains=args.contains) if args.to else None
     ctx = Ctx.from_args(args.device)
-    screen = ctx.capture()
-    width, height = ctx.adb.screen_size()
-    area = (0, int(height * 0.15), width, int(height * 0.85))
-    if args.within:
-        container = scr.find(screen, parse_target(args.within, argparse.Namespace())[1])
+    # Only read the screen when there is something to look for or a container to find.
+    sideways = args.direction in ("left", "right")
+    screen = ctx.capture() if args.to or args.within or sideways else None
+    area = dev.scroll_area(screen, args.direction, ctx.adb.screen_size())
+    if within:
+        container = scr.find(screen, within)
         if container is None:
-            raise NotFound(_not_found_msg(parse_target(args.within, argparse.Namespace())[1], screen))
+            raise NotFound(_not_found_msg(within, screen))
         area = container.bounds
     vec = dev.scroll_vector(args.direction, area)
-    goal = parse_target(args.to, argparse.Namespace(contains=args.contains))[1] if args.to else None
     found = None
     for i in range(args.max if goal else args.times):
         if goal and (found := scr.find(screen, goal)):
             break
         dev.swipe(ctx.adb, *vec)
+        if not goal:
+            continue
         before = screen.signature()
         screen = ctx.capture()
-        if goal and screen.signature() == before:
+        if screen.signature() == before:
             break  # reached the end of the list
     if goal and not found:
         found = scr.find(screen, goal)
@@ -384,7 +352,7 @@ def cmd_scroll(args) -> int:
         if not found:
             print(f"scrolled {args.direction}; {goal} not found")
             return EXIT_FAIL
-        print(f"scrolled {args.direction}; found {found.describe()}")
+        print(f"scrolled {args.direction}; found {describe(found)}")
     else:
         print(f"scrolled {args.direction} x{args.times}")
     return 0
@@ -402,17 +370,31 @@ def cmd_swipe(args) -> int:
 def cmd_wait(args) -> int:
     ctx = Ctx.from_args(args.device)
     _, sel = parse_target(args.target, args)
-    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone)
-    ctx.log({"type": "wait", "selector": sel.to_dict(), "gone": args.gone,
-             "timeout": args.timeout, "ok": ok})
+    alts = [selector_of(a) for a in args.alt or []]
+    stats: dict = {}
+    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, alternatives=alts)
+    instead = alts[stats["alternative"]] if "alternative" in stats else None
+    ctx.log({"type": "wait", "selector": sel.to_dict(), "gone": args.gone, "timeout": args.timeout, "ok": ok,
+             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None})
     state = "gone" if args.gone else "visible"
+    if instead:
+        print(f"found instead: {instead} {describe(el)}")
+        return EXIT_INSTEAD
     if ok:
-        print(f"ok: {sel} is {state}" + (f" {el.describe()}" if el else ""))
+        print(f"ok: {sel} is {state}" + (f" {describe(el)}" if el else ""))
         return 0
     print(f"timeout after {args.timeout}s: {sel} not {state}")
     if not args.gone:
         print(_not_found_msg(sel, screen).split("\n", 1)[1])
     return EXIT_FAIL
+
+
+def cmd_wait_online(args) -> int:
+    ctx = Ctx.from_args(args.device)
+    ok = dev.wait_online(ctx.adb, args.timeout, args.host)
+    ctx.log({"type": "wait_online", "ok": ok, "timeout": args.timeout})
+    print("online" if ok else f"still offline after {args.timeout}s")
+    return 0 if ok else EXIT_FAIL
 
 
 def cmd_check(args) -> int:
@@ -430,7 +412,9 @@ def cmd_check(args) -> int:
         return 0 if ok else EXIT_FAIL
 
     _, sel = parse_target(args.target, args)
-    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone)
+    stats: dict = {}
+    # Exact: "successful" must not pass on "Payment unsuccessful". `~text` / --contains stay partial.
+    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, exact=True)
     if ok and el is not None:
         for flag, actual in (("checked", el.checked), ("enabled", el.enabled)):
             want = getattr(args, flag)
@@ -439,12 +423,15 @@ def cmd_check(args) -> int:
     what = args.what or _describe_check(sel, args)
     label = "pass" if ok else "fail"
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
-             "gone": args.gone, "checked": args.checked, "enabled": args.enabled}
+             "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls")}
+    if screen is not None:
+        # Same screen, same fingerprint: the report shows one screenshot for all its checks.
+        event["screen_sig"] = hashlib.sha1(screen.signature().encode()).hexdigest()[:12]
     if shot := evidence_shot(ctx, f"check-{label}"):
         event["shot"] = shot
     if ctx.run and not ok:
         dump = ctx.artifact("dumps", "check-fail", "xml")
-        dump.write_text(screen.xml)
+        save_xml(dump, screen.xml)
         event["dump"] = ctx.rel(dump)
     ctx.log(event)
     print(f"{'PASS' if ok else 'FAIL'} [ui] {what}")
@@ -489,40 +476,6 @@ def cmd_case(args) -> int:
     return 0
 
 
-def _end_case(ctx: Ctx, status: str | None, reason: str | None) -> str:
-    run = ctx.run
-    case = run.current_case()
-    checks = [e for e in rpt.case_events(run.events(), case) if e["type"] == "check"]
-    failed = [c for c in checks if not c["ok"]]
-    package = run.meta().get("package") or None
-    crash = dev.crashes(ctx.adb, package)
-    if status is None:
-        status = "fail" if failed or crash else ("pass" if checks else "blocked")
-        if not reason:
-            if failed:
-                reason = "failed: " + "; ".join(c["what"] for c in failed)
-            elif crash:
-                reason = "app crashed or ANR"
-            elif not checks:
-                reason = "no checks were recorded"
-    elif status == "pass" and (failed or crash):
-        status = "fail"
-        why = f"{len(failed)} failed check(s)" if failed else "app crashed"
-        reason = f"{why}; marked pass by the tester" + (f": {reason}" if reason else "")
-    event = {"type": "case_end", "case": case, "status": status, "reason": reason or ""}
-    if crash:
-        p = ctx.artifact("logs", f"{case}-crash", "txt")
-        p.write_text(crash)
-        event["crash"] = ctx.rel(p)
-    if status in ("fail", "blocked") or crash:
-        shot = evidence_shot(ctx, f"{case}-end")
-        log = ctx.artifact("logs", f"{case}-logcat", "txt")
-        log.write_text(dev.logcat_dump(ctx.adb))
-        event["evidence"] = ([shot] if shot else []) + [ctx.rel(log)]
-    ctx.log(event)
-    return status
-
-
 def cmd_note(args) -> int:
     ctx = Ctx.from_args(args.device)
     ctx.log({"type": "note", "kind": args.kind, "text": args.text})
@@ -535,8 +488,30 @@ def cmd_adb(args) -> int:
     if not args.args:
         raise UserError("usage: tnazar adb <adb args...>")
     proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args])
-    ctx.log({"type": "adb", "args": args.args, "exit": proc.returncode})
-    return proc.returncode
+    ctx.log({"type": "adb", "args": redact(args.args), "exit": proc.returncode})
+    # adb's own code could collide with tnazar's (3 held, 5 paused) and make a plan runner retry forever.
+    return EXIT_FAIL if proc.returncode else 0
+
+
+def cmd_say(args) -> int:
+    ctx_run = get_active()
+    if ctx_run:
+        ctx_run[0].log({"type": "say", "text": args.text})
+    print(f"» {args.text}")
+    return 0
+
+
+def cmd_wait_resume(args) -> int:
+    if live.wait_resume():
+        print("resumed")
+        return 0
+    print("still paused by the user; run `./tnazar wait-resume` again before the next step")
+    return live.EXIT_PAUSED
+
+
+def cmd_ui(args) -> int:
+    from . import ui
+    return ui.serve(args.port, open_browser=not args.no_open)
 
 
 def cmd_report(args) -> int:
@@ -559,6 +534,11 @@ def cmd_runs(args) -> int:
     return 0
 
 
+def cmd_run(args) -> int:
+    from . import runner
+    return runner.run(args)
+
+
 def cmd_replay(args) -> int:
     from . import replay
     return replay.run(args)
@@ -575,7 +555,7 @@ def _add_selector_flags(p: argparse.ArgumentParser, target_help: str) -> None:
     p.add_argument("--nth", type=int, default=0, help="pick the n-th match (0-based)")
 
 
-TARGET_HELP = '"Text" | ~partial | id=btn_x | desc=Label | #index (from observe) | x,y'
+TARGET_HELP = '"Text" | ~partial | id=btn_x | desc=Label | #index (from observe) | x%%,y%% (same spot on any screen) | x,y'
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -620,7 +600,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("tap", cmd_tap, "tap an element")
     _add_selector_flags(p, TARGET_HELP)
     p.add_argument("--long", action="store_true", help="long-press")
-    p.add_argument("--wait", type=float, default=0, metavar="SEC", help="wait up to SEC for the element")
+    p.add_argument("--wait", type=float, default=TARGET_WAIT, metavar="SEC",
+                   help=f"wait up to SEC for the element (default {TARGET_WAIT:g}: a screen may still be changing)")
 
     p = add("type", cmd_type, "type text, optionally into a field")
     p.add_argument("text", nargs="?")
@@ -633,7 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--enter", action="store_true", help="press enter afterwards")
     p.add_argument("--secret", action="store_true", help="do not record the value")
     p.add_argument("--env", metavar="VAR", help="read the value from an environment variable")
-    p.add_argument("--wait", type=float, default=0, metavar="SEC")
+    p.add_argument("--wait", type=float, default=TARGET_WAIT, metavar="SEC")
 
     p = add("key", cmd_key, "press keys: back, home, enter, tab, del, ... or a keycode")
     p.add_argument("keys", nargs="+")
@@ -643,18 +624,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--to", metavar="TARGET", help="keep scrolling until this is visible")
     p.add_argument("--contains", action="store_true")
     p.add_argument("--within", metavar="TARGET", help="scroll inside this container")
-    p.add_argument("--max", type=int, default=10, help="max swipes when using --to")
+    p.add_argument("--max", type=int, default=dev.SCROLL_MAX, help="max swipes when using --to")
     p.add_argument("--times", type=int, default=1, help="swipes when not using --to")
 
     p = add("swipe", cmd_swipe, "raw swipe between two points")
     for n in ("x1", "y1", "x2", "y2"):
         p.add_argument(n, type=int)
-    p.add_argument("--ms", type=int, default=350)
+    p.add_argument("--ms", type=int, default=dev.SWIPE_MS)
 
     p = add("wait", cmd_wait, "wait until an element appears (or is gone)")
     _add_selector_flags(p, TARGET_HELP)
+    p.add_argument("--or", dest="alt", action="append", metavar="TARGET",
+                   help="stop at once if this appears instead (exit 4), e.g. an error message")
     p.add_argument("--gone", action="store_true")
     p.add_argument("--timeout", type=float, default=15)
+
+    p = add("wait-online", cmd_wait_online, "wait until the device can reach the internet")
+    p.add_argument("--timeout", type=float, default=30)
+    p.add_argument("--host", default="8.8.8.8")
 
     p = add("check", cmd_check, "record a verification (UI by selector, or a manual DB/Figma/API result)")
     _add_selector_flags(p, TARGET_HELP)
@@ -688,10 +675,25 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("adb", cmd_adb, "run a raw adb command on the device (recorded)")
     p.add_argument("args", nargs=argparse.REMAINDER)
 
+    p = add("say", cmd_say, "narrate what you are about to do (shown in the dashboard timeline)")
+    p.add_argument("text")
+    add("wait-resume", cmd_wait_resume, f"wait up to {int(live.PAUSE_WAIT)}s for the user to resume a paused run")
+    p = add("ui", cmd_ui, "live dashboard on localhost: screen, timeline, messages to the agent")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-open", action="store_true", help="do not open the browser")
+
     p = add("report", cmd_report, "(re)write the report for a run")
     p.add_argument("run", nargs="?")
     p = add("runs", cmd_runs, "list recent runs")
     p.add_argument("--last", type=int, default=10)
+
+    p = add("run", cmd_run, "run every case of a plan file (see teesri_nazar/plan.py for the format)")
+    p.add_argument("plan")
+    p.add_argument("--only", metavar="IDS", help="run only these cases, e.g. TC-02,TC-05")
+    p.add_argument("--from", dest="from_", metavar="ID", help="start at this case")
+    p.add_argument("--stop-on-fail", action="store_true", help="stop at the first case that does not pass")
+    # Also accepted after `run`, where people type it; SUPPRESS keeps a value given before the command.
+    p.add_argument("--device", "-s", default=argparse.SUPPRESS, help="device serial to run the plan on")
 
     p = add("replay", cmd_replay, "re-run a recorded run on a device and re-check every verification")
     p.add_argument("run")
@@ -709,23 +711,20 @@ def _bool(v: str) -> bool:
     raise argparse.ArgumentTypeError("expected true or false")
 
 
-def load_dotenv() -> None:
-    """KEY=VALUE lines from ./.env, without overriding the real environment."""
-    f = home() / ".env"
-    if not f.exists():
-        return
-    for line in f.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     load_dotenv()
     try:
-        return args.fn(args) or 0
+        active = get_active() if args.cmd in HELD else None
+        if active and (held := _hold(active[0])) is not None:
+            return held
+        try:
+            return args.fn(args) or 0
+        finally:
+            # Shown, not consumed: the next device command is still held until the agent re-plans.
+            if get_active():
+                for m in live.unread():
+                    print(f">> USER (dashboard, pending): {m['text']}")
     except NotFound as exc:
         print(str(exc))
         return EXIT_FAIL
@@ -734,6 +733,27 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_ERROR
     except KeyboardInterrupt:
         return 130
+
+
+def _hold(run: Run) -> int | None:
+    """Stop a device command when the user paused the run or left a message it has not seen."""
+    if live.paused():
+        print(f"|| paused from the dashboard; waiting up to {int(live.PAUSE_WAIT)}s for resume")
+        began = time.monotonic()
+        resumed = live.wait_resume()
+        run.log({"type": "hold", "reason": "paused", "resumed": resumed,
+                 "waited_ms": round((time.monotonic() - began) * 1000)})
+        if not resumed:
+            told = live.deliver(run.log)
+            print("PAUSED: the user paused this run. Command NOT run. "
+                  "Run `./tnazar wait-resume` until it prints `resumed`, then continue.")
+            return live.EXIT_HELD if told else live.EXIT_PAUSED
+        print("resumed")
+    if live.deliver(run.log):
+        print("Command NOT run: read the user's message above and decide the next step "
+              "(re-run the command if it still applies).")
+        return live.EXIT_HELD
+    return None
 
 
 if __name__ == "__main__":

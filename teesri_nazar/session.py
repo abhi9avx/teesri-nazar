@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,8 +120,48 @@ def _active_file() -> Path:
     return state_dir() / "active.json"
 
 
+def process_started(pid: int) -> str:
+    """The process's start time as `ps` prints it ("" if unknown): tells a reused pid apart."""
+    try:
+        with subprocess.Popen(["ps", "-o", "lstart=", "-p", str(pid)], text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as ps:
+            out, _ = ps.communicate(timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.strip()
+
+
+def _alive(owner: dict) -> bool:
+    try:
+        os.kill(owner["pid"], 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    started = process_started(owner["pid"])
+    return not (owner.get("started") and started and started != owner["started"])
+
+
 def set_active(run: Run, serial: str) -> None:
-    _active_file().write_text(json.dumps({"run": str(run.path), "device": serial}) + "\n")
+    owner = {"pid": os.getpid(), "started": process_started(os.getpid())}
+    _active_file().write_text(json.dumps({"run": str(run.path), "device": serial, "owner": owner}) + "\n")
+
+
+def claim_active() -> None:
+    """Make this process the owner of the active run (a plan run picked up again)."""
+    if active := get_active():
+        set_active(*active)
+
+
+def active_owner() -> int | None:
+    """The pid of another live process driving the active run, or None if nobody else is."""
+    f = _active_file()
+    if not f.exists():
+        return None
+    owner = json.loads(f.read_text()).get("owner")
+    if not owner or owner["pid"] == os.getpid() or not _alive(owner):
+        return None
+    return owner["pid"]
 
 
 def get_active() -> tuple[Run, str] | None:
