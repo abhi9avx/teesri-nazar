@@ -26,9 +26,10 @@ PNG = b"\x89PNG\r\n\x1a\nfake"
 
 
 def node(id: str = "", text: str = "", desc: str = "", bounds=(0, 0, 100, 100), cls: str = "android.widget.TextView",
-         clickable: bool = True, enabled: bool = True, checked: bool = False, password: bool = False) -> dict:
+         clickable: bool = True, enabled: bool = True, checked: bool = False, password: bool = False,
+         scrollable: bool = False) -> dict:
     return dict(id=id, text=text, desc=desc, bounds=bounds, cls=cls, clickable=clickable,
-                enabled=enabled, checked=checked, password=password)
+                enabled=enabled, checked=checked, password=password, scrollable=scrollable)
 
 
 def screen_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> str:
@@ -40,6 +41,7 @@ def screen_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> 
             "content-desc": n["desc"], "clickable": str(n["clickable"]).lower(),
             "enabled": str(n["enabled"]).lower(), "checked": str(n["checked"]).lower(),
             "password": str(n["password"]).lower(), "bounds": f"[{l},{t}][{r},{b}]",
+            "scrollable": str(n.get("scrollable", False)).lower(),
         }
         return " ".join(f"{k}={quoteattr(v)}" for k, v in pairs.items())
 

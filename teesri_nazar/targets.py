@@ -11,16 +11,22 @@ from . import screen as scr
 from .errors import NotFound, UserError
 
 _XY = re.compile(r"^(\d+)\s*,\s*(\d+)$")
+_PCT = re.compile(r"^(\d+(?:\.\d+)?)%\s*,\s*(\d+(?:\.\d+)?)%$")
 
 
 def parse_target(raw: str | None, args: argparse.Namespace) -> tuple[str, object]:
-    """Return ("xy", (x,y)) | ("index", n) | ("selector", Selector)."""
+    """Return ("xy", (x,y)) | ("pct", (x%,y%)) | ("index", n) | ("selector", Selector)."""
     nth = getattr(args, "nth", 0) or 0
     sel = scr.Selector(id=getattr(args, "id", None), desc=getattr(args, "desc", None),
                        text=getattr(args, "text", None), nth=nth)
     if raw:
         if m := _XY.match(raw):
             return "xy", (int(m.group(1)), int(m.group(2)))
+        if m := _PCT.match(raw):
+            pct = (float(m.group(1)), float(m.group(2)))
+            if max(pct) > 100:
+                raise UserError(f"{raw}: a screen position is 0%-100% across, 0%-100% down")
+            return "pct", pct
         if raw.startswith("#") and raw[1:].isdigit():
             return "index", int(raw[1:])
         if raw.startswith("~"):
@@ -50,6 +56,11 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
     kind, value = parse_target(raw, args)
     if kind == "xy":
         return {"xy": value, "selector": None, "label": raw, "element": None, "screen": None}
+    if kind == "pct":
+        # For an element with no label: the same spot on any screen size.
+        width, height = ctx.adb.screen_size()
+        xy = (round(width * value[0] / 100), round(height * value[1] / 100))
+        return {"xy": xy, "selector": None, "label": raw, "element": None, "screen": None}
     if kind == "index":
         screen = ctx.last_screen()
         if value >= len(screen.elements):

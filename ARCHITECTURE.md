@@ -368,10 +368,10 @@ flowchart LR
 
 | Command | What it does under the hood |
 |---|---|
-| `tap` | Find → center → `input tap`. `--long` = a swipe that doesn't move for 800 ms. |
+| `tap` | Find → center → `input tap`. `--long` = a swipe that doesn't move for 800 ms. A target `x%,y%` (for an element with no label) is converted to pixels on the current screen and recorded with its size, so replay on another phone lands on the same spot. |
 | `type` | Optionally tap the field (`--into`), clear it (`--clear`: move cursor to end, then backspace N times), then `input text`. Spaces and shell-special characters are escaped. ASCII only. Short all-digit values (≤ 8 digits: OTPs, PINs) go one digit at a time, because segmented PIN boxes drop digits that arrive in one burst. |
 | `key` | Named key → Android keycode (`back`=4, `enter`=66, …) → `input keyevent`. |
-| `scroll` | Swipe 30% of the area from the middle. `down` *reveals what's below* (finger moves up). `--to X` repeats until X is visible, and stops early if the screen stops changing (end of list). |
+| `scroll` | Swipe 30% of the area from the middle. `down` *reveals what's below* (finger moves up). `--to X` repeats until X is visible, and stops early if the screen stops changing (end of list). `left`/`right` swipe inside the screen's horizontal scroller (a tab bar, a carousel) when there is one, so plans need no coordinates. |
 | `swipe` | Raw coordinates. Screen size is recorded so replay can scale it. |
 | `launch` | Resolve the app's launcher activity and start it. Plain `launch` resumes the app where it was; `--restart` force-stops first, `--fresh` also clears data, and both start with `NEW_TASK\|CLEAR_TASK` so activities left in the task (including other packages' ones) are dropped. |
 | `open-url` | Fire a VIEW intent — for deep links. |

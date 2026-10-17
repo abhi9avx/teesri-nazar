@@ -52,12 +52,14 @@ Observe once, then act — `observe` costs one UI dump (~2–3 s); `tap #index` 
 ./tnazar tap id=btn_pay                # resource-id (short form)
 ./tnazar tap desc="Navigate up"        # accessibility label
 ./tnazar tap '#12'                     # index from the last observe (no new dump)
-./tnazar tap 540,1860                  # coordinates: last resort only
+./tnazar tap 9%,6%                     # no label at all (an icon): same spot on any screen size
+./tnazar tap 540,1860                  # pixel coordinates: last resort, breaks on other screen sizes
 ./tnazar tap "Continue" --wait 10      # wait longer for it (tap and type --into wait 3 s by default)
 ./tnazar type "9876543210" --into id=phone_input --clear
 ./tnazar type --env APP_MPIN --into id=mpin_input   # secret: never recorded
 ./tnazar key back | enter | home
 ./tnazar scroll down --to "Transaction history"
+./tnazar scroll right --to "Loans"       # left/right swipe inside the tab bar or carousel it finds
 ./tnazar wait "Payment successful" --timeout 20
 ./tnazar wait "Home" --or "~try again"   # stops at once if the error shows instead (exit 4)
 ./tnazar launch [--restart|--fresh]     # app from the run; open-url <deeplink>

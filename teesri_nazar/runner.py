@@ -58,7 +58,8 @@ def run(args) -> int:
     path = os.path.realpath(args.plan)
     active = get_active()
     if not (active and active[0].meta().get("plan") == path):
-        code, out = call(["start", p.name, "--package", p.app, "--prompt", f"plan {os.path.basename(path)}"])
+        device = ["--device", args.device] if getattr(args, "device", None) else []
+        code, out = call([*device, "start", p.name, "--package", p.app, "--prompt", f"plan {os.path.basename(path)}"])
         if code:
             why = "; ".join(ln.strip().removeprefix("error: ") for ln in out.splitlines() if ln.strip())
             print(f"setup error: {why or 'tnazar start failed'}", file=sys.stderr)

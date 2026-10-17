@@ -316,11 +316,10 @@ def cmd_scroll(args) -> int:
     within = selector_of(args.within) if args.within else None
     goal = selector_of(args.to, contains=args.contains) if args.to else None
     ctx = Ctx.from_args(args.device)
-    # Each read costs ~2 s; only read when there is something to look for or a container to find.
-    screen = ctx.capture() if args.to or args.within else None
-    width, height = ctx.adb.screen_size()
-    top, bottom = dev.SCROLL_AREA
-    area = (0, int(height * top), width, int(height * bottom))
+    # Only read the screen when there is something to look for or a container to find.
+    sideways = args.direction in ("left", "right")
+    screen = ctx.capture() if args.to or args.within or sideways else None
+    area = dev.scroll_area(screen, args.direction, ctx.adb.screen_size())
     if within:
         container = scr.find(screen, within)
         if container is None:
@@ -549,7 +548,7 @@ def _add_selector_flags(p: argparse.ArgumentParser, target_help: str) -> None:
     p.add_argument("--nth", type=int, default=0, help="pick the n-th match (0-based)")
 
 
-TARGET_HELP = '"Text" | ~partial | id=btn_x | desc=Label | #index (from observe) | x,y'
+TARGET_HELP = '"Text" | ~partial | id=btn_x | desc=Label | #index (from observe) | x%%,y%% (same spot on any screen) | x,y'
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -686,6 +685,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--only", metavar="IDS", help="run only these cases, e.g. TC-02,TC-05")
     p.add_argument("--from", dest="from_", metavar="ID", help="start at this case")
     p.add_argument("--stop-on-fail", action="store_true", help="stop at the first case that does not pass")
+    # Also accepted after `run`, where people type it; SUPPRESS keeps a value given before the command.
+    p.add_argument("--device", "-s", default=argparse.SUPPRESS, help="device serial to run the plan on")
 
     p = add("replay", cmd_replay, "re-run a recorded run on a device and re-check every verification")
     p.add_argument("run")

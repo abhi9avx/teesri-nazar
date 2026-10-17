@@ -90,8 +90,9 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
         x2, y2 = _scale(e["to"], e.get("screen"), size)
         dev.swipe(adb, x1, y1, x2, y2, e.get("ms", dev.SWIPE_MS))
     elif t == "scroll":
-        area = (0, int(size[1] * dev.SCROLL_AREA[0]), size[0], int(size[1] * dev.SCROLL_AREA[1]))
-        vec = dev.scroll_vector(e["direction"], area)
+        sideways = e["direction"] in ("left", "right")
+        vec = dev.scroll_vector(e["direction"], dev.scroll_area(scr.capture(adb) if sideways else None,
+                                                                e["direction"], size))
         if e.get("to"):
             sel = scr.Selector.from_dict(e["to"])
             for _ in range(dev.SCROLL_MAX):

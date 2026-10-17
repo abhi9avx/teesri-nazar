@@ -90,6 +90,18 @@ def swipe(adb: Adb, x1: int, y1: int, x2: int, y2: int, ms: int = SWIPE_MS) -> N
     adb.shell("input", "swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
 
 
+def scroll_area(screen: scr.Screen | None, direction: str, size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Where a scroll swipes: for left/right the screen's horizontal scroller (a tab bar,
+    a carousel), wherever it sits on this screen size; otherwise the middle band."""
+    if direction in ("left", "right") and screen is not None:
+        for e in screen.elements:
+            l, t, r, b = e.bounds
+            if e.scrollable and ("Horizontal" in e.cls or (r - l) > 3 * (b - t)):
+                return e.bounds
+    top, bottom = SCROLL_AREA
+    return 0, int(size[1] * top), size[0], int(size[1] * bottom)
+
+
 def scroll_vector(direction: str, area: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
     """Finger path that moves content in `direction` ("down" reveals what is below)."""
     l, t, r, b = area

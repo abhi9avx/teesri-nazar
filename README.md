@@ -198,6 +198,12 @@ the panes stack.
 
 ## Good to know
 
+- **Plans work on any screen size** when they use labels. `scroll left/right` swipes inside the
+  screen's own tab bar or carousel (tnazar finds it), and an element with no label at all can be
+  tapped by position relative to the screen: `tap 9%,6%`. Avoid pixel coordinates (`tap 95,147`).
+- **More than one device connected** (a phone and an emulator): name the one to use, before or
+  after the command: `./tnazar run plans/x.plan --device <serial>` (`./tnazar devices` lists them).
+
 - **Run it from the repo root.** `tnazar` reads `.env` and writes `runs/` and `.tnazar/` in the
   folder you run it from (or in `$TNAZAR_HOME` if set).
 - **It changes a device setting during a run.** `start` sets the device's three animation

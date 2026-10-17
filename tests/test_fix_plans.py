@@ -147,3 +147,31 @@ case TC-01 "branch"
         run = get_active()[0]
         self.assertEqual(self.cases(run), {"TC-01": "blocked"})
         self.assertTrue(any(e["type"] == "user_msg" for e in run.events()))
+
+
+class DeviceChoiceTest(PlanRunBase):
+    def test_run_starts_on_the_device_named_with_device(self):
+        # With a phone and an emulator both connected, `--device` must reach `start`.
+        from fakedevice import SERIAL
+        picked = []
+
+        def pick(explicit=None):
+            picked.append(explicit)
+            return SERIAL
+        with mock.patch.object(cli, "pick_serial", pick):
+            self.run_plan('''
+case TC-01 "on the chosen device"
+  check Login
+''', "--device", "phone-1")
+        self.assertEqual(picked[0], "phone-1")
+
+    def test_device_can_also_come_before_the_command(self):
+        from fakedevice import SERIAL
+        picked = []
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(LOGIN + "\ncase TC-01 \"x\"\n  check Login\n")
+        with mock.patch.object(cli, "pick_serial", lambda explicit=None: picked.append(explicit) or SERIAL):
+            code, out, err = tnazar("--device", "phone-2", "run", path)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(picked[0], "phone-2")
