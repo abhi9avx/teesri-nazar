@@ -37,7 +37,12 @@ def build_cases(events: list[dict]) -> list[dict]:
             current = {"id": e["case"], "title": e.get("title", ""), "status": "running",
                        "reason": "", "events": [], "start": e["t"], "end": None,
                        "evidence": [], "crash": None}
-            cases.append(current)
+            # A re-run of the same case replaces the earlier attempt, in its original position.
+            prior = next((i for i, c in enumerate(cases) if c["id"] == current["id"]), None)
+            if prior is None:
+                cases.append(current)
+            else:
+                cases[prior] = current
         elif e["type"] == "case_end" and current:
             current.update(status=e["status"], reason=e.get("reason", ""), end=e["t"],
                            evidence=e.get("evidence", []), crash=e.get("crash"))

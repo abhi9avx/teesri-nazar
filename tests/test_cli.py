@@ -180,6 +180,18 @@ class CaseResultTest(CliTestCase):
         self.ok("check", "Welcome back")
         self.assertEqual(self.end()["status"], "pass")
 
+    def test_rerun_case_is_counted_once_with_its_latest_result(self):
+        tnazar("check", "Dashboard", "--timeout", "1")
+        self.end()
+        self.ok("case", "start", "TC-01", "Login again")
+        self.ok("check", "Welcome back")
+        self.end()
+        s = rpt.summarize(self.run)
+        self.assertEqual([(c["id"], c["status"], c["title"]) for c in s["cases"]],
+                         [("TC-01", "pass", "Login again")])
+        self.assertEqual((s["counts"]["pass"], s["counts"]["fail"]), (1, 0))
+        self.assertEqual((s["checks_total"], s["checks_failed"]), (1, 0))
+
     def test_case_end_without_open_case(self):
         self.end()
         self.assertEqual(tnazar("case", "end")[0], 2)
