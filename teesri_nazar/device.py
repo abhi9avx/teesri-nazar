@@ -179,11 +179,18 @@ def crashes(adb: Adb, package: str | None = None) -> str:
 def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
              interval: float = 0.4) -> tuple[bool, scr.Screen, scr.Element | None]:
     deadline = time.monotonic() + timeout
+    screen = el = None
     while True:
-        screen = scr.capture(adb)
-        el = scr.find(screen, sel)
-        if (el is None) == gone:
-            return True, screen, el
+        try:
+            screen = scr.capture(adb)
+        except AdbError:
+            # Animating screens fail the dump transiently; only a dump that never works is an error.
+            if time.monotonic() >= deadline and screen is None:
+                raise
+        else:
+            el = scr.find(screen, sel)
+            if (el is None) == gone:
+                return True, screen, el
         if time.monotonic() >= deadline:
             return False, screen, el
         time.sleep(interval)

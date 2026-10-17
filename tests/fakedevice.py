@@ -96,6 +96,7 @@ class FakeAdb:
                          "animator_duration_scale": "1.0"}
         self.crash_log = ""
         self.secure = False  # FLAG_SECURE screen: screencap yields no PNG
+        self.dump_failures = 0  # next N dumps fail like an animating screen
         self.typed: list[str] = []
         self.taps: list[tuple[int, int]] = []
         self.calls: list[list[str]] = []
@@ -115,6 +116,9 @@ class FakeAdb:
     def exec_out(self, command: str, timeout: float = 60) -> bytes:
         self.calls.append(["exec-out", command])
         if "uiautomator dump" in command:
+            if self.dump_failures:
+                self.dump_failures -= 1
+                return b"ERROR: could not get idle state."
             return screen_xml(self.nodes(), self.size).encode()
         if command.startswith("screencap"):
             return b"" if self.secure else PNG
@@ -212,7 +216,7 @@ class FakeClock:
 @contextlib.contextmanager
 def fake_device(adb: FakeAdb):
     """Patch tnazar to use `adb` and a temp TNAZAR_HOME; yields the home directory."""
-    from teesri_nazar import device, replay
+    from teesri_nazar import device, replay, screen
 
     clock = FakeClock()
     with tempfile.TemporaryDirectory() as home, contextlib.ExitStack() as stack:
@@ -224,6 +228,7 @@ def fake_device(adb: FakeAdb):
                                               lambda: [mock.Mock(serial=SERIAL, state="device", model="FakePhone")]))
         stack.enter_context(mock.patch.object(device, "time", clock))
         stack.enter_context(mock.patch.object(replay, "time", clock))
+        stack.enter_context(mock.patch.object(screen, "time", clock))
         yield home
 
 

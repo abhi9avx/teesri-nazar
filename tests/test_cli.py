@@ -253,6 +253,17 @@ class UiCheckTest(CliTestCase):
         self.assertEqual(len(e["evidence"]), 1)
         self.assertTrue(e["evidence"][0].endswith(".txt"))
 
+    def test_check_rides_out_dump_failures_within_its_timeout(self):
+        self.adb.dump_failures = 4  # more than one capture's own retries
+        out = self.ok("check", "Welcome back", "--timeout", "20")
+        self.assertIn("PASS [ui]", out)
+
+    def test_dump_that_never_succeeds_is_still_an_error(self):
+        self.adb.dump_failures = 1000
+        code, _, err = tnazar("wait", "Welcome back", "--timeout", "5")
+        self.assertEqual(code, 2)
+        self.assertIn("could not get idle state", err)
+
     def test_waits_for_element_to_appear(self):
         # Element appears only after the device moves to home; the check polls until then.
         original = self.adb.exec_out
