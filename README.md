@@ -133,6 +133,8 @@ CLAUDE.md               ← how the AI tester should work
 testdata.example.yaml   ← accounts, env, DB, Figma: copy to testdata.yaml (gitignored)
 runs/                   ← one folder per run: events, screenshots, logs, report (gitignored)
 tests/                  ← unit tests:  python3 -m unittest discover -s tests
+                           (fakedevice.py stands in for adb, so tests and CI need no phone)
+.github/workflows/      ← CI: runs the tests on Python 3.9 and 3.13 for every push
 ```
 
 ---
