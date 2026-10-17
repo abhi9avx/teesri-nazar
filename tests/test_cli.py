@@ -155,6 +155,15 @@ class LifecycleTest(CliTestCase):
         self.ok("launch", PACKAGE)
         self.assertEqual(self.adb.current, "search")
 
+    def test_tap_waits_a_moment_for_a_screen_that_is_still_changing(self):
+        self.adb.becomes = (2, "home")  # Back was pressed; the previous screen is still on its way out
+        self.ok("tap", "Pay now")
+
+    def test_tap_on_something_that_never_comes_still_fails(self):
+        code, out, _ = tnazar("tap", "Nowhere")
+        self.assertEqual(code, 1)
+        self.assertIn("not found", out)
+
     def test_debug_build_with_a_second_launcher_opens_the_app_not_the_chooser(self):
         self.adb.launchers = ["leakcanary.internal.activity.LeakLauncherActivity", ".Main"]
         out = self.ok("launch", PACKAGE, "--restart")

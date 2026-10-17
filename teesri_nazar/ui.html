@@ -222,6 +222,8 @@ function describe(e) {
     case "shot": return ["📸", `Screenshot ${e.label || ""}`];
     case "note": return [e.kind === "bug" ? "🐞" : "📝", `${e.kind}: ${e.text}`];
     case "adb": return ["🛠", `adb ${(e.args || []).join(" ")}`, `exit ${e.exit}`];
+    case "if": return ["🔀", `If "${e.target}" is on screen → ${e.found ? "yes" : "no"}`];
+    case "wait_online": return [e.ok ? "📶" : "📵", e.ok ? "Device back online" : `Still offline after ${e.timeout}s`];
     case "hold": return ["⏸", `Held by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : "; agent told to wait-resume"}`];
     default: return ["•", e.type];
   }

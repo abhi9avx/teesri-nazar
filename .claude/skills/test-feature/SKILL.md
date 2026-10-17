@@ -16,9 +16,10 @@ Follow `CLAUDE.md` (the playbook). In short:
 3. **Plan.** Numbered cases `TC-NN` with steps, expected result and verification type
    (ui / db / figma), plus added edge cases and an explicit "not testing" list.
    Wait for approval unless the user said to go ahead.
-4. **Run.** `./tnazar start <name> --package <pkg> --prompt "<request>"`, then per case:
-   `case start` → `say` + actions → `check`s → `case end`. Narrate each step with
-   `./tnazar say`, and act on any `>> USER (dashboard)` / `PAUSED` output (CLAUDE.md §Live dashboard). Keep going after a failure; a failed
+4. **Run.** Explore the screens the cases touch (`observe`), write `plans/<name>.plan`
+   (format: `teesri_nazar/plan.py`, example `examples/settings.plan`), then
+   `./tnazar run plans/<name>.plan` in the background. Exit 3 means the user sent a
+   dashboard message: act on it, then `--from <case>`. Re-run one case with `--only`. Keep going after a failure; a failed
    case doesn't stop the run. If a precondition breaks (login, backend down), mark the
    dependent cases `blocked` with the reason.
 5. **Finish.** `./tnazar stop`, then report in chat: summary line, case table

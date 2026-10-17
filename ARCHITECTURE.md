@@ -26,7 +26,7 @@ an engineer can use it as the design reference.
 12. [The brain — how Claude decides](#12-the-brain--how-claude-decides)
 13. [One request, end to end](#13-one-request-end-to-end)
 14. [Replay — running a recording again](#14-replay--running-a-recording-again)
-15. [The live dashboard](#15-the-live-dashboard)
+15. [The live dashboard](#15-the-live-dashboard) (15.1 running a whole plan)
 16. [Design decisions and trade-offs](#16-design-decisions-and-trade-offs)
 17. [How the tool itself is tested](#17-how-the-tool-itself-is-tested)
 18. [Limits](#18-limits)
@@ -741,6 +741,40 @@ Limit: a message reaches Claude only while it is running commands. If its turn h
 the message waits (the dashboard shows *waiting for the agent's next step*).
 
 ---
+
+### 15.1 Running a whole plan
+
+*Files: `teesri_nazar/plan.py`, `teesri_nazar/runner.py`*
+
+Driving a test step by step costs a model turn per command, and each turn re-reads the whole
+conversation. `tnazar run <plan>` executes a plan file instead: the same commands, written
+once, run back to back in one process. Claude writes the plan, the user approves it, and
+Claude only looks at the result (or steps in when the user sends a dashboard message).
+
+```
+app com.android.settings
+flow home
+  launch --restart
+  wait "Search Settings"
+end
+case TC-01 "Network & internet opens"
+  run home
+  tap "Network & internet"
+  check "Internet"
+```
+
+- **Checked first.** The whole file is parsed and every step's flags are validated by the
+  CLI's own parser before anything runs; errors name the line. A case without a `check`
+  is rejected (it would end blocked), as is a `check` inside `retry`.
+- **Blocks.** `flow`/`run` reuse steps; `retry N … end` repeats a block until all its steps
+  pass (failed attempts are not recorded); `if "<target>" … else … end` reads the screen
+  once and never fails the case.
+- **Failures.** A failed `check` is recorded and the case goes on. A failed action ends its
+  case (recorded as a failed check naming the line); the run goes on with the next case, or
+  stops with `--stop-on-fail`.
+- **Dashboard.** Pause holds the runner for as long as the user keeps it paused. A message
+  stops the run after the current step, marks the case blocked and leaves the run open
+  (exit 3); `--from <case>` continues in the same run.
 
 ## 16. Design decisions and trade-offs
 

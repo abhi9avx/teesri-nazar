@@ -109,6 +109,7 @@ Login with the test user and verify the home screen loads.
 | `./tnazar check "Payment successful"` | Verify something is on screen |
 | `./tnazar case start TC-01 "title"` / `case end` | Group steps into a test case |
 | `./tnazar stop` | Finish and write the report |
+| `./tnazar run plans/x.plan` | Run every case of a plan file in one go (no AI turn per step) |
 | `./tnazar ui` | Live dashboard: screen, timeline, messages to Claude |
 | `./tnazar say "Opening login"` | Narrate the next step (timeline heading) |
 | `./tnazar replay <name>` | Run a recorded test again |
@@ -166,6 +167,7 @@ Full command list: `./tnazar --help`, and `./tnazar <command> --help` for each o
 tnazar                  ← the command
 teesri_nazar/           ← Python code (adb, screen, session, report, replay, live dashboard)
 ARCHITECTURE.md         ← HLD: how every layer works, with diagrams
+examples/settings.plan  ← an example plan file (your own plans go in plans/, gitignored)
 CLAUDE.md               ← how the AI tester should work
 .claude/skills/         ← "test-feature" skill
 .env.example            ← secrets template: copy to .env (gitignored)

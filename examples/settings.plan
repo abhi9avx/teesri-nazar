@@ -1,0 +1,35 @@
+# Example plan: run it with  ./tnazar run examples/settings.plan
+# Works on any Android device or emulator. Your own plans go in plans/ (git ignores it).
+app com.android.settings
+name settings-example
+
+flow home
+  launch --restart
+  wait "Search Settings" --timeout 15
+end
+
+case TC-01 "Network & internet opens"
+  run home
+  say "Opening Network & internet"
+  tap "Network & internet"
+  check "Internet"
+  key back
+  check "Search Settings"
+
+case TC-02 "Search finds Wi-Fi settings"
+  run home
+  tap "Search Settings"
+  retry 2
+    type "wifi" --into id=open_search_view_edit_text
+    wait "~Wi-Fi" --timeout 5
+  end
+  check "~Wi-Fi"
+
+case TC-03 "Back from search returns to Settings"
+  if "Search Settings"
+    say "Already on the main list"
+  else
+    key back
+    key back
+  end
+  check "Search Settings"

@@ -19,12 +19,22 @@ see `testdata.example.yaml`) — read it if present.
    inputs missed (empty/invalid input, back navigation mid-flow, retry after failure,
    boundary amounts, kill-and-reopen). Say what you will **not** test and why.
    Show the plan and wait for approval unless the user said to go ahead directly.
-2. **Start a run** (one per request): `./tnazar start <short-name> --package <pkg> --prompt "<user's request>"`.
-   Find the package with `./tnazar packages <keyword>`. Add `--fresh` only when the
-   user wants a clean install state or the case needs it; otherwise reuse the logged-in app.
-3. **Execute each case** between `./tnazar case start TC-01 "title"` and `./tnazar case end`.
-   Every expected result becomes a `check`. A case with no checks ends as *blocked*.
-4. **Stop**: `./tnazar stop` writes `runs/<name>/report.md` and `report.html`.
+2. **Explore** just enough to write exact selectors: `observe` the screens the cases touch
+   (in a short run: `./tnazar start explore --package <pkg>` … `./tnazar stop`). Find the
+   package with `./tnazar packages <keyword>`.
+3. **Write the plan file** `plans/<short-name>.plan` (format: top of `teesri_nazar/plan.py`;
+   example: `examples/settings.plan`). Every expected result is a `check`; shared steps
+   (login, go to a screen) are `flow`s; flaky app steps go in `retry N … end` with `wait`
+   inside and the `check` after; `if "<target>" … else … end` for screens that vary.
+   Fixed values only: write the labels you observed. Secrets only as `--env NAME`.
+4. **Run it**: `./tnazar run plans/<name>.plan` (in the background: a plan can take longer
+   than a 2-minute command). No model turn per step: read the output when it finishes.
+   Exit 0 = all passed, 1 = something failed, 2 = the plan has an error (fix the line it
+   names), 3 = the user sent a dashboard message: act on it, then continue with
+   `./tnazar run plans/<name>.plan --from <case>` (the run stays open). Re-run one case
+   with `--only TC-05`.
+   For one-off exploration you can still drive cases by hand between
+   `./tnazar case start TC-01 "title"` and `./tnazar case end`, then `./tnazar stop`.
 5. **Report back** in chat: the summary line, a table of cases with result and reason,
    each failure with what you saw vs what was expected, bugs found, and anything you
    could not test. Link the HTML report path.
@@ -41,7 +51,7 @@ Observe once, then act — `observe` costs one UI dump (~2–3 s); `tap #index` 
 ./tnazar tap desc="Navigate up"        # accessibility label
 ./tnazar tap '#12'                     # index from the last observe (no new dump)
 ./tnazar tap 540,1860                  # coordinates: last resort only
-./tnazar tap "Continue" --wait 10      # wait for it to appear first
+./tnazar tap "Continue" --wait 10      # wait longer for it (tap and type --into wait 3 s by default)
 ./tnazar type "9876543210" --into id=phone_input --clear
 ./tnazar type --env APP_MPIN --into id=mpin_input   # secret: never recorded
 ./tnazar key back | enter | home

@@ -106,6 +106,9 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
         ok, _, _ = dev.wait_for(adb, sel, max(e.get("timeout", 15), timeout), gone=e.get("gone", False))
         if not ok and e.get("ok", True):
             raise StepFailed(f"wait: {sel} never became {'gone' if e.get('gone') else 'visible'}")
+    elif t == "wait_online":
+        if e.get("ok", True) and not dev.wait_online(adb, max(e.get("timeout", 30), timeout)):
+            raise StepFailed("wait-online: the device did not come back online")
     elif t == "adb":
         subprocess.run([adb_binary(), "-s", adb.serial, *e["args"]], capture_output=True)
 

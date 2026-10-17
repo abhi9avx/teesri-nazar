@@ -23,9 +23,14 @@ from .session import NAME_RE, Run, clear_active, get_active, home, now_iso, runs
 EXIT_FAIL = 1
 EXIT_ERROR = 2
 EXIT_INSTEAD = 4  # `wait A --or B`: B showed up, so A is not coming
-TIMED = {"launch", "open_url", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb"}
+# tap / type --into look for their target for this long: right after Back or a tap, the next
+# screen is often not there yet. Costs nothing when the target is already on screen.
+TARGET_WAIT = 3.0
+TIMED = {"launch", "open_url", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb",
+         "wait_online"}
 # Commands that act on the device: a pause or an unread user message holds them back.
-HELD = {"launch", "open-url", "observe", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb"}
+HELD = {"launch", "open-url", "observe", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb",
+        "wait-online"}
 
 
 class UserError(Exception):
@@ -447,6 +452,14 @@ def cmd_wait(args) -> int:
     return EXIT_FAIL
 
 
+def cmd_wait_online(args) -> int:
+    ctx = Ctx.from_args(args.device)
+    ok = dev.wait_online(ctx.adb, args.timeout, args.host)
+    ctx.log({"type": "wait_online", "ok": ok, "timeout": args.timeout})
+    print("online" if ok else f"still offline after {args.timeout}s")
+    return 0 if ok else EXIT_FAIL
+
+
 def cmd_check(args) -> int:
     ctx = Ctx.from_args(args.device)
     if args.result:
@@ -628,6 +641,11 @@ def cmd_runs(args) -> int:
     return 0
 
 
+def cmd_run(args) -> int:
+    from . import runner
+    return runner.run(args)
+
+
 def cmd_replay(args) -> int:
     from . import replay
     return replay.run(args)
@@ -689,7 +707,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("tap", cmd_tap, "tap an element")
     _add_selector_flags(p, TARGET_HELP)
     p.add_argument("--long", action="store_true", help="long-press")
-    p.add_argument("--wait", type=float, default=0, metavar="SEC", help="wait up to SEC for the element")
+    p.add_argument("--wait", type=float, default=TARGET_WAIT, metavar="SEC",
+                   help=f"wait up to SEC for the element (default {TARGET_WAIT:g}: a screen may still be changing)")
 
     p = add("type", cmd_type, "type text, optionally into a field")
     p.add_argument("text", nargs="?")
@@ -702,7 +721,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--enter", action="store_true", help="press enter afterwards")
     p.add_argument("--secret", action="store_true", help="do not record the value")
     p.add_argument("--env", metavar="VAR", help="read the value from an environment variable")
-    p.add_argument("--wait", type=float, default=0, metavar="SEC")
+    p.add_argument("--wait", type=float, default=TARGET_WAIT, metavar="SEC")
 
     p = add("key", cmd_key, "press keys: back, home, enter, tab, del, ... or a keycode")
     p.add_argument("keys", nargs="+")
@@ -726,6 +745,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="stop at once if this appears instead (exit 4), e.g. an error message")
     p.add_argument("--gone", action="store_true")
     p.add_argument("--timeout", type=float, default=15)
+
+    p = add("wait-online", cmd_wait_online, "wait until the device can reach the internet")
+    p.add_argument("--timeout", type=float, default=30)
+    p.add_argument("--host", default="8.8.8.8")
 
     p = add("check", cmd_check, "record a verification (UI by selector, or a manual DB/Figma/API result)")
     _add_selector_flags(p, TARGET_HELP)
@@ -770,6 +793,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("run", nargs="?")
     p = add("runs", cmd_runs, "list recent runs")
     p.add_argument("--last", type=int, default=10)
+
+    p = add("run", cmd_run, "run every case of a plan file (see teesri_nazar/plan.py for the format)")
+    p.add_argument("plan")
+    p.add_argument("--only", metavar="IDS", help="run only these cases, e.g. TC-02,TC-05")
+    p.add_argument("--from", dest="from_", metavar="ID", help="start at this case")
+    p.add_argument("--stop-on-fail", action="store_true", help="stop at the first case that does not pass")
 
     p = add("replay", cmd_replay, "re-run a recorded run on a device and re-check every verification")
     p.add_argument("run")

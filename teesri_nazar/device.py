@@ -236,6 +236,16 @@ def crashes(adb: Adb, package: str | None = None) -> str:
     return text
 
 
+def wait_online(adb: Adb, timeout: float, host: str = "8.8.8.8") -> bool:
+    """True once the device can reach `host` (after airplane mode, Wi-Fi takes a while to return)."""
+    deadline = time.monotonic() + timeout
+    while adb.run(["shell", "ping", "-c", "1", "-W", "1", host], check=False).returncode != 0:
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+    return True
+
+
 def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
              interval: float | None = None, stats: dict | None = None,
              alternatives: list[scr.Selector] = ()) -> tuple[bool, scr.Screen, scr.Element | None]:

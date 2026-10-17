@@ -125,6 +125,9 @@ class FakeAdb:
         self.uia2_broken = False  # it stops answering (crashed, killed by the OS)
         self.uia2_errors = 0  # next N reads answer HTTP 500 (screen changing mid-read)
         self.uia2_reads = 0
+        self.offline = False  # airplane mode: ping fails
+        self.drop_taps = 0  # next N taps are lost (a screen that was not ready yet)
+        self.becomes: tuple[int, str] | None = None  # (n, screen): after n more reads, the app shows `screen`
         self.files: dict[str, str] = {}  # device files tnazar writes via the shell
         self.keyboard = False  # soft keyboard showing
         self.foreign_top: str | None = None  # another package's screen on top of the app's task
@@ -145,12 +148,21 @@ class FakeAdb:
         if path.endswith("/appium/settings"):
             return {"value": None}
         if path.endswith("/source"):
+            self._tick()
             if self.uia2_errors:
                 self.uia2_errors -= 1
                 raise urllib.error.HTTPError(path, 500, "Internal Server Error", None, None)
             self.uia2_reads += 1
             return {"value": server_xml(self.nodes(), self.size)}
         raise AssertionError(f"unexpected uia2 call: {method} {path}")
+
+    def _tick(self) -> None:
+        """A screen change still in flight (e.g. after Back) lands after a few reads."""
+        if self.becomes:
+            n, screen = self.becomes
+            self.becomes = (n - 1, screen) if n > 1 else None
+            if n <= 1:
+                self.current = screen
 
     # --- helpers for tests
     def nodes(self) -> list[dict]:
@@ -167,6 +179,7 @@ class FakeAdb:
     def exec_out(self, command: str, timeout: float = 60) -> bytes:
         self.calls.append(["exec-out", command])
         if "uiautomator dump" in command:
+            self._tick()
             if self.dump_hangs:
                 self.dump_hangs -= 1
                 raise AdbError(f"adb timed out after {timeout}s: exec-out {command}")
@@ -181,6 +194,8 @@ class FakeAdb:
     def run(self, args: list[str], timeout: float = 60, check: bool = True, binary: bool = False):
         self.calls.append(list(args))
         out = ""
+        if args[:2] == ["shell", "ping"]:
+            return subprocess.CompletedProcess(args, 1 if self.offline else 0, "", "")
         if args[:1] == ["forward"]:
             out = "8299\n" if args[1] == "tcp:0" else ""
         elif args[:1] == ["logcat"]:
@@ -202,6 +217,9 @@ class FakeAdb:
         if cmd == ["input", "tap"]:
             x, y = int(a[2]), int(a[3])
             self.taps.append((x, y))
+            if self.drop_taps:
+                self.drop_taps -= 1
+                return ""
             n = self.node_at(x, y)
             if n:
                 if "EditText" in n["cls"]:
