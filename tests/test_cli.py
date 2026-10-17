@@ -234,6 +234,25 @@ class UiCheckTest(CliTestCase):
         self.assertFalse(e["ok"])
         self.assertIn("btn_login", (self.run.path / e["dump"]).read_text())
 
+    def test_check_is_recorded_when_the_screen_blocks_screenshots(self):
+        self.adb.secure = True
+        code, out, err = tnazar("check", "Welcome back")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("PASS [ui]", out)
+        self.assertIn("screenshot", err)
+        e = self.last_check()
+        self.assertTrue(e["ok"])
+        self.assertNotIn("shot", e)
+
+    def test_failed_case_ends_when_the_screen_blocks_screenshots(self):
+        self.adb.secure = True
+        tnazar("check", "Dashboard", "--timeout", "1")
+        self.assertEqual(tnazar("case", "end")[0], 0)
+        e = self.case_end_event(self.run, "TC-01")
+        self.assertEqual(e["status"], "fail")
+        self.assertEqual(len(e["evidence"]), 1)
+        self.assertTrue(e["evidence"][0].endswith(".txt"))
+
     def test_waits_for_element_to_appear(self):
         # Element appears only after the device moves to home; the check polls until then.
         original = self.adb.exec_out

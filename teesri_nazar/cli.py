@@ -127,6 +127,15 @@ def _not_found_msg(sel: scr.Selector, screen: scr.Screen) -> str:
     return f"not found: {sel}\nvisible: {seen or '(no labelled elements)'}"
 
 
+def evidence_shot(ctx: Ctx, label: str) -> str | None:
+    """Screenshot for evidence; a screen that blocks capture (FLAG_SECURE) must not lose the result."""
+    try:
+        return ctx.rel(dev.screenshot(ctx.adb, ctx.artifact("shots", label, "png")))
+    except AdbError as exc:
+        print(f"warning: no screenshot ({exc}); the app may block capture on this screen", file=sys.stderr)
+        return None
+
+
 def _screen_size(target: dict, ctx: Ctx) -> list[int]:
     # The dump's extent is the top window, which is smaller than the display for dialogs.
     return list(ctx.adb.screen_size())
@@ -411,9 +420,8 @@ def cmd_check(args) -> int:
         ok = args.result == "pass"
         event = {"type": "check", "kind": args.kind, "ok": ok, "what": args.what,
                  "detail": args.detail or ""}
-        if args.shot:
-            path = dev.screenshot(ctx.adb, ctx.artifact("shots", f"check-{args.kind}", "png"))
-            event["shot"] = ctx.rel(path)
+        if args.shot and (shot := evidence_shot(ctx, f"check-{args.kind}")):
+            event["shot"] = shot
         ctx.log(event)
         print(f"{'PASS' if ok else 'FAIL'} [{args.kind}] {args.what}")
         return 0 if ok else EXIT_FAIL
@@ -427,10 +435,10 @@ def cmd_check(args) -> int:
                 ok = False
     what = args.what or _describe_check(sel, args)
     label = "pass" if ok else "fail"
-    shot = dev.screenshot(ctx.adb, ctx.artifact("shots", f"check-{label}", "png"))
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
-             "gone": args.gone, "checked": args.checked, "enabled": args.enabled,
-             "shot": ctx.rel(shot)}
+             "gone": args.gone, "checked": args.checked, "enabled": args.enabled}
+    if shot := evidence_shot(ctx, f"check-{label}"):
+        event["shot"] = shot
     if ctx.run and not ok:
         dump = ctx.artifact("dumps", "check-fail", "xml")
         dump.write_text(screen.xml)
@@ -504,10 +512,10 @@ def _end_case(ctx: Ctx, status: str | None, reason: str | None) -> str:
         p.write_text(crash)
         event["crash"] = ctx.rel(p)
     if status in ("fail", "blocked") or crash:
-        shot = dev.screenshot(ctx.adb, ctx.artifact("shots", f"{case}-end", "png"))
+        shot = evidence_shot(ctx, f"{case}-end")
         log = ctx.artifact("logs", f"{case}-logcat", "txt")
         log.write_text(dev.logcat_dump(ctx.adb))
-        event["evidence"] = [ctx.rel(shot), ctx.rel(log)]
+        event["evidence"] = ([shot] if shot else []) + [ctx.rel(log)]
     ctx.log(event)
     return status
 

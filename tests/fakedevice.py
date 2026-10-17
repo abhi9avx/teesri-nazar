@@ -95,6 +95,7 @@ class FakeAdb:
         self.settings = {"window_animation_scale": "1.0", "transition_animation_scale": "1.0",
                          "animator_duration_scale": "1.0"}
         self.crash_log = ""
+        self.secure = False  # FLAG_SECURE screen: screencap yields no PNG
         self.typed: list[str] = []
         self.taps: list[tuple[int, int]] = []
         self.calls: list[list[str]] = []
@@ -116,7 +117,7 @@ class FakeAdb:
         if "uiautomator dump" in command:
             return screen_xml(self.nodes(), self.size).encode()
         if command.startswith("screencap"):
-            return PNG
+            return b"" if self.secure else PNG
         raise AssertionError(f"unexpected exec-out: {command}")
 
     def run(self, args: list[str], timeout: float = 60, check: bool = True, binary: bool = False):

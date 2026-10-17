@@ -14,7 +14,7 @@ from . import report as rpt
 from . import screen as scr
 from . import visual
 from .adb import Adb, adb_binary, pick_serial
-from .cli import Ctx, _end_case
+from .cli import Ctx, _end_case, evidence_shot
 from .session import Run, get_active, now_iso, stamp
 
 SETTLE = 0.3
@@ -112,9 +112,11 @@ def _recheck(ctx: Ctx, e: dict, timeout: float) -> None:
         for flag, actual in (("checked", el.checked), ("enabled", el.enabled)):
             if e.get(flag) is not None and e[flag] != actual:
                 ok = False
-    shot = dev.screenshot(ctx.adb, ctx.run.artifact("shots", f"check-{'pass' if ok else 'fail'}", "png"))
-    ctx.log({"type": "check", "kind": "ui", "ok": ok, "what": e["what"], "selector": e["selector"],
-             "gone": e.get("gone", False), "shot": ctx.run.rel(shot), "recorded_ok": e["ok"]})
+    event = {"type": "check", "kind": "ui", "ok": ok, "what": e["what"], "selector": e["selector"],
+             "gone": e.get("gone", False), "recorded_ok": e["ok"]}
+    if shot := evidence_shot(ctx, f"check-{'pass' if ok else 'fail'}"):
+        event["shot"] = shot
+    ctx.log(event)
 
 
 def run(args) -> int:
