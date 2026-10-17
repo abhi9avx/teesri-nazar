@@ -98,6 +98,8 @@ class FakeAdb:
         self.secure = False  # FLAG_SECURE screen: screencap yields no PNG
         self.dump_failures = 0  # next N dumps fail like an animating screen
         self.files: dict[str, str] = {}  # device files tnazar writes via the shell
+        self.keyboard = False  # soft keyboard showing
+        self.keyboard_on_focus = True  # False: focusing a field leaves it hidden (hardware keyboard, timing)
         self.typed: list[str] = []
         self.taps: list[tuple[int, int]] = []
         self.calls: list[list[str]] = []
@@ -149,18 +151,23 @@ class FakeAdb:
             self.taps.append((x, y))
             n = self.node_at(x, y)
             if n:
+                if "EditText" in n["cls"]:
+                    self.keyboard = self.keyboard_on_focus
                 nxt = self.app.on_tap.get((self.current, n["id"])) or self.app.on_tap.get((self.current, n["text"]))
                 if nxt:
-                    self.current = nxt
+                    self.current, self.keyboard = nxt, False
             return ""
         if cmd == ["input", "text"]:
             self.typed.append(a[2])
             return ""
         if cmd == ["input", "keyevent"]:
             for code in a[2:]:
+                if int(code) == 4 and self.keyboard:
+                    self.keyboard = False  # back only dismisses the keyboard
+                    continue
                 nxt = self.app.on_key.get((self.current, int(code)))
                 if nxt:
-                    self.current = nxt
+                    self.current, self.keyboard = nxt, False
             return ""
         if cmd == ["input", "swipe"]:
             nxt = self.app.on_swipe.get(self.current)
@@ -187,6 +194,8 @@ class FakeAdb:
         if a[:2] == ["dumpsys", "package"]:
             name, code = self.version.split(" (")
             return f"versionName={name}\nversionCode={code.rstrip(')')}\n"
+        if a[:2] == ["dumpsys", "input_method"]:
+            return f"  mInputShown={str(self.keyboard).lower()}\n"
         if a[:2] == ["dumpsys", "activity"]:
             return f"mResumedActivity: ActivityRecord{{1 u0 {PACKAGE}/.Main t1}}\n"
         if a[:3] == ["settings", "get", "global"]:

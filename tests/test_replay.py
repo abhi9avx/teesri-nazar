@@ -5,7 +5,7 @@ import os
 import unittest
 from unittest import mock
 
-from fakedevice import PACKAGE, FakeAdb, fake_device, login_app, tnazar
+from fakedevice import PACKAGE, FakeAdb, fake_device, login_app, node, tnazar
 from teesri_nazar import report as rpt
 from teesri_nazar.session import Run, set_active
 
@@ -211,3 +211,42 @@ class ReplayGuardsTest(ReplayTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeyboardBackTest(ReplayTestCase):
+    """`back` closes the keyboard when it is up and navigates when it is not; replay must not care which."""
+
+    def setUp(self):
+        super().setUp()
+        self.adb.app.screens["launcher"] = [node(id="workspace", text="Launcher home", clickable=False)]
+        self.adb.app.on_key[("login", 4)] = "launcher"
+
+    def record(self, expect):
+        self.ok("start", "demo", "--package", PACKAGE)
+        self.ok("case", "start", "TC-01", "Type then back")
+        self.ok("type", "98765", "--into", "id=phone_input")
+        self.ok("key", "back")
+        self.ok("check", expect)
+        self.ok("case", "end")
+        self.ok("stop")
+
+    def test_back_that_only_closed_the_keyboard_is_skipped_when_it_is_already_hidden(self):
+        self.record("Welcome back")
+        self.fresh_device()
+        self.adb.keyboard_on_focus = False
+        code, out, run = self.replay()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.adb.current, "login")
+        self.assertEqual(self.statuses(run), {"TC-01": "pass"})
+        self.assertIn("back skipped", out)
+
+    def test_navigating_back_first_closes_a_keyboard_that_is_up_on_replay(self):
+        self.adb.keyboard_on_focus = False
+        self.record("Launcher home")
+        self.fresh_device()
+        self.adb.keyboard_on_focus = True
+        code, out, run = self.replay()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.adb.current, "launcher")
+        self.assertEqual(self.statuses(run), {"TC-01": "pass"})
+        self.assertIn("extra back", out)

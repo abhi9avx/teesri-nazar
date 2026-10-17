@@ -345,8 +345,12 @@ def cmd_type(args) -> int:
 def cmd_key(args) -> int:
     ctx = Ctx.from_args(args.device)
     for name in args.keys:
+        event = {"type": "key", "key": name}
+        if dev.is_back(name):
+            # Replay needs this: back over an open keyboard only closes the keyboard.
+            event["keyboard"] = dev.keyboard_shown(ctx.adb)
         dev.key(ctx.adb, name)
-        ctx.log({"type": "key", "key": name})
+        ctx.log(event)
     print(f"pressed {' '.join(args.keys)}")
     return 0
 

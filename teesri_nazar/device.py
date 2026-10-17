@@ -65,6 +65,10 @@ def key(adb: Adb, name: str) -> int:
     return code
 
 
+def is_back(name: str) -> bool:
+    return name.lower() == "back" or name == str(KEYS["back"])
+
+
 def swipe(adb: Adb, x1: int, y1: int, x2: int, y2: int, ms: int = 350) -> None:
     adb.shell("input", "swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
 
@@ -141,6 +145,12 @@ def app_version(adb: Adb, package: str) -> str:
     if not m:
         return ""
     return m.group(1) + (f" ({code.group(1)})" if code else "")
+
+
+def keyboard_shown(adb: Adb) -> bool | None:
+    """Whether the soft keyboard is up; None when this Android version does not say."""
+    m = re.search(r"mInputShown=(true|false)", adb.shell("dumpsys", "input_method", check=False))
+    return m.group(1) == "true" if m else None
 
 
 def foreground_package(adb: Adb) -> str:

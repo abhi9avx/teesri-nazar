@@ -73,6 +73,14 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
         if e.get("enter"):
             dev.key(adb, "enter")
     elif t == "key":
+        if dev.is_back(e["key"]) and e.get("keyboard") is not None:
+            now = dev.keyboard_shown(adb)
+            if e["keyboard"] and now is False:
+                print("  back skipped: it only closed the keyboard, which is already hidden")
+                return
+            if not e["keyboard"] and now:
+                print("  extra back: closing the keyboard so this back navigates as recorded")
+                dev.key(adb, "back")
         dev.key(adb, e["key"])
     elif t == "swipe":
         x1, y1 = _scale(e["from"], e.get("screen"), size)
