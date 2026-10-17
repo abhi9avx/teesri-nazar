@@ -44,8 +44,8 @@ class CaseUsageTest(unittest.TestCase):
         self.run.update_meta(started_at="2026-01-01T10:00:30.000Z")
         self.transcript = Path(tmp.name) / "session.jsonl"
         lines = [
-            turn("2026-01-01T10:00:05.000Z", "r0", 1, 0, 0, 10),          # before the run started
-            turn("2026-01-01T10:00:50.000Z", "r00", 1, 0, 9000, 40),      # issues TC-01's command
+            turn("2026-01-01T09:40:00.000Z", "r0", 1, 0, 0, 10),          # an earlier task in the session
+            turn("2026-01-01T10:00:25.000Z", "r00", 1, 0, 9000, 40),      # runs `tnazar start`
             turn("2026-01-01T10:01:10.000Z", "r1", 2, 1000, 50000, 300),
             turn("2026-01-01T10:01:10.001Z", "r1", 2, 1000, 50000, 300),  # same request, second content block
             turn("2026-01-01T10:01:40.000Z", "r2", 3, 200, 51000, 120),
@@ -71,6 +71,33 @@ class CaseUsageTest(unittest.TestCase):
         self.assertEqual(per_case["TC-01"], {"turns": 3, "new": (1 + 40) + (2 + 1000 + 300) + (3 + 200 + 120),
                                              "cached": 9000 + 50000 + 51000, "output": 460})
         self.assertEqual(per_case["TC-02"]["turns"], 2)  # r20 and r3; r4 came after the run's last case
+
+    def test_one_turn_that_runs_several_cases_splits_its_cost_between_them(self):
+        # One shell command ran S1..S3 back to back: every case still gets its share.
+        events = [{"t": f"2026-01-01T11:00:{s:02d}.000Z", "type": t, "case": c, "title": "", "status": "pass", "reason": ""}
+                  for c, s0 in (("S1", 10), ("S2", 20), ("S3", 30)) for t, s in (("case_start", s0), ("case_end", s0 + 5))]
+        self.run.events_path.write_text("".join(json.dumps(e) + "\n" for e in events))
+        self.run.update_meta(started_at="2026-01-01T11:00:00.000Z")
+        self.transcript.write_text("\n".join([
+            turn("2026-01-01T11:00:05.000Z", "a", 0, 0, 300000, 3000),   # issues the one command
+            turn("2026-01-01T11:00:50.000Z", "b", 0, 0, 301000, 600),    # reads the result
+        ]) + "\n")
+        per_case = usage.per_case(self.run, [self.transcript])
+        self.assertEqual(sorted(per_case), ["S1", "S2", "S3"])
+        self.assertEqual({c: (u["turns"], u["output"], u["cached"]) for c, u in per_case.items()},
+                         {c: (1, 1000, 100000) for c in ("S1", "S2", "S3")})
+
+    def test_the_turn_that_started_the_run_pays_for_the_cases_it_ran(self):
+        # `tnazar start ... && case start S1 ...` in one command: the request predates the run.
+        events = [{"t": "2026-01-01T12:00:10.000Z", "type": "case_start", "case": "S1", "title": ""},
+                  {"t": "2026-01-01T12:00:20.000Z", "type": "case_end", "case": "S1", "status": "pass", "reason": ""}]
+        self.run.events_path.write_text("".join(json.dumps(e) + "\n" for e in events))
+        self.run.update_meta(started_at="2026-01-01T12:00:05.000Z")
+        self.transcript.write_text("\n".join([
+            turn("2026-01-01T11:50:00.000Z", "old", 0, 0, 1000, 10),     # an earlier, unrelated turn
+            turn("2026-01-01T12:00:02.000Z", "go", 0, 0, 200000, 500),   # starts the run and runs S1
+        ]) + "\n")
+        self.assertEqual(usage.per_case(self.run, [self.transcript])["S1"]["output"], 500)
 
     def test_report_shows_tokens_per_case(self):
         with mock.patch.object(usage, "transcripts", return_value=[self.transcript]):

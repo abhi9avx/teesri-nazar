@@ -574,6 +574,17 @@ class NavigationTest(CliTestCase):
         self.adb.app.screens["top"].append(node(desc="Couldn\u2019t save? Try again", bounds=(0, 500, 1080, 600)))
         self.ok("check", "Save", "--gone", "--timeout", "1")
 
+    def test_wait_stops_at_once_when_an_alternative_shows_up(self):
+        # e.g. waiting for Home after a PIN, while the app is already showing an error
+        code, out, _ = tnazar("wait", "Transaction history", "--or", "Item 1", "--timeout", "15")
+        self.assertEqual(code, 4)
+        self.assertIn('found instead: "Item 1"', out)
+        polls = [c for c in self.adb.calls if "uiautomator dump" in " ".join(c)]
+        self.assertEqual(len(polls), 1)
+
+    def test_wait_with_alternatives_still_succeeds_on_the_main_target(self):
+        self.ok("wait", "Item 1", "--or", "Some error")
+
     def test_wait_timeout(self):
         self.assertEqual(tnazar("wait", "Transaction history", "--timeout", "2")[0], 1)
         self.ok("wait", "Transaction history", "--gone", "--timeout", "1")

@@ -208,6 +208,14 @@ class SecretTest(CliTestCase):
         on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
         self.assertNotIn("482913", on_disk)
 
+    def test_secret_with_spaces_and_symbols_is_typed_exactly(self):
+        self.start()
+        dash = serve_dashboard(self)
+        dash.secrets["UI_PASS"] = "a b&c'd"
+        live.mark_all_read()
+        self.ok("type", "--env", "UI_PASS", "--into", "id=phone_input")
+        self.assertEqual(self.adb.typed, ["a%sb\\&c\\'d"])  # adb input text escaping
+
     def test_type_env_that_is_set_nowhere_is_an_error(self):
         self.start()
         code, _, err = tnazar("type", "--env", "UI_NOPE", "--into", "id=phone_input")
@@ -300,6 +308,23 @@ class ServerTest(unittest.TestCase):
         on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
         self.assertNotIn("7531", on_disk)
         self.assertIn("UI_MPIN", on_disk)  # the agent is told the name
+
+    def test_sending_the_same_name_again_replaces_the_value(self):
+        self.active_run()
+        self.call("POST", "/api/secret", {"name": "otp", "value": "1111"})
+        self.call("POST", "/api/secret", {"name": "otp", "value": "2222"})
+        self.assertEqual(json.loads(self.call("GET", "/api/secret/UI_OTP")[1]), {"value": "2222"})
+
+    def test_a_messy_name_becomes_a_safe_variable_name(self):
+        self.active_run()
+        status, body = self.call("POST", "/api/secret", {"name": "my otp!", "value": "5"})
+        self.assertEqual((status, json.loads(body)["name"]), (200, "UI_MY_OTP_"))
+
+    def test_empty_or_too_long_values_are_refused(self):
+        self.active_run()
+        for value in ("", "9" * 257):
+            self.assertEqual(self.call("POST", "/api/secret", {"name": "otp", "value": value})[0], 400)
+        self.assertEqual(self.call("GET", "/api/secret/UI_OTP")[0], 404)
 
     def test_secrets_do_not_carry_over_into_the_next_run(self):
         self.active_run()

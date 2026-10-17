@@ -139,6 +139,9 @@ Full command list: `./tnazar --help`, and `./tnazar <command> --help` for each o
 - **It changes a device setting during a run.** `start` sets the device's three animation
   scales to 0 so screens settle faster. `stop` puts them back, and a Claude Code session-end
   hook stops any run left open. Use `start --keep-animations` to leave them alone.
+- **Fast screen reads.** If the device has the UiAutomator2 server (installed by Appium), a run
+  reads the screen through it: ~0.05 s instead of ~2 s per read. Otherwise tnazar uses
+  `uiautomator dump`, so nothing extra is required.
 - **Speed and cost are tracked.** Steps over 5 s print `SLOW:` and get their own report
   section; the report's *Tokens* column shows each test case's real model usage.
 - **Screenshots in the report** are one per distinct screen, with failures first in red.

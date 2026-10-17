@@ -47,8 +47,17 @@ Observe once, then act — `observe` costs one UI dump (~2–3 s); `tap #index` 
 ./tnazar key back | enter | home
 ./tnazar scroll down --to "Transaction history"
 ./tnazar wait "Payment successful" --timeout 20
+./tnazar wait "Home" --or "~try again"   # stops at once if the error shows instead (exit 4)
 ./tnazar launch [--restart|--fresh]     # app from the run; open-url <deeplink>
 ```
+
+Speed: a run reads the screen through the UiAutomator2 server when the device has it
+(`screen reads: fast` at `start`, ~0.05 s per read) and falls back to `uiautomator dump`
+(~2 s) otherwise. Keep steps cheap: `launch` resumes the app; use `--restart`/`--fresh` only
+when a case needs a known state (a cold start costs 5–10 s). When waiting for the next
+screen, add `--or <the error you would see>` so a failure is noticed in ~1 s, not after the
+timeout. Run several cases in one command when you can: every model turn re-reads the whole
+conversation.
 
 Target priority: **id → desc → text → coordinates.** Selectors survive screen-size and
 layout changes and make the run replayable; coordinates do not. After an action that

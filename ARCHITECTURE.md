@@ -706,6 +706,14 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
 - **Pause.** While `.tnazar/paused` exists a device command waits up to 60 s (under the
   agent's 2-minute command timeout); if still paused it exits 3 and tells Claude to run
   `./tnazar wait-resume`. The wait is logged as a `hold` event.
+- **Fast screen reads.** `uiautomator dump` starts a new process per read (~2 s, unbounded
+  while the app is busy). When the device has the UiAutomator2 server, `start` launches it
+  (`uia2.py`) and every read is an HTTP call to it (~0.05 s, waiting at most 300 ms for the
+  app to settle); waits then poll every 0.15 s. The server and `uiautomator dump` cannot run
+  together, so on a dead server tnazar stops it and falls back, with a warning. A server
+  error while a window changes (Android 14+: `Cannot set AccessibilityNodeInfo's field
+  'mSealed'`) is retried for up to ~3 s first. `stop` shuts the server down.
+- **Fail fast.** `wait A --or B` returns at once (exit 4) when B shows up instead of A.
 - **Slow steps.** Any step over 5 s prints `SLOW: <step> took Xs (N screen reads)` as it
   happens and is listed in the report's *Slow steps* table. A screen read costs ~2 s, so
   `tests/test_cli.py::DeviceBudgetTest` pins how many reads each command makes. A dump

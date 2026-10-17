@@ -14,6 +14,7 @@ from pathlib import Path
 from . import __version__
 from . import device as dev
 from . import live
+from . import uia2
 from . import report as rpt
 from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
@@ -21,6 +22,7 @@ from .session import NAME_RE, Run, clear_active, get_active, home, now_iso, runs
 
 EXIT_FAIL = 1
 EXIT_ERROR = 2
+EXIT_INSTEAD = 4  # `wait A --or B`: B showed up, so A is not coming
 TIMED = {"launch", "open_url", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb"}
 # Commands that act on the device: a pause or an unread user message holds them back.
 HELD = {"launch", "open-url", "observe", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb"}
@@ -211,6 +213,7 @@ def cmd_start(args) -> int:
             print("app data cleared")
     if not args.keep_animations:
         print("animations: off (restored on stop)")
+    print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
     return 0
 
 
@@ -222,6 +225,7 @@ def finish_run(quiet: bool = False) -> Run | None:
     meta = run.meta()
     try:
         adb = Adb(serial)
+        uia2.stop(adb)
         if meta.get("animations_before"):
             dev.animations_restore(adb, meta["animations_before"])
         if run.current_case():
@@ -424,11 +428,16 @@ def cmd_swipe(args) -> int:
 def cmd_wait(args) -> int:
     ctx = Ctx.from_args(args.device)
     _, sel = parse_target(args.target, args)
+    alts = [parse_target(a, argparse.Namespace())[1] for a in args.alt or []]
     stats: dict = {}
-    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats)
-    ctx.log({"type": "wait", "selector": sel.to_dict(), "gone": args.gone,
-             "timeout": args.timeout, "ok": ok, "polls": stats.get("polls")})
+    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, alternatives=alts)
+    instead = alts[stats["alternative"]] if "alternative" in stats else None
+    ctx.log({"type": "wait", "selector": sel.to_dict(), "gone": args.gone, "timeout": args.timeout, "ok": ok,
+             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None})
     state = "gone" if args.gone else "visible"
+    if instead:
+        print(f"found instead: {instead} {el.describe()}")
+        return EXIT_INSTEAD
     if ok:
         print(f"ok: {sel} is {state}" + (f" {el.describe()}" if el else ""))
         return 0
@@ -713,6 +722,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("wait", cmd_wait, "wait until an element appears (or is gone)")
     _add_selector_flags(p, TARGET_HELP)
+    p.add_argument("--or", dest="alt", action="append", metavar="TARGET",
+                   help="stop at once if this appears instead (exit 4), e.g. an error message")
     p.add_argument("--gone", action="store_true")
     p.add_argument("--timeout", type=float, default=15)
 

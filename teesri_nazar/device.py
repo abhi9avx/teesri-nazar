@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from . import screen as scr
+from . import uia2
 from .adb import Adb, AdbError
 
 KEYS = {
@@ -236,7 +237,12 @@ def crashes(adb: Adb, package: str | None = None) -> str:
 
 
 def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
-             interval: float = 0.4, stats: dict | None = None) -> tuple[bool, scr.Screen, scr.Element | None]:
+             interval: float | None = None, stats: dict | None = None,
+             alternatives: list[scr.Selector] = ()) -> tuple[bool, scr.Screen, scr.Element | None]:
+    """Poll until `sel` appears (or is gone). If one of `alternatives` shows up first, stop at once:
+    ok is False and stats["alternative"] says which one (e.g. an error instead of the next screen)."""
+    if interval is None:
+        interval = 0.15 if uia2.active(adb) else 0.4  # a fast read makes frequent polling cheap
     deadline = time.monotonic() + timeout
     screen = el = None
     stats = {} if stats is None else stats
@@ -253,6 +259,10 @@ def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
             el = scr.find(screen, sel, strict=gone)
             if (el is None) == gone:
                 return True, screen, el
+            for i, alt in enumerate(alternatives):
+                if (found := scr.find(screen, alt)) is not None:
+                    stats["alternative"] = i
+                    return False, screen, found
         if time.monotonic() >= deadline:
             return False, screen, el
         time.sleep(interval)

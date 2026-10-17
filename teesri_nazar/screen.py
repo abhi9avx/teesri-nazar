@@ -7,6 +7,7 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
+from . import uia2
 from .adb import Adb, AdbError
 
 DUMP_PATH = "/sdcard/tnazar-ui.xml"
@@ -96,9 +97,10 @@ def parse(xml: str) -> Screen:
     root = ET.fromstring(xml)
     elements: list[Element] = []
     width = height = 0
-    for node in root.iter("node"):
+    # `uiautomator dump` tags every element <node>; the UiAutomator2 server uses the class name.
+    for node in root.iter():
         m = _BOUNDS.fullmatch(node.get("bounds", ""))
-        if not m:
+        if not m or node.get("displayed") == "false":
             continue
         l, t, r, b = map(int, m.groups())
         width, height = max(width, r), max(height, b)
@@ -129,7 +131,10 @@ DUMP_TIMEOUT = 10
 
 
 def capture(adb: Adb, attempts: int = 3) -> Screen:
-    """Dump and read the UI tree in one adb round trip, retrying while the UI animates."""
+    """Read the UI tree: from the UiAutomator2 server when the run started one, else by dump."""
+    xml = uia2.source(adb)
+    if xml is not None:
+        return parse(xml)
     last_err = ""
     for attempt in range(attempts):
         try:

@@ -10,6 +10,7 @@ import subprocess
 import time
 
 from . import device as dev
+from . import uia2
 from . import report as rpt
 from . import screen as scr
 from . import visual
@@ -145,6 +146,7 @@ def run(args) -> int:
     target = Run.create(f"{source.name}-replay-{stamp()}", meta)
     ctx = Ctx(adb, target)
     print(f"replaying {source.name} on {adb.serial} -> {target.name}")
+    print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
 
     if args.fresh and meta["package"]:
         dev.force_stop(adb, meta["package"])
@@ -205,6 +207,7 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
+        uia2.stop(adb)
         dev.animations_restore(adb, meta["animations_before"])
         target.update_meta(finished_at=now_iso())
         paths = rpt.write(target)

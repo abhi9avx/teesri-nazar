@@ -42,7 +42,7 @@ def _requests(paths: list[Path], start: str, end: str) -> dict[str, tuple[str, d
     """Model requests in [start, end]; one entry per request even when it spans several lines."""
     found: dict[str, tuple[str, dict]] = {}
     for p in paths:
-        if p.stat().st_mtime < _epoch(start):
+        if start and p.stat().st_mtime < _epoch(start):
             continue  # last written before the run began
         with p.open(errors="replace") as f:
             for line in f:
@@ -64,29 +64,38 @@ def _epoch(iso: str) -> float:
 
 
 def per_case(run: Run, paths: list[Path] | None = None) -> dict[str, dict]:
-    """{case: {turns, new, cached, output}}: new = fresh input + cache writes + output."""
+    """{case: {turns, new, cached, output}}: new = fresh input + cache writes + output.
+
+    A model request pays for the cases that finish while its tool calls run, i.e. before the
+    next request; one command that runs several cases splits the cost between them. A request
+    that finishes no case (planning, reading output) is carried to the next case that ends.
+    """
     paths = transcripts() if paths is None else paths
-    # A case owns every request since the previous case ended (the run start, for the first):
-    # the turn that issues a case's commands comes before its `case start`.
-    windows: list[tuple[str, str, str]] = []
-    since = run.meta().get("started_at", "")
-    for e in run.events():
-        if e["type"] == "case_end":
-            windows.append((e["case"], since, e["t"]))
-            since = e["t"]
-    if not paths or not windows:
+    ends = [(e["t"], e["case"]) for e in run.events() if e["type"] == "case_end"]
+    if not paths or not ends:
         return {}
-    reqs = _requests(paths, windows[0][1], windows[-1][2])
-    out: dict[str, dict] = {}
-    for case, start, end in windows:
-        total = out.setdefault(case, {"turns": 0, "new": 0, "cached": 0, "output": 0})
-        for t, u in reqs.values():
-            if start < t <= end:
+    start = run.meta().get("started_at", "")
+    reqs = sorted(_requests(paths, "", ends[-1][0]).values(), key=lambda r: r[0])
+    # The request whose command started the run comes just before `started_at`: it belongs here.
+    first = max((i for i, (t, _) in enumerate(reqs) if t <= start), default=0)
+    reqs = reqs[first:]
+    out: dict[str, dict] = {c: {"turns": 0, "new": 0, "cached": 0, "output": 0} for _, c in ends}
+    carried: list[dict] = []
+    for i, (t, u) in enumerate(reqs):
+        until = reqs[i + 1][0] if i + 1 < len(reqs) else ends[-1][0]
+        cases = list(dict.fromkeys(c for te, c in ends if t < te <= until))
+        carried.append(u)
+        if not cases:
+            continue
+        for c in cases:
+            total = out[c]
+            for paid in carried:
                 total["turns"] += 1
-                total["output"] += u.get("output_tokens", 0)
-                total["cached"] += u.get("cache_read_input_tokens", 0)
-                total["new"] += (u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
-                                 + u.get("output_tokens", 0))
+                total["output"] += paid.get("output_tokens", 0) // len(cases)
+                total["cached"] += paid.get("cache_read_input_tokens", 0) // len(cases)
+                total["new"] += (paid.get("input_tokens", 0) + paid.get("cache_creation_input_tokens", 0)
+                                 + paid.get("output_tokens", 0)) // len(cases)
+        carried = []
     return out
 
 
