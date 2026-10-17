@@ -38,6 +38,10 @@ flowchart LR
 3. **Check:** is the expected thing on screen? (optionally also the DB and Figma)
 4. **Record:** save the step, a screenshot and the result.
 
+📐 **Full architecture, explained from scratch:** [ARCHITECTURE.md](ARCHITECTURE.md) — the
+problem, ADB, the UI dump, how elements are found (and why not XPath), how Claude decides,
+pass/fail rules, recording and replay.
+
 ---
 
 ## Tech stack
@@ -127,6 +131,7 @@ Full command list: `./tnazar --help`, and `./tnazar <command> --help` for each o
 ```
 tnazar                  ← the command
 teesri_nazar/           ← Python code (adb, screen, session, report, replay)
+ARCHITECTURE.md         ← HLD: how every layer works, with diagrams
 CLAUDE.md               ← how the AI tester should work
 .claude/skills/         ← "test-feature" skill
 .env.example            ← secrets template: copy to .env (gitignored)
