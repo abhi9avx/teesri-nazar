@@ -8,6 +8,20 @@ checks the results, and gives you a pass/fail report with screenshots.
 
 ---
 
+## 🎭 One agent, the whole team
+
+- 🤖 **Claude**: the manager. Reads your request and decides what happens next.
+- 🧪 **Senior QA**: plans the test cases and finds the edge cases.
+- 🙋 **End user**: taps through the app on a real phone, like a customer.
+- 👩‍💻 **Developer**: catches crashes and logs and gives exact repro steps.
+- 📋 **Product manager**: checks the app against the PRD and Figma: is it what we promised?
+
+**📖 Story:** you say *"Test bill payment"* → 🧪 plans 8 cases → 🙋 runs them on the phone →
+👩‍💻 catches a crash at ₹0 → 📋 spots *"Pay Now"* vs Figma's *"Pay now"* →
+🤖 hands you a report: **6 ✅ 2 ❌**. Next release, one `replay` runs it all again.
+
+---
+
 ## What it does
 
 | You give | It does | You get |
