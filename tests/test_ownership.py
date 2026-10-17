@@ -1,0 +1,111 @@
+"""One run per device: a run driven by a live process is not taken over by another `start`/`run`."""
+
+import json
+import os
+import subprocess
+import sys
+
+from fakedevice import PACKAGE, tnazar
+from teesri_nazar import cli
+from teesri_nazar.session import Run, get_active, state_dir
+
+from test_plan import LOGIN, PlanRunBase
+
+PLAN = LOGIN + '''
+case TC-01 "Login"
+  run login
+  check "Pay now"
+'''
+
+
+class OwnershipTest(PlanRunBase):
+    def other_process(self):
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(p.wait)
+        self.addCleanup(p.kill)
+        return p
+
+    def hand_to(self, pid, started=None):
+        """Make the active run look owned by another process."""
+        f = state_dir() / "active.json"
+        data = json.loads(f.read_text())
+        data["owner"] = {"pid": pid, "started": started if started is not None else _started(pid)}
+        f.write_text(json.dumps(data))
+
+    def test_start_records_the_owning_process(self):
+        self.start()
+        owner = json.loads((state_dir() / "active.json").read_text())["owner"]
+        self.assertEqual(owner["pid"], os.getpid())
+        self.assertEqual(owner["started"], _started(os.getpid()))
+
+    def test_start_refuses_while_another_live_process_drives_the_run(self):
+        run = self.start()
+        other = self.other_process()
+        self.hand_to(other.pid)
+        code, out, err = tnazar("start", "second", "--package", PACKAGE)
+        self.assertEqual(code, cli.EXIT_ERROR)
+        self.assertIn(f"a run is in progress on this device: demo (pid {other.pid}); stop it or wait", err)
+        self.assertEqual(get_active()[0].name, "demo")
+        self.assertNotIn("finished_at", run.meta())
+
+    def test_a_run_whose_owner_is_gone_is_finished_quietly(self):
+        run = self.start()
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        self.hand_to(gone.pid, started="")
+        self.ok("start", "second", "--package", PACKAGE)
+        self.assertEqual(get_active()[0].name, "second")
+        self.assertIn("finished_at", Run(run.path).meta())
+
+    def test_a_reused_pid_is_not_the_owner(self):
+        self.start()
+        other = self.other_process()
+        self.hand_to(other.pid, started="Thu Jan  1 00:00:00 1970")
+        self.ok("start", "second", "--package", PACKAGE)
+        self.assertEqual(get_active()[0].name, "second")
+
+    def test_stop_still_ends_a_run_another_process_owns(self):
+        self.start()
+        self.hand_to(self.other_process().pid)
+        self.ok("stop")
+        self.assertIsNone(get_active())
+
+    def test_run_refuses_to_take_over_a_live_run(self):
+        self.start()
+        other = self.other_process()
+        self.hand_to(other.pid)
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(PLAN)
+        code, out, err = tnazar("run", path)
+        self.assertEqual(code, cli.EXIT_ERROR, out + err)
+        self.assertIn(f"a run is in progress on this device: demo (pid {other.pid})", err)
+        self.assertEqual(get_active()[0].name, "demo")
+
+    def test_resuming_a_plan_run_refuses_while_its_old_owner_lives(self):
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(PLAN)
+        self.start()
+        get_active()[0].update_meta(plan=os.path.realpath(path))
+        other = self.other_process()
+        self.hand_to(other.pid)
+        code, out, err = tnazar("run", path, "--from", "TC-01")
+        self.assertEqual(code, cli.EXIT_ERROR, out + err)
+        self.assertIn("a run is in progress on this device", err)
+
+    def test_resuming_a_plan_run_takes_ownership(self):
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(PLAN)
+        self.start()
+        get_active()[0].update_meta(plan=os.path.realpath(path))
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        self.hand_to(gone.pid, started="")
+        self.run_plan('case TC-01 "Login"\n  run login\n  check "Pay now"\n')
+
+
+def _started(pid):
+    from teesri_nazar.session import process_started
+    return process_started(pid)

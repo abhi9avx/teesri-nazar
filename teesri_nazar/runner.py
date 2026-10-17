@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from . import cli, live
 from . import device as dev
 from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
-from .session import Run, get_active
+from .session import Run, claim_active, get_active
 from .targets import selector_of
 
 DETAIL_LINES = 6
@@ -57,7 +57,14 @@ def run(args) -> int:
         return cli.EXIT_ERROR
     path = os.path.realpath(args.plan)
     active = get_active()
-    if not (active and active[0].meta().get("plan") == path):
+    if active and active[0].meta().get("plan") == path:
+        try:
+            cli.refuse_if_owned(active[0])
+        except cli.UserError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return cli.EXIT_ERROR
+        claim_active()
+    else:
         device = ["--device", args.device] if getattr(args, "device", None) else []
         code, out = call([*device, "start", p.name, "--package", p.app, "--prompt", f"plan {os.path.basename(path)}"])
         if code:

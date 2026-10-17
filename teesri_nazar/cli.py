@@ -21,7 +21,7 @@ from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
 from .judge import _end_case, evidence_shot
-from .session import NAME_RE, Run, clear_active, get_active, now_iso, runs_dir, set_active, state_dir
+from .session import NAME_RE, Run, active_owner, clear_active, get_active, now_iso, runs_dir, set_active, state_dir
 from .targets import _not_found_msg, parse_target, resolve, selector_of
 
 EXIT_FAIL = 1
@@ -113,7 +113,8 @@ def cmd_packages(args) -> int:
 def cmd_start(args) -> int:
     if not NAME_RE.match(args.name):
         raise UserError("run name must be letters, digits, '-' or '_' (max 64)")
-    if get_active():
+    if active := get_active():
+        refuse_if_owned(active[0])
         finish_run(quiet=True)
     serial = pick_serial(args.device)
     adb = Adb(serial)
@@ -149,6 +150,12 @@ def cmd_start(args) -> int:
         print("animations: off (restored on stop)")
     print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
     return 0
+
+
+def refuse_if_owned(run: Run) -> None:
+    """Two runs on one device steal the screen from each other: never take over a live one."""
+    if (pid := active_owner()) is not None:
+        raise UserError(f"a run is in progress on this device: {run.name} (pid {pid}); stop it or wait")
 
 
 def finish_run(quiet: bool = False) -> Run | None:

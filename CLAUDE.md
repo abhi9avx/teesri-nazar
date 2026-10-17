@@ -127,5 +127,7 @@ case could not be executed (environment down, missing data), `skipped` when out 
 - Don't print or `note` passwords, MPINs, OTPs or customer data. Use `type --env`.
 - If the app, backend or device misbehaves outside the feature (network down, login
   broken), mark affected cases *blocked* with the reason and tell the user.
-- One active run at a time. `./tnazar status` shows it.
+- One active run at a time. `./tnazar status` shows it. If `start` says "a run is in progress
+  on this device", another process (e.g. a `tnazar run` plan) is driving it: ask the user
+  before `./tnazar stop`-ing it.
 - Replaying a finished run: `./tnazar replay <run> [--fresh] [--visual]`.

@@ -220,6 +220,9 @@ the panes stack.
 - **Speed and cost are tracked.** Steps over 5 s print `SLOW:` and get their own report
   section; the report's *Tokens* column shows each test case's real model usage.
 - **Screenshots in the report** are one per distinct screen, with failures first in red.
+- **One run per device.** `start` (and `run <plan>`) ends the previous run, unless another
+  `tnazar` process is still driving it, such as a plan running in another terminal: then it
+  refuses with exit 2. Wait for that run, or `./tnazar stop` it first.
 - **Replay re-checks the UI only.** DB and Figma checks from the original run show up as
   notes, not re-verified results. Secrets typed with `--env` need the same `.env` on the
   machine that replays.

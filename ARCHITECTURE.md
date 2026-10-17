@@ -476,7 +476,12 @@ Why an append-only log?
   report from the log at any time.
 
 **One active run at a time.** `.tnazar/active.json` points to the current run and device,
-so every command (`tap`, `check`, …) knows where to log without being told.
+so every command (`tap`, `check`, …) knows where to log without being told. It also records
+the process that started the run (pid and start time, so a reused pid does not count). A
+new `start` or `run` finishes the active run quietly when that process has exited (an agent
+driving commands one by one), and refuses with exit `2` while it is still alive (a `tnazar
+run <plan>` in progress): two runs on one device take the screen from each other.
+`./tnazar stop` still ends it from anywhere.
 
 ---
 
@@ -531,7 +536,7 @@ Claude (and CI) can act on them without reading the output:
 |---|---|---|
 | `0` | OK: the command worked; for `run` / `replay`, every case passed | Go on. |
 | `1` | Failed: a check failed, an element was not found, or an adb command failed | Read the output; for `run`, see the report. |
-| `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags) | Fix the line or the setup; nothing was tested. |
+| `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags, another process's run still in progress on the device) | Fix the line or the setup; nothing was tested. For a run in progress, wait for it or `./tnazar stop` it. |
 | `3` | Held: the user sent a dashboard message, so the command was **not run** | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. |
 | `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |
 | `5` | Still paused from the dashboard after 60 s; the command was **not run** | Run `./tnazar wait-resume` until it prints `resumed`, then continue. |
