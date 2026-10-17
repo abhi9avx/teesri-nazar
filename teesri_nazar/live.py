@@ -72,7 +72,8 @@ def deliver(log) -> list[dict]:
     msgs = unread()
     for m in msgs:
         print(f">> USER (dashboard): {m['text']}")
-        log({"type": "user_msg", "text": m["text"], "id": m["id"], "sent": m["t"]})
+        log({"type": "user_msg", "text": m["text"], "id": m["id"], "sent": m["t"],
+             "secret": m.get("secret"), "note": m.get("note")})
     if msgs:
         mark_all_read()
     return msgs

@@ -187,6 +187,10 @@ async function post(path, body) {
 // ------------------------------------------------------------------ formatting
 const fmtDur = (ms) => ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s` : `${(ms / 1000).toFixed(1)}s`;
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
+// What the user sees for their own message; secrets show by name, never by the agent's instruction text.
+const userText = (m) => m.secret
+  ? `🔒 ${m.secret.replace(/^UI_/, "")} sent (value hidden)${m.note ? ` — ${m.note}` : ""}`
+  : m.text;
 function sel(s) {
   if (!s) return "";
   if (s.id) return `id=${s.id}`;
@@ -280,7 +284,7 @@ function render() {
       tl.append(group);
     } else if (e.type === "user_msg") {
       const r = el("div", "row user");
-      r.append(el("span", "when", clock(e.t)), el("span", "ico", "📨"), el("span", "what", `You: ${e.text}`), el("span"));
+      r.append(el("span", "when", clock(e.t)), el("span", "ico", "📨"), el("span", "what", `You: ${userText(e)}`), el("span"));
       tl.append(r);
     } else {
       const r = row(e, t0);
@@ -380,7 +384,8 @@ function renderControl() {
   ul.replaceChildren();
   if (!inbox.length) { const li = el("li", null, "None yet"); li.style.cssText = "background:none;color:var(--muted)"; ul.append(li); }
   for (const m of inbox.slice().reverse()) {
-    const li = el("li", null, m.text);
+    const li = el("li", null, userText(m));
+    if (m.secret) li.title = `The agent types it with --env ${m.secret}`;
     li.append(el("span", "st", `${clock(m.t)} · ${m.delivered ? "✓ delivered to the agent" : "waiting for the agent's next step…"}`));
     ul.append(li);
   }

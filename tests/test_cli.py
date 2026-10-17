@@ -442,9 +442,19 @@ class TypeTest(CliTestCase):
             out = self.ok("type", "--env", "APP_MPIN", "--into", "id=mpin_input")
         e = self.last_type()
         self.assertEqual((e["text"], e["secret"], e["env"]), (None, True, "APP_MPIN"))
-        self.assertEqual(self.adb.typed, ["2468"])
+        self.assertEqual(self.adb.typed, list("2468"))
         self.assertNotIn("2468", out)
         self.assertNotIn("2468", self.run.events_path.read_text())
+
+    def test_short_digit_codes_are_typed_one_key_at_a_time(self):
+        # PIN/OTP boxes often drop digits that arrive in one `input text` burst.
+        self.ok("type", "4071", "--into", "id=mpin_input")
+        self.assertEqual(self.adb.typed, ["4", "0", "7", "1"])
+
+    def test_phone_numbers_and_text_still_go_in_one_burst(self):
+        self.ok("type", "9876543210", "--into", "id=phone_input")
+        self.ok("type", "ab12", "--into", "id=phone_input")
+        self.assertEqual(self.adb.typed, ["9876543210", "ab12"])
 
     def test_password_field_is_secret_automatically(self):
         out = self.ok("type", "1357", "--into", "id=mpin_input")
@@ -465,7 +475,7 @@ class TypeTest(CliTestCase):
         with mock.patch.dict(os.environ, {}):
             os.environ.pop("APP_OTP", None)
             self.ok("type", "--env", "APP_OTP")
-        self.assertEqual(self.adb.typed, ["123456"])
+        self.assertEqual(self.adb.typed, list("123456"))
 
     def test_clear_and_enter(self):
         self.ok("type", "hi there", "--into", "id=phone_input", "--clear", "--enter")

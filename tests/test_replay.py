@@ -174,7 +174,7 @@ class SecretsTest(ReplayTestCase):
         with mock.patch.dict(os.environ, {"APP_MPIN": "1357"}):
             code, _, run = self.replay()
         self.assertEqual(code, 0)
-        self.assertEqual(self.adb.typed, ["1357"])
+        self.assertEqual(self.adb.typed, list("1357"))
 
     def test_missing_secret_blocks_instead_of_passing(self):
         self.record_with_secret()

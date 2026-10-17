@@ -13,6 +13,7 @@ import mimetypes
 import os
 import re
 import secrets as _secrets
+import signal
 import threading
 import time
 import webbrowser
@@ -86,7 +87,8 @@ class Dashboard:
                              "summary": rpt.summary_line(s)}
             started = meta.get("started_at", "")
             read = live.delivered()
-            out["inbox"] = [{"text": m["text"], "t": m["t"], "delivered": i < read}
+            out["inbox"] = [{"text": m["text"], "t": m["t"], "delivered": i < read,
+                             "secret": m.get("secret"), "note": m.get("note")}
                             for i, m in enumerate(live.messages()) if m["t"] >= started][-30:]
         return out
 
@@ -146,7 +148,7 @@ class Dashboard:
         note = str(body.get("note", "")).strip()
         live.post((f"{note} — " if note else "") +
                   f"Secret value provided as {name}: type it with `./tnazar type --env {name} --into <field>`."
-                  f" Never print or note the value.", secret=name)
+                  f" Never print or note the value.", secret=name, note=note)
         return {"ok": True, "name": name}
 
 
@@ -287,6 +289,11 @@ def serve(port: int, open_browser: bool = True) -> int:
     print(f"dashboard: {url}  (Ctrl-C to stop)")
     if open_browser:
         webbrowser.open(url)
+
+    def _terminate(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _terminate)  # `kill` cleans up ui.json like Ctrl-C does
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

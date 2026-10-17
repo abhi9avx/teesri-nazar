@@ -155,8 +155,9 @@ class SecretTest(CliTestCase):
         self.assertEqual(code, live.EXIT_HELD)  # the agent first reads how to use it
         self.assertIn("--env UI_OTP", out)
         self.assertNotIn("482913", out)
+        self.assertEqual(events(run, "user_msg")[0]["secret"], "UI_OTP")
         out = self.ok("type", "--env", "UI_OTP", "--into", "id=phone_input")
-        self.assertEqual(self.adb.typed, ["482913"])
+        self.assertEqual(self.adb.typed, list("482913"))
         self.assertNotIn("482913", out)
         typed = events(run, "type")[0]
         self.assertEqual((typed["text"], typed["secret"], typed["env"]), (None, True, "UI_OTP"))
@@ -255,6 +256,13 @@ class ServerTest(unittest.TestCase):
         on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
         self.assertNotIn("7531", on_disk)
         self.assertIn("UI_MPIN", on_disk)  # the agent is told the name
+
+    def test_secret_shows_in_the_inbox_by_name_and_note_only(self):
+        self.active_run()
+        self.call("POST", "/api/secret", {"name": "otp", "value": "4455", "note": "use it on the OTP screen"})
+        [msg] = json.loads(self.call("GET", "/api/state")[1])["inbox"]
+        self.assertEqual((msg["secret"], msg["note"]), ("UI_OTP", "use it on the OTP screen"))
+        self.assertNotIn("4455", json.dumps(msg))
 
     def test_events_resume_from_an_offset_and_skip_a_half_written_line(self):
         run = self.active_run()

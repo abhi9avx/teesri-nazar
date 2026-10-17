@@ -47,9 +47,21 @@ def long_press(adb: Adb, x: int, y: int, ms: int = 800) -> None:
     adb.shell("input", "swipe", str(x), str(y), str(x), str(y), str(ms))
 
 
+CODE_MAX = 8  # OTPs and PINs; a 10-digit phone number still goes in one burst
+KEY_GAP = 0.2
+
+
 def type_text(adb: Adb, text: str) -> None:
-    if text:
-        adb.shell("input", "text", escape_input_text(text))
+    if not text:
+        return
+    if text.isdigit() and len(text) <= CODE_MAX:
+        # Segmented PIN/OTP boxes drop digits that arrive in a single `input text` burst.
+        for i, digit in enumerate(text):
+            if i:
+                time.sleep(KEY_GAP)
+            adb.shell("input", "text", digit)
+        return
+    adb.shell("input", "text", escape_input_text(text))
 
 
 def clear_field(adb: Adb, length: int) -> None:

@@ -364,7 +364,7 @@ flowchart LR
 | Command | What it does under the hood |
 |---|---|
 | `tap` | Find → center → `input tap`. `--long` = a swipe that doesn't move for 800 ms. |
-| `type` | Optionally tap the field (`--into`), clear it (`--clear`: move cursor to end, then backspace N times), then `input text`. Spaces and shell-special characters are escaped. ASCII only. |
+| `type` | Optionally tap the field (`--into`), clear it (`--clear`: move cursor to end, then backspace N times), then `input text`. Spaces and shell-special characters are escaped. ASCII only. Short all-digit values (≤ 8 digits: OTPs, PINs) go one digit at a time, because segmented PIN boxes drop digits that arrive in one burst. |
 | `key` | Named key → Android keycode (`back`=4, `enter`=66, …) → `input keyevent`. |
 | `scroll` | Swipe 30% of the area from the middle. `down` *reveals what's below* (finger moves up). `--to X` repeats until X is visible, and stops early if the screen stops changing (end of list). |
 | `swipe` | Raw coordinates. Screen size is recorded so replay can scale it. |
