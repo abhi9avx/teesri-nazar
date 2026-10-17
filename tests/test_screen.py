@@ -29,6 +29,25 @@ class ParseTest(unittest.TestCase):
         self.assertIn(self.screen.elements[3], shown)  # password field without text
 
 
+class CheckableTest(unittest.TestCase):
+    """A Switch whose row is the tap target has no label and is not clickable itself (Settings > Internet)."""
+
+    def setUp(self):
+        self.screen = scr.parse(
+            "<?xml version='1.0' ?><hierarchy rotation=\"0\">"
+            "<node class=\"android.widget.FrameLayout\" bounds=\"[0,0][1080,2400]\">"
+            "<node class=\"android.widget.Switch\" resource-id=\"com.android.settings:id/switchWidget\" "
+            "checkable=\"true\" checked=\"false\" clickable=\"false\" bounds=\"[860,740][1000,840]\" />"
+            "</node></hierarchy>")
+        self.switch = self.screen.elements[1]
+
+    def test_observe_shows_unlabelled_switch(self):
+        self.assertIn(self.switch, self.screen.interesting())
+
+    def test_unchecked_state_is_visible(self):
+        self.assertIn("unchecked", self.switch.describe())
+
+
 class FindTest(unittest.TestCase):
     def setUp(self):
         self.screen = scr.parse(XML)

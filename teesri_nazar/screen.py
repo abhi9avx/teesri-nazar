@@ -24,6 +24,7 @@ class Element:
     clickable: bool = False
     enabled: bool = True
     checked: bool = False
+    checkable: bool = False
     focused: bool = False
     scrollable: bool = False
     password: bool = False
@@ -54,6 +55,7 @@ class Element:
         parts.append(f"@{x},{y}")
         flags = [name for name, on in (
             ("tap", self.clickable), ("scroll", self.scrollable), ("checked", self.checked),
+            ("unchecked", self.checkable and not self.checked),
             ("focused", self.focused), ("disabled", not self.enabled), ("password", self.password),
         ) if on]
         if flags:
@@ -80,7 +82,7 @@ class Screen:
     def interesting(self) -> list[Element]:
         """Elements worth showing to a tester: anything labelled or interactive."""
         return [e for e in self.elements
-                if e.text or e.desc or e.clickable or e.scrollable or e.password
+                if e.text or e.desc or e.clickable or e.scrollable or e.password or e.checkable
                 or (e.rid and "EditText" in e.cls)]
 
     def signature(self) -> str:
@@ -110,6 +112,7 @@ def parse(xml: str) -> Screen:
             clickable=a("clickable") == "true" or a("long-clickable") == "true",
             enabled=a("enabled", "true") == "true",
             checked=a("checked") == "true",
+            checkable=a("checkable") == "true",
             focused=a("focused") == "true",
             scrollable=a("scrollable") == "true",
             password=a("password") == "true",
