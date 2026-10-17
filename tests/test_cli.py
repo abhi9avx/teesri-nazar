@@ -106,6 +106,11 @@ class LifecycleTest(CliTestCase):
         self.ok("launch", PACKAGE)
         self.assertEqual(self.adb.current, "search")
 
+    def test_debug_build_with_a_second_launcher_opens_the_app_not_the_chooser(self):
+        self.adb.launchers = ["leakcanary.internal.activity.LeakLauncherActivity", ".Main"]
+        out = self.ok("launch", PACKAGE, "--restart")
+        self.assertIn(f"launched {PACKAGE}/.Main", out)
+
     def test_stop_without_run(self):
         self.assertEqual(tnazar("stop")[0], 2)
         self.assertEqual(tnazar("stop", "--if-active")[0], 0)

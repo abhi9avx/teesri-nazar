@@ -101,6 +101,7 @@ class FakeAdb:
         self.keyboard = False  # soft keyboard showing
         self.foreign_top: str | None = None  # another package's screen on top of the app's task
         self.keyboard_on_focus = True  # False: focusing a field leaves it hidden (hardware keyboard, timing)
+        self.launchers = [".Main"]  # launcher activities; more than one makes resolve-activity return the chooser
         self.typed: list[str] = []
         self.taps: list[tuple[int, int]] = []
         self.calls: list[list[str]] = []
@@ -208,7 +209,9 @@ class FakeAdb:
             self.settings.pop(a[3], None)
             return ""
         if a[:2] == ["cmd", "package"]:
-            return f"priority=0\n{PACKAGE}/.Main\n"
+            if a[2] == "resolve-activity" and len(self.launchers) > 1:
+                return "priority=0\nandroid/com.android.internal.app.ResolverActivity\n"
+            return "".join(f"priority=0\n{PACKAGE}/{c}\n" for c in self.launchers)
         if a[:2] == ["am", "start"]:
             if "-n" in a:  # launching the app's own activity resumes its task
                 if "0x10008000" in a:  # NEW_TASK | CLEAR_TASK

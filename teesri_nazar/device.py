@@ -98,12 +98,20 @@ def screenshot(adb: Adb, dest: Path) -> Path:
     return dest
 
 
+DEBUG_LAUNCHERS = ("leakcanary", "chucker", "flipper")
+
+
 def launcher_activity(adb: Adb, package: str) -> str | None:
-    out = adb.shell("cmd", "package", "resolve-activity", "--brief",
-                    "-a", "android.intent.action.MAIN",
-                    "-c", "android.intent.category.LAUNCHER", package, check=False)
+    intent = ["-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", package]
+    out = adb.shell("cmd", "package", "resolve-activity", "--brief", *intent, check=False)
     lines = [ln.strip() for ln in out.splitlines() if "/" in ln]
-    return lines[-1] if lines else None
+    if lines and lines[-1].startswith(f"{package}/"):
+        return lines[-1]
+    # Several launcher entries (debug builds add LeakCanary & co.) resolve to the system chooser.
+    out = adb.shell("cmd", "package", "query-activities", "--brief", *intent, check=False)
+    found = [ln.strip() for ln in out.splitlines() if ln.strip().startswith(f"{package}/")]
+    found.sort(key=lambda c: any(tool in c.lower() for tool in DEBUG_LAUNCHERS))
+    return found[0] if found else None
 
 
 def force_stop(adb: Adb, package: str) -> None:
