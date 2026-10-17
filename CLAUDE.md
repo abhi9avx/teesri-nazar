@@ -36,7 +36,7 @@ Observe once, then act — `observe` costs one UI dump (~2–3 s); `tap #index` 
 ```bash
 ./tnazar observe                       # elements with [index], id, text, desc, center
 ./tnazar tap "Pay now"                 # by visible text (exact, falls back to partial)
-./tnazar tap ~"Pay"                    # partial text
+./tnazar tap '~Pay'                    # partial text (quote it: zsh expands a bare ~)
 ./tnazar tap id=btn_pay                # resource-id (short form)
 ./tnazar tap desc="Navigate up"        # accessibility label
 ./tnazar tap '#12'                     # index from the last observe (no new dump)
