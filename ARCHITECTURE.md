@@ -247,22 +247,24 @@ Element(index, cls, text, rid, desc, bounds,
 ### 6.4 What Claude actually sees — `observe`
 
 Most nodes are empty layout boxes. `observe` shows only the *interesting* ones —
-anything with text, a label, or that can be tapped, scrolled or typed into:
+anything with text, a label, or that can be tapped, scrolled, typed into or checked
+(switches and checkboxes show `checked` / `unchecked`):
 
 ```
 $ ./tnazar observe
-screen: com.example.app  7 elements (6 shown)
+screen: com.example.app  8 elements (7 shown)
 [1] TextView id=title text="Welcome back" @540,250
 [2] EditText id=phone_input desc="Phone number" @540,460 tap focused
 [3] EditText id=mpin_input @540,620 tap password
 [4] Button id=btn_login text="Login" @540,860 tap disabled
 [5] TextView id=link text="Help" @280,1030 tap
 [6] TextView id=link text="Terms of service" @800,1030 tap
+[7] Switch id=remember_me @960,1180 tap unchecked
 ```
 
 This compact text is the agent's "eyesight". It is cheap (a few hundred tokens), exact
 (no guessing pixels from an image), and carries state a screenshot can't show clearly
-(`disabled`, `password`, `focused`). The full XML is also saved to `runs/<name>/dumps/`
+(`disabled`, `password`, `focused`, `unchecked`). The full XML is also saved to `runs/<name>/dumps/`
 and to `.tnazar/last-screen.xml`, so `#index` taps can reuse it without a new dump.
 
 Screenshots are still taken — as **evidence for humans**, not as the agent's input.
@@ -365,7 +367,7 @@ flowchart LR
 | `key` | Named key → Android keycode (`back`=4, `enter`=66, …) → `input keyevent`. |
 | `scroll` | Swipe 30% of the area from the middle. `down` *reveals what's below* (finger moves up). `--to X` repeats until X is visible, and stops early if the screen stops changing (end of list). |
 | `swipe` | Raw coordinates. Screen size is recorded so replay can scale it. |
-| `launch` | Resolve the app's launcher activity and start it (`--restart` force-stops first, `--fresh` also clears data). |
+| `launch` | Resolve the app's launcher activity and start it. Plain `launch` resumes the app where it was; `--restart` force-stops first, `--fresh` also clears data, and both start with `NEW_TASK\|CLEAR_TASK` so activities left in the task (including other packages' ones) are dropped. |
 | `open-url` | Fire a VIEW intent — for deep links. |
 | `wait` | Poll the screen every 0.4 s until the element appears (or with `--gone`, disappears). |
 
@@ -376,7 +378,10 @@ until the condition is true or the timeout expires.
 **Animations off.** `start` sets the phone's three animation scales to 0 so screens settle
 immediately and dumps don't catch half-drawn screens. The old values are saved in
 `run.json` and restored by `stop` (and by a Claude Code `SessionEnd` hook if a session
-ends with a run still open).
+ends with a run still open). They are also saved on the device itself, in
+`/data/local/tmp/tnazar-animations`: if a run never restored them (device unplugged,
+host killed, a different `TNAZAR_HOME`), the next `start` reads that file instead of
+taking 0 as the baseline. Restoring deletes the file.
 
 **Secrets never touch the log.** `type --env APP_MPIN` reads the value from `.env`; the
 event records `"text": null, "secret": true, "env": "APP_MPIN"` — the name, never the value.
@@ -400,8 +405,11 @@ A test without assertions is just a demo. Every expected result becomes a **chec
 ```
 
 `tnazar` polls the UI tree until the element is found (or gone), then compares the
-`enabled` / `checked` flags. Every check — pass or fail — **saves a screenshot**. A
-failing check also saves the full XML dump, so you can see exactly what *was* on screen.
+`enabled` / `checked` flags. A dump that fails mid-animation is retried until the timeout;
+only a screen that never dumps is an error. Every check — pass or fail — **saves a
+screenshot** when it can: on screens that block capture (`FLAG_SECURE`) the check and case
+result are still recorded, with a warning instead of the shot. A failing check also saves
+the full XML dump, so you can see exactly what *was* on screen.
 
 ### DB / Figma / API checks (agent-verified, tnazar-recorded)
 
@@ -637,6 +645,10 @@ How it works:
      (waiting up to `--step-timeout`, default 10 s), then act on its *new* center.
      No selector? Use the recorded coordinates, **scaled** to the new screen size
      (`x × new_width / old_width`).
+   - **`key back`** → the recording notes whether the keyboard was open. Back over an open
+     keyboard only closes it, so if the keyboard state differs on replay, the back is
+     skipped (keyboard already hidden) or an extra back is pressed first (keyboard open
+     now but not then).
    - **UI checks** → re-verified for real, with new screenshots.
    - **DB / Figma checks** → can't be re-verified automatically; logged as notes.
    - **secrets** → re-read from the same `$ENV` name on the replaying machine.
