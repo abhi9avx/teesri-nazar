@@ -43,7 +43,7 @@ Observe once, then act — `observe` costs one UI dump (~2–3 s); `tap #index` 
 ./tnazar tap 540,1860                  # coordinates: last resort only
 ./tnazar tap "Continue" --wait 10      # wait for it to appear first
 ./tnazar type "9876543210" --into id=phone_input --clear
-./tnazar type --env SLICE_MPIN --into id=mpin_input   # secret: never recorded
+./tnazar type --env APP_MPIN --into id=mpin_input   # secret: never recorded
 ./tnazar key back | enter | home
 ./tnazar scroll down --to "Transaction history"
 ./tnazar wait "Payment successful" --timeout 20
