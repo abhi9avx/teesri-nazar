@@ -133,8 +133,7 @@ def run(args) -> int:
         meta["app_version"] = dev.app_version(adb, meta["package"])
         if smeta.get("app_version") and smeta["app_version"] != meta["app_version"]:
             print(f"note: recorded on {smeta['app_version']}, replaying on {meta['app_version']}")
-    meta["animations_before"] = dev.get_animations(adb)
-    dev.set_animations(adb, {k: "0" for k in dev.ANIMATION_SETTINGS})
+    meta["animations_before"] = dev.animations_off(adb)
     target = Run.create(f"{source.name}-replay-{stamp()}", meta)
     ctx = Ctx(adb, target)
     print(f"replaying {source.name} on {adb.serial} -> {target.name}")
@@ -198,7 +197,7 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
-        dev.set_animations(adb, meta["animations_before"])
+        dev.animations_restore(adb, meta["animations_before"])
         target.update_meta(finished_at=now_iso())
         paths = rpt.write(target)
 

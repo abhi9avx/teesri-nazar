@@ -181,8 +181,7 @@ def cmd_start(args) -> int:
             raise UserError(f"{args.package} is not installed on {serial}")
         meta["app_version"] = dev.app_version(adb, args.package)
     if not args.keep_animations:
-        meta["animations_before"] = dev.get_animations(adb)
-        dev.set_animations(adb, {k: "0" for k in dev.ANIMATION_SETTINGS})
+        meta["animations_before"] = dev.animations_off(adb)
     run = Run.create(args.name, meta)
     set_active(run, serial)
     dev.logcat_clear(adb)
@@ -208,7 +207,7 @@ def finish_run(quiet: bool = False) -> Run | None:
     try:
         adb = Adb(serial)
         if meta.get("animations_before"):
-            dev.set_animations(adb, meta["animations_before"])
+            dev.animations_restore(adb, meta["animations_before"])
         if run.current_case():
             run.log({"type": "case_end", "case": run.current_case(), "status": "blocked",
                      "reason": "run stopped before the case finished"})

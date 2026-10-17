@@ -52,6 +52,24 @@ class LifecycleTest(CliTestCase):
         self.assertTrue((run.path / "report.html").exists())
         self.assertIn("run finished: demo", out)
 
+    def test_run_that_never_restored_animations_does_not_poison_the_next(self):
+        self.start()  # device is lost before stop: animations stay at 0, nothing restores them
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": os.path.join(self.home, "other")}):
+            self.ok("start", "second", "--package", PACKAGE)
+            self.ok("stop")
+        self.assertEqual(self.adb.settings["window_animation_scale"], "1.0")
+
+    def test_overlapping_runs_both_restore_the_real_baseline(self):
+        self.start()
+        other = os.path.join(self.home, "other")
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}):
+            self.ok("start", "second", "--package", PACKAGE)
+        self.ok("stop")
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}):
+            self.ok("stop")
+        self.assertEqual(self.adb.settings["window_animation_scale"], "1.0")
+        self.assertEqual(self.adb.files, {})
+
     def test_keep_animations(self):
         run = self.start("--keep-animations")
         self.assertNotIn("animations_before", run.meta())

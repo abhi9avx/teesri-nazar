@@ -97,6 +97,7 @@ class FakeAdb:
         self.crash_log = ""
         self.secure = False  # FLAG_SECURE screen: screencap yields no PNG
         self.dump_failures = 0  # next N dumps fail like an animating screen
+        self.files: dict[str, str] = {}  # device files tnazar writes via the shell
         self.typed: list[str] = []
         self.taps: list[tuple[int, int]] = []
         self.calls: list[list[str]] = []
@@ -165,6 +166,14 @@ class FakeAdb:
             nxt = self.app.on_swipe.get(self.current)
             if nxt:
                 self.current = nxt
+            return ""
+        if a[:1] == ["echo"] and ">" in a:
+            self.files[a[-1]] = " ".join(a[1:a.index(">")]) + "\n"
+            return ""
+        if a[:1] == ["cat"]:
+            return self.files.get(a[1], "")
+        if a[:2] == ["rm", "-f"]:
+            self.files.pop(a[2], None)
             return ""
         if a[:1] == ["getprop"]:
             return "14\n"

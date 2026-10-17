@@ -19,6 +19,9 @@ KEY_MOVE_END = 123
 
 _SAFE = re.compile(r"[A-Za-z0-9_.,:/@+=-]")
 ANIMATION_SETTINGS = ("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
+# The user's real animation settings live on the device until restored, so a run that never got to
+# restore them (device lost, host killed, another TNAZAR_HOME) cannot leave 0 as the next baseline.
+ANIMATION_BASELINE = "/data/local/tmp/tnazar-animations"
 
 
 def escape_input_text(text: str) -> str:
@@ -156,6 +159,27 @@ def set_animations(adb: Adb, values: dict[str, str]) -> None:
             adb.shell("settings", "delete", "global", k, check=False)
         else:
             adb.shell("settings", "put", "global", k, v)
+
+
+def animations_off(adb: Adb) -> dict[str, str]:
+    """Turn animations off; returns the user's real settings, preferring one saved by an unrestored run."""
+    before = _saved_baseline(adb)
+    if before is None:
+        before = get_animations(adb)
+        adb.shell("echo", ",".join(f"{k}={v}" for k, v in before.items()), ">", ANIMATION_BASELINE)
+    set_animations(adb, {k: "0" for k in ANIMATION_SETTINGS})
+    return before
+
+
+def animations_restore(adb: Adb, before: dict[str, str]) -> None:
+    set_animations(adb, _saved_baseline(adb) or before)
+    adb.shell("rm", "-f", ANIMATION_BASELINE, check=False)
+
+
+def _saved_baseline(adb: Adb) -> dict[str, str] | None:
+    raw = adb.shell("cat", ANIMATION_BASELINE, check=False).strip()
+    pairs = dict(p.split("=", 1) for p in raw.split(",") if "=" in p)
+    return pairs if set(pairs) == set(ANIMATION_SETTINGS) else None
 
 
 def logcat_clear(adb: Adb) -> None:
