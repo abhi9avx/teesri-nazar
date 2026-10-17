@@ -14,7 +14,7 @@ from . import device as dev
 from . import report as rpt
 from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
-from .session import Run, clear_active, get_active, home, now_iso, runs_dir, set_active, state_dir
+from .session import NAME_RE, Run, clear_active, get_active, home, now_iso, runs_dir, set_active, state_dir
 
 EXIT_FAIL = 1
 EXIT_ERROR = 2
@@ -152,6 +152,8 @@ def cmd_packages(args) -> int:
 
 
 def cmd_start(args) -> int:
+    if not NAME_RE.match(args.name):
+        raise UserError("run name must be letters, digits, '-' or '_' (max 64)")
     if get_active():
         finish_run(quiet=True)
     serial = pick_serial(args.device)

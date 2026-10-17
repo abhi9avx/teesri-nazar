@@ -63,6 +63,13 @@ class LifecycleTest(CliTestCase):
         self.assertIn("not installed", err)
         self.assertIsNone(get_active())
 
+    def test_invalid_run_name_leaves_device_animations_untouched(self):
+        code, _, err = tnazar("start", "my test", "--package", PACKAGE)
+        self.assertEqual(code, 2)
+        self.assertIn("run name", err)
+        self.assertIsNone(get_active())
+        self.assertEqual(self.adb.settings["window_animation_scale"], "1.0")
+
     def test_fresh_clears_app_data(self):
         self.adb.current = "home"
         self.start("--fresh")
