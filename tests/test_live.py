@@ -101,6 +101,50 @@ class InboxTest(CliTestCase):
         self.assertEqual(len(self.adb.taps), 1)
 
 
+class SteeringUnderLoadTest(CliTestCase):
+    def test_a_burst_of_messages_is_delivered_once_each_in_order(self):
+        run = self.start()
+        for i in range(5):
+            live.post(f"instruction {i}")
+        code, out, _ = tnazar("tap", "Login")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertEqual([ln for ln in out.splitlines() if ln.startswith(">> USER")],
+                         [f">> USER (dashboard): instruction {i}" for i in range(5)])
+        self.assertEqual([e["text"] for e in events(run, "user_msg")], [f"instruction {i}" for i in range(5)])
+        self.ok("tap", "Login")  # nothing left to deliver
+
+    def test_a_message_arriving_while_others_are_delivered_is_not_lost(self):
+        self.start()
+        live.post("first")
+        real = live.messages
+        calls = []
+
+        def messages():
+            calls.append(1)
+            snapshot = real()
+            if len(calls) == 1:  # lands right after the inbox was read, before it is marked read
+                live.post("arrived mid-delivery")
+            return snapshot
+        with mock.patch.object(live, "messages", messages):
+            code, out, _ = tnazar("tap", "Login")
+        self.assertIn("first", out)
+        code, out, _ = tnazar("tap", "Login")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn(">> USER (dashboard): arrived mid-delivery", out)
+
+    def test_messages_posted_at_the_same_moment_never_interleave(self):
+        self.start()
+        dash = serve_dashboard(self)
+        threads = [threading.Thread(target=dash.message, args=({"text": f"msg {i} " + "x" * 1900},))
+                   for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        texts = sorted(m["text"].split()[1] for m in live.messages())
+        self.assertEqual(texts, sorted(str(i) for i in range(10)))
+
+
 class PauseTest(CliTestCase):
     def setUp(self):
         super().setUp()

@@ -69,13 +69,15 @@ def mark_all_read() -> None:
 
 def deliver(log) -> list[dict]:
     """Print unread messages for the agent, record them in the run, mark them read."""
-    msgs = unread()
+    seen = delivered()
+    msgs = messages()[seen:]
     for m in msgs:
         print(f">> USER (dashboard): {m['text']}")
         log({"type": "user_msg", "text": m["text"], "id": m["id"], "sent": m["t"],
              "secret": m.get("secret"), "note": m.get("note")})
     if msgs:
-        mark_all_read()
+        # Only what was printed: a message that lands meanwhile stays unread for the next step.
+        _cursor_file().write_text(str(seen + len(msgs)))
     return msgs
 
 
