@@ -153,7 +153,8 @@ class FakeAdb:
             self._tick()
             if self.uia2_errors:
                 self.uia2_errors -= 1
-                raise urllib.error.HTTPError(path, 500, "Internal Server Error", None, None)
+                body = b'{"value": {"error": "unknown error", "message": "Cannot read the screen"}}'
+                raise urllib.error.HTTPError(path, 500, "Internal Server Error", {}, io.BytesIO(body))
             self.uia2_reads += 1
             return {"value": server_xml(self.nodes(), self.size)}
         raise AssertionError(f"unexpected uia2 call: {method} {path}")

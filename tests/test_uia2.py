@@ -90,3 +90,20 @@ class NoServerTest(CliTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerErrorBodyTest(unittest.TestCase):
+    def test_an_error_whose_body_cannot_be_read_still_gives_a_reason(self):
+        # Python 3.9 builds a half-initialised HTTPError when there is no body; reading it raises
+        # KeyError. Reading the reason must never turn a retryable server error into a crash.
+        import urllib.error
+        from teesri_nazar import uia2
+
+        class Unreadable:
+            def read(self, *a):
+                raise KeyError("file")
+
+            def close(self):
+                pass
+        err = urllib.error.HTTPError("/source", 500, "Internal Server Error", {}, Unreadable())
+        self.assertEqual(uia2._error_message(err), "")

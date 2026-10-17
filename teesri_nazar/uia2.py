@@ -117,10 +117,12 @@ def source(adb: Adb) -> str | None:
 
 
 def _error_message(exc: urllib.error.HTTPError) -> str:
+    # Only adds detail to a warning, so it must never fail the read: on Python 3.9 an error
+    # built without a body raises KeyError from read(), and other bodies can be anything.
     try:
         value = json.loads(exc.read() or b"{}").get("value") or {}
         return f"{value.get('error', '')} {value.get('message', '')}".strip()[:200]
-    except (OSError, ValueError, AttributeError):
+    except Exception:
         return ""
 
 
