@@ -177,7 +177,7 @@ def run(args) -> int:
                     print(f"  -> {status.upper()}")
                 skipping = False
                 continue
-            if skipping or t in ("note", "say", "user_msg", "hold", "io"):
+            if skipping or t in ("note", "say", "user_msg", "hold", "io"):  # "io": logged by older runs
                 continue
             if t == "check":
                 _recheck(ctx, e, args.step_timeout)

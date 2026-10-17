@@ -16,7 +16,8 @@ from pathlib import Path
 
 from .session import now_iso, state_dir
 
-EXIT_HELD = 3
+EXIT_HELD = 3    # a device command was not run: the user sent a message
+EXIT_PAUSED = 5  # a device command was not run: the user still has the run paused
 PAUSE_WAIT = 60.0  # stays under the agent's 2-minute command timeout
 POLL = 0.5
 

@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 
 from . import cli, live
-from . import screen as scr
+from . import device as dev
 from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
 from .session import Run, get_active
 
@@ -120,15 +120,12 @@ class Executor:
     def step(self, step: Step, record: bool):
         while True:
             code, out = call(step.argv)
-            if code != live.EXIT_HELD:
-                break
-            if ">> USER (dashboard):" in out:
+            if code == live.EXIT_HELD:
                 return HandedBack(out)
-            if live.paused():
-                while not live.wait_resume():
-                    pass  # no model timeout here: wait as long as the user keeps it paused
-                continue
-            return HandedBack(out)
+            if code != live.EXIT_PAUSED:
+                break
+            while not live.wait_resume():
+                pass  # no model timeout here: wait as long as the user keeps it paused
         if code == 0 or (step.argv[0] == "check" and code == cli.EXIT_FAIL):
             return None  # a failed check is already recorded; the case goes on
         return self.fail(step.line, " ".join(_quote(a) for a in step.argv), _tail(out), record)
@@ -142,16 +139,11 @@ class Executor:
 
     def visible(self, target: str, alts: list[str], wait: float) -> tuple[bool, int]:
         """Is `target` on screen? With --wait, read until it or one of `alts` shows (or time runs out)."""
-        ctx = cli.Ctx.from_args(None)
-        sels = [cli.parse_target(t, argparse.Namespace())[1] for t in [target, *alts]]
-        deadline, reads = time.monotonic() + wait, 0
-        while True:
-            screen = ctx.capture()
-            reads += 1
-            hits = [scr.find(screen, s) is not None for s in sels]
-            if any(hits) or time.monotonic() >= deadline:
-                return hits[0], reads
-            time.sleep(0.15)
+        adb = cli.Ctx.from_args(None).adb
+        sel, *others = [cli.parse_target(t, argparse.Namespace())[1] for t in [target, *alts]]
+        stats: dict = {}
+        found, _, _ = dev.wait_for(adb, sel, wait, stats=stats, alternatives=others)
+        return found, stats["polls"]
 
 
 def _select(cases: list[Case], only: str | None, start: str | None) -> list[Case]:

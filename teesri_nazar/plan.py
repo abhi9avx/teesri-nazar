@@ -247,7 +247,7 @@ def _check_args(words: list[str], fail) -> None:
         fail(str(exc))
 
 
-def _check_flows(body: list, flows: dict[str, Flow], path: list, source: str) -> None:
+def _check_flows(body: list, flows: dict[str, Flow], path: list, source: str, in_retry: bool = False) -> None:
     for item in body:
         if isinstance(item, RunFlow):
             if item.flow not in flows:
@@ -255,9 +255,12 @@ def _check_flows(body: list, flows: dict[str, Flow], path: list, source: str) ->
             if item.flow in path:
                 raise PlanError(f"{source} line {item.line}: flows call each other in a loop "
                                 f"({' -> '.join(p for p in path if p)} -> {item.flow})")
-            _check_flows(flows[item.flow].body, flows, path + [item.flow], source)
+            if in_retry and _has_check(flows[item.flow].body, flows):
+                raise PlanError(f"{source} line {item.line}: flow `{item.flow}` has a `check`, so it cannot run "
+                                f"inside `retry` (failed attempts would be recorded): use `wait` in the flow")
+            _check_flows(flows[item.flow].body, flows, path + [item.flow], source, in_retry)
         elif isinstance(item, Retry):
-            _check_flows(item.body, flows, path, source)
+            _check_flows(item.body, flows, path, source, in_retry=True)
         elif isinstance(item, If):
-            _check_flows(item.then, flows, path, source)
-            _check_flows(item.other, flows, path, source)
+            _check_flows(item.then, flows, path, source, in_retry)
+            _check_flows(item.other, flows, path, source, in_retry)

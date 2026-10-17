@@ -590,11 +590,16 @@ def cmd_adb(args) -> int:
 
 def redact(argv: list[str]) -> list[str]:
     """Hide any .env value or dashboard secret that appears in a recorded command line."""
-    values = [os.environ[k] for k in _DOTENV_KEYS if k in os.environ] + live.secret_values()
-    values = sorted({v for v in values if len(v) >= 3}, key=len, reverse=True)
+    values = {v for v in [os.environ[k] for k in _DOTENV_KEYS if k in os.environ] + live.secret_values() if v}
+    # A value of 1-2 characters would match inside unrelated words ("42" in "tcp:8420"),
+    # so it is hidden only when it is a whole argument.
+    inside = sorted((v for v in values if len(v) >= 3), key=len, reverse=True)
     out = []
     for a in argv:
-        for v in values:
+        if a in values:
+            out.append("••••")
+            continue
+        for v in inside:
             a = a.replace(v, "••••")
         out.append(a)
     return out
@@ -613,7 +618,7 @@ def cmd_wait_resume(args) -> int:
         print("resumed")
         return 0
     print("still paused by the user; run `./tnazar wait-resume` again before the next step")
-    return live.EXIT_HELD
+    return live.EXIT_PAUSED
 
 
 def cmd_ui(args) -> int:
@@ -832,34 +837,9 @@ def load_dotenv() -> None:
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
-class _Counted:
-    """Passes writes through and counts characters: the agent reads all of it as context."""
-
-    def __init__(self, inner):
-        self.inner, self.chars = inner, 0
-
-    def write(self, s: str) -> int:
-        self.chars += len(s)
-        return self.inner.write(s)
-
-    def __getattr__(self, name):
-        return getattr(self.inner, name)
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     load_dotenv()
-    out, err = _Counted(sys.stdout), _Counted(sys.stderr)
-    sys.stdout, sys.stderr = out, err
-    try:
-        return _run(args)
-    finally:
-        sys.stdout, sys.stderr = out.inner, err.inner
-        if args.cmd != "ui" and (active := get_active()):
-            active[0].log({"type": "io", "cmd": args.cmd, "tokens": -(-(out.chars + err.chars) // 4)})
-
-
-def _run(args) -> int:
     try:
         active = get_active() if args.cmd in HELD else None
         if active and (held := _hold(active[0])) is not None:
@@ -890,10 +870,10 @@ def _hold(run: Run) -> int | None:
         run.log({"type": "hold", "reason": "paused", "resumed": resumed,
                  "waited_ms": round((time.monotonic() - began) * 1000)})
         if not resumed:
-            live.deliver(run.log)
+            told = live.deliver(run.log)
             print("PAUSED: the user paused this run. Command NOT run. "
                   "Run `./tnazar wait-resume` until it prints `resumed`, then continue.")
-            return live.EXIT_HELD
+            return live.EXIT_HELD if told else live.EXIT_PAUSED
         print("resumed")
     if live.deliver(run.log):
         print("Command NOT run: read the user's message above and decide the next step "

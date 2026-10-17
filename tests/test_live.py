@@ -157,11 +157,11 @@ class PauseTest(CliTestCase):
         self.start()
         live.set_paused(True)
         code, out, _ = tnazar("tap", "Login")
-        self.assertEqual(code, live.EXIT_HELD)
+        self.assertEqual(code, live.EXIT_PAUSED)  # still paused: not the same as a message (EXIT_HELD)
         self.assertIn("PAUSED", out)
         self.assertIn("wait-resume", out)
         self.assertEqual(self.adb.taps, [])
-        self.assertEqual(tnazar("wait-resume")[0], live.EXIT_HELD)
+        self.assertEqual(tnazar("wait-resume")[0], live.EXIT_PAUSED)
         live.set_paused(False)
         self.assertIn("resumed", self.ok("wait-resume"))
         self.ok("tap", "Login")
@@ -229,6 +229,15 @@ class SecretTest(CliTestCase):
         with mock.patch.object(cli.subprocess, "run", return_value=done):
             self.ok("adb", "shell", "input", "text", "4321")
         self.assertEqual(events(run, "adb")[0]["args"], ["shell", "input", "text", "••••"])
+
+    def test_a_very_short_secret_is_hidden_when_it_is_a_whole_argument(self):
+        Path(self.home, ".env").write_text("APP_PIN=42\n")
+        run = self.start()
+        with mock.patch.object(cli.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
+            self.ok("adb", "shell", "input", "text", "42")
+            self.ok("adb", "forward", "tcp:8420", "tcp:6790")  # "42" inside other words is not touched
+        args = [e["args"] for e in events(run, "adb")]
+        self.assertEqual(args, [["shell", "input", "text", "••••"], ["forward", "tcp:8420", "tcp:6790"]])
 
     def test_adb_command_line_hides_dashboard_secrets(self):
         run = self.start()

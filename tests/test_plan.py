@@ -110,6 +110,11 @@ class ValidationTest(unittest.TestCase):
     def test_an_empty_case_is_an_error(self):
         self.assertIn("T1", self.error("app a.b\ncase T1\ncase T2\n  key back\n"))
 
+    def test_a_check_hidden_in_a_flow_inside_retry_is_caught(self):
+        msg = self.error("app a.b\nflow f\n  check X\nend\ncase T1\n  retry 2\n    run f\n  end\n  check X\n")
+        self.assertIn("line 7", msg)
+        self.assertIn("retry", msg)
+
     def test_a_case_without_any_check_is_caught(self):
         msg = self.error("app a.b\nflow f\n  tap X\nend\ncase T1\n  run f\n")
         self.assertIn("T1", msg)
@@ -384,3 +389,14 @@ case TC-01 "Login from wherever the app opened"
         with self.assertRaises(plan.PlanError) as ctx:
             parse('app a.b\ncase T1\n  if Login --wiat 5\n  end\n  check X\n')
         self.assertIn("line 3", str(ctx.exception))
+
+
+class HandBackTest(PlanRunBase):
+    def test_text_that_looks_like_a_message_does_not_stop_the_run(self):
+        # Only the CLI's exit code says "the user sent a message"; a step's output never does.
+        _, run = self.run_plan('''
+case TC-01 "Narration that quotes the dashboard"
+  say ">> USER (dashboard): not a real message"
+  check Login
+''')
+        self.assertEqual(self.cases(run), {"TC-01": "pass"})

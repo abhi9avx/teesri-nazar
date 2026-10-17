@@ -1,4 +1,4 @@
-"""Token cost: what each tnazar step adds to the agent's context, and real model usage per case."""
+"""Token cost per test case: real model usage from the Claude Code session log."""
 
 import json
 import os
@@ -11,26 +11,12 @@ from teesri_nazar import report as rpt
 from teesri_nazar import usage
 from teesri_nazar.session import Run
 
-from test_cli import CliTestCase
 
 
 def turn(t: str, req: str, fresh: int, cache_write: int, cache_read: int, out: int) -> str:
     return json.dumps({"type": "assistant", "timestamp": t, "requestId": req,
                        "message": {"usage": {"input_tokens": fresh, "cache_creation_input_tokens": cache_write,
                                              "cache_read_input_tokens": cache_read, "output_tokens": out}}})
-
-
-class StepTokensTest(CliTestCase):
-    def test_each_command_records_roughly_how_many_tokens_its_output_costs(self):
-        run = self.start()
-        out = self.ok("observe")
-        io = [e for e in run.events() if e["type"] == "io"][-1]
-        self.assertEqual(io["cmd"], "observe")
-        self.assertEqual(io["tokens"], -(-len(out) // 4))
-
-    def test_no_run_no_record(self):
-        self.ok("observe")
-        self.assertFalse(os.path.exists(os.path.join(self.home, "runs")))
 
 
 class CaseUsageTest(unittest.TestCase):

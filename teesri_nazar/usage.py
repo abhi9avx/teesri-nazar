@@ -1,11 +1,8 @@
-"""Token cost of a run.
+"""Token cost of a run, per test case.
 
-Two numbers, from two places:
-- per step: how many tokens a `tnazar` command's output adds to the agent's context
-  (logged by the CLI as an `io` event; ~4 characters per token);
-- per case: what the model really used, read from Claude Code's session transcript
-  (~/.claude/projects/<project>/<session>.jsonl) for the requests made between
-  `case start` and `case end`.
+What the model really used, read from Claude Code's session transcript
+(~/.claude/projects/<project>/<session>.jsonl): each request is charged to the cases that
+finish while its commands run (see `per_case`).
 """
 
 from __future__ import annotations
@@ -16,10 +13,6 @@ import re
 from pathlib import Path
 
 from .session import Run, home
-
-
-def estimate(text: str) -> int:
-    return -(-len(text) // 4)
 
 
 def fmt(n: int) -> str:

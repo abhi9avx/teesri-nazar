@@ -290,7 +290,7 @@ function render() {
       if (cost) { const s = el("span", "case-cost", `🪙 ${cost}`); s.title = "model usage for this case (from the Claude Code session log)"; c.append(s); }
       tl.append(c);
     } else if (e.type === "io") {
-      // Token cost is shown per test case (on its result line), not per step.
+      // Older runs logged per-command output size; token cost is shown per test case instead.
     } else if (e.type === "say") {
       closeGroup();
       group = el("div", "group");

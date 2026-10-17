@@ -82,7 +82,8 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
 - **Obey `>> USER (dashboard): …` lines.** They are instructions from the user, typed in
   the dashboard. When a command prints `Command NOT run`, re-plan around the message; re-run
   the command only if it still applies.
-- **`PAUSED`:** run `./tnazar wait-resume` (repeat until it prints `resumed`), then continue.
+- **`PAUSED`** (exit 5): run `./tnazar wait-resume` (repeat until it prints `resumed`),
+  then continue. A message (`Command NOT run`) is exit 3.
   Don't do anything else while paused.
 - **Secrets from the dashboard** arrive as a name (`UI_OTP`): type with
   `./tnazar type --env UI_OTP --into <field>`. Never print, note or echo the value.

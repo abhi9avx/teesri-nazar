@@ -248,7 +248,7 @@ def wait_online(adb: Adb, timeout: float, host: str = "8.8.8.8") -> bool:
 
 def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
              interval: float | None = None, stats: dict | None = None,
-             alternatives: list[scr.Selector] = ()) -> tuple[bool, scr.Screen, scr.Element | None]:
+             alternatives: list[scr.Selector] | None = None) -> tuple[bool, scr.Screen, scr.Element | None]:
     """Poll until `sel` appears (or is gone). If one of `alternatives` shows up first, stop at once:
     ok is False and stats["alternative"] says which one (e.g. an error instead of the next screen)."""
     if interval is None:
@@ -269,7 +269,7 @@ def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
             el = scr.find(screen, sel, strict=gone)
             if (el is None) == gone:
                 return True, screen, el
-            for i, alt in enumerate(alternatives):
+            for i, alt in enumerate(alternatives or []):
                 if (found := scr.find(screen, alt)) is not None:
                     stats["alternative"] = i
                     return False, screen, found

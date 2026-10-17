@@ -781,7 +781,7 @@ case TC-01 "Network & internet opens"
 | Decision | Why | Cost |
 |---|---|---|
 | **AI as the tester, tool as the hands** | Planning and judgement are where AI helps; precise, repeatable device I/O and pass/fail rules belong in deterministic code. | Two moving parts to understand. |
-| **ADB + UIAutomator, no Appium** | Nothing to install on the phone, no server, no app changes, works with any installed app. | Limited to what the accessibility tree exposes (§18). |
+| **ADB + UIAutomator, no Appium required** | Nothing to install on the phone, no app changes, works with any installed app. If Appium's UiAutomator2 server is already installed, a run uses it for screen reads (~0.05 s instead of ~2 s) and stops it at the end; without it, `uiautomator dump`. | Limited to what the accessibility tree exposes (§18). |
 | **Python standard library only** | `git clone` and run. No `pip install`, no version conflicts; works on Python 3.9+. | Some things are hand-rolled (dotenv loading, HTML report). |
 | **Text element list, not screenshots, as the agent's eyes** | Exact ids, text and state; cheap in tokens; no pixel guessing. | Can't "see" purely visual problems — hence Figma checks and `--visual`. |
 | **Attribute selectors, not XPath** | Survive layout refactors; readable (`id=btn_pay`). | Need ids/labels to exist; fall back to text otherwise. |
@@ -807,7 +807,11 @@ A testing tool that needs a phone to be tested is hard to trust in CI. So:
   recording every command — and the clock is patched so waits finish instantly.
 - Unit tests cover the screen parser and selectors, device helpers, run storage, every
   CLI command end to end, the case-result rules, report generation, and replay
-  (faithful replay, regression detection, secret handling).
+  (faithful replay, regression detection, secret handling). Newer suites cover the
+  dashboard and its server (`test_live.py`), fast reads and their fallback
+  (`test_uia2.py`), token cost per case (`test_usage.py`) and plan files
+  (`test_plan.py`: parsing, validation and running). `DeviceBudgetTest` pins how many
+  screen reads each command makes.
 - **GitHub Actions** runs the suite on Python 3.9 and 3.13 on every push and PR — no
   Android SDK needed.
 
@@ -838,8 +842,9 @@ python3 -m unittest discover -s tests
 tnazar                      entry script: puts the repo on sys.path, calls cli.main()
 teesri_nazar/
 ├── adb.py        Layer 1   find adb, pick the device, run commands with timeouts
-├── screen.py     Layer 2–3 dump + parse the UI tree; Element, Screen, Selector;
+├── screen.py     Layer 2–3 read + parse the UI tree; Element, Screen, Selector;
 │                           find / find_all / stable_selector
+├── uia2.py       Layer 2   fast reads via the UiAutomator2 server (start/stop, fallback)
 ├── device.py     Layer 4   tap, type (escaping), keys, swipe/scroll vectors, screenshot,
 │                           launch, clear data, deep links, animations, logcat, crashes,
 │                           wait_for (polling)
@@ -851,10 +856,14 @@ teesri_nazar/
 ├── replay.py               re-run a recording by selector, re-check UI checks
 ├── live.py                 CLI side of the dashboard: inbox, pause, runtime secrets
 ├── ui.py / ui.html         `tnazar ui`: localhost server + the three-pane page
+├── usage.py                token cost per test case, from the Claude Code session log
+├── plan.py                 plan files: parse and validate (`tnazar run`)
+├── runner.py               run every case of a plan; hand back on a dashboard message
 └── visual.py               optional screenshot comparison via headless Claude
 CLAUDE.md                   the tester playbook Claude follows
 .claude/skills/test-feature the "test a feature" skill
 .claude/settings.json       permissions + SessionEnd safety hook
+examples/settings.plan      an example plan (your own plans go in plans/, gitignored)
 tests/                      unit tests + fakedevice.py (a fake phone for CI)
 ```
 
