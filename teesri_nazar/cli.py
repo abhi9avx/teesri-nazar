@@ -5,20 +5,24 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
-import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 from . import __version__
+from . import commands
 from . import device as dev
 from . import live
 from . import uia2
 from . import report as rpt
 from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
-from .session import NAME_RE, Run, clear_active, get_active, home, now_iso, runs_dir, set_active, state_dir
+from .env import describe, load_dotenv, mask_xml, redact, secret_values
+from .errors import NotFound, UserError
+from .judge import _end_case, evidence_shot
+from .session import NAME_RE, Run, clear_active, get_active, now_iso, runs_dir, set_active, state_dir
+from .targets import _not_found_msg, parse_target, resolve, selector_of
 
 EXIT_FAIL = 1
 EXIT_ERROR = 2
@@ -26,19 +30,8 @@ EXIT_INSTEAD = 4  # `wait A --or B`: B showed up, so A is not coming
 # tap / type --into look for their target for this long: right after Back or a tap, the next
 # screen is often not there yet. Costs nothing when the target is already on screen.
 TARGET_WAIT = 3.0
-TIMED = {"launch", "open_url", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb",
-         "wait_online"}
-# Commands that act on the device: a pause or an unread user message holds them back.
-HELD = {"launch", "open-url", "observe", "tap", "type", "key", "scroll", "swipe", "wait", "check", "shot", "adb",
-        "wait-online"}
-
-
-class UserError(Exception):
-    pass
-
-
-class NotFound(Exception):
-    pass
+TIMED = commands.TIMED_EVENTS
+HELD = commands.DEVICE_COMMANDS
 
 
 # ---------------------------------------------------------------- context
@@ -70,7 +63,7 @@ class Ctx:
 
     def capture(self) -> scr.Screen:
         screen = scr.capture(self.adb)
-        (state_dir() / "last-screen.xml").write_text(screen.xml)
+        save_xml(state_dir() / "last-screen.xml", screen.xml)
         return screen
 
     def last_screen(self) -> scr.Screen:
@@ -88,76 +81,12 @@ class Ctx:
         return self.run.rel(p) if self.run else str(p)
 
 
-# ---------------------------------------------------------------- targets
-
-_XY = re.compile(r"^(\d+)\s*,\s*(\d+)$")
-
-
-def parse_target(raw: str | None, args: argparse.Namespace) -> tuple[str, object]:
-    """Return ("xy", (x,y)) | ("index", n) | ("selector", Selector)."""
-    nth = getattr(args, "nth", 0) or 0
-    sel = scr.Selector(id=getattr(args, "id", None), desc=getattr(args, "desc", None),
-                       text=getattr(args, "text", None), nth=nth)
-    if raw:
-        if m := _XY.match(raw):
-            return "xy", (int(m.group(1)), int(m.group(2)))
-        if raw.startswith("#") and raw[1:].isdigit():
-            return "index", int(raw[1:])
-        if raw.startswith("~"):
-            sel.text, sel.contains = raw[1:], True
-        elif "=" in raw and raw.split("=", 1)[0] in ("id", "desc", "text"):
-            k, v = raw.split("=", 1)
-            setattr(sel, k, v)
-        else:
-            sel.text = raw
-    if getattr(args, "contains", False):
-        sel.contains = True
-    if sel.is_empty():
-        raise UserError("give a target: \"Text\", ~partial, id=..., desc=..., #index or x,y")
-    return "selector", sel
+def save_xml(path: Path, xml: str) -> None:
+    # A secret typed into a plain field is plain text in the tree.
+    path.write_text(mask_xml(xml))
 
 
-def resolve(ctx: Ctx, raw: str | None, args, timeout: float = 0) -> dict:
-    """Find where to act. Returns {xy, selector, label, element, screen}."""
-    kind, value = parse_target(raw, args)
-    if kind == "xy":
-        return {"xy": value, "selector": None, "label": raw, "element": None, "screen": None}
-    if kind == "index":
-        screen = ctx.last_screen()
-        if value >= len(screen.elements):
-            raise NotFound(f"#{value} is not on the last observed screen")
-        el = screen.elements[value]
-        sel = scr.stable_selector(screen, el)
-    else:
-        sel = value
-        if timeout:
-            ok, screen, el = dev.wait_for(ctx.adb, sel, timeout)
-        else:
-            screen = ctx.capture()
-            el = scr.find(screen, sel)
-        if el is None:
-            raise NotFound(_not_found_msg(sel, screen))
-    label = el.text or el.desc or el.short_id or el.short_cls
-    return {"xy": el.center, "selector": sel.to_dict() or None, "label": label,
-            "element": el, "screen": screen}
-
-
-def _not_found_msg(sel: scr.Selector, screen: scr.Screen) -> str:
-    labels = [e.text or e.desc for e in screen.interesting() if e.text or e.desc]
-    seen = ", ".join(f'"{x}"' for x in dict.fromkeys(labels[:20]))
-    return f"not found: {sel}\nvisible: {seen or '(no labelled elements)'}"
-
-
-def evidence_shot(ctx: Ctx, label: str) -> str | None:
-    """Screenshot for evidence; a screen that blocks capture (FLAG_SECURE) must not lose the result."""
-    try:
-        return ctx.rel(dev.screenshot(ctx.adb, ctx.artifact("shots", label, "png")))
-    except AdbError as exc:
-        print(f"warning: no screenshot ({exc}); the app may block capture on this screen", file=sys.stderr)
-        return None
-
-
-def _screen_size(target: dict, ctx: Ctx) -> list[int]:
+def _screen_size(ctx: Ctx) -> list[int]:
     # The dump's extent is the top window, which is smaller than the display for dialogs.
     return list(ctx.adb.screen_size())
 
@@ -301,11 +230,11 @@ def cmd_observe(args) -> int:
     fg = screen.package or "?"
     print(f"screen: {fg}  "
           f"{len(screen.elements)} elements ({len(shown)} shown)")
+    values = secret_values()
     for e in shown:
-        print(e.describe())
+        print(describe(e, values))
     if ctx.run:
-        dump = ctx.artifact("dumps", args.label or "observe", "xml")
-        dump.write_text(screen.xml)
+        save_xml(ctx.artifact("dumps", args.label or "observe", "xml"), screen.xml)
     if args.shot:
         path = dev.screenshot(ctx.adb, ctx.artifact("shots", args.label or "observe", "png"))
         print(f"shot: {path}")
@@ -321,7 +250,7 @@ def cmd_tap(args) -> int:
     else:
         dev.tap(ctx.adb, x, y)
     ctx.log({"type": "tap", "selector": t["selector"], "xy": [x, y], "label": t["label"],
-             "long": args.long, "screen": _screen_size(t, ctx)})
+             "long": args.long, "screen": _screen_size(ctx)})
     print(f"{'long-pressed' if args.long else 'tapped'} {t['label']!r} at {x},{y}")
     return 0
 
@@ -347,9 +276,9 @@ def cmd_type(args) -> int:
         secret = secret or bool(el and el.password)
         dev.tap(ctx.adb, *target["xy"])
         if args.clear:
-            dev.clear_field(ctx.adb, len(el.text) if el and el.text and not el.password else 40)
+            dev.clear_field(ctx.adb, len(el.text) if el and el.text and not el.password else dev.CLEAR_KEYS)
     elif args.clear:
-        dev.clear_field(ctx.adb, 40)
+        dev.clear_field(ctx.adb, dev.CLEAR_KEYS)
     dev.type_text(ctx.adb, text)
     if args.enter:
         dev.key(ctx.adb, "enter")
@@ -360,7 +289,7 @@ def cmd_type(args) -> int:
         "env": args.env,
         "selector": target["selector"] if target else None,
         "xy": list(target["xy"]) if target else None,
-        "screen": _screen_size(target, ctx) if target else None,
+        "screen": _screen_size(ctx) if target else None,
         "clear": args.clear,
         "enter": args.enter,
     })
@@ -384,18 +313,20 @@ def cmd_key(args) -> int:
 
 
 def cmd_scroll(args) -> int:
+    within = selector_of(args.within) if args.within else None
+    goal = selector_of(args.to, contains=args.contains) if args.to else None
     ctx = Ctx.from_args(args.device)
     # Each read costs ~2 s; only read when there is something to look for or a container to find.
     screen = ctx.capture() if args.to or args.within else None
     width, height = ctx.adb.screen_size()
-    area = (0, int(height * 0.15), width, int(height * 0.85))
-    if args.within:
-        container = scr.find(screen, parse_target(args.within, argparse.Namespace())[1])
+    top, bottom = dev.SCROLL_AREA
+    area = (0, int(height * top), width, int(height * bottom))
+    if within:
+        container = scr.find(screen, within)
         if container is None:
-            raise NotFound(_not_found_msg(parse_target(args.within, argparse.Namespace())[1], screen))
+            raise NotFound(_not_found_msg(within, screen))
         area = container.bounds
     vec = dev.scroll_vector(args.direction, area)
-    goal = parse_target(args.to, argparse.Namespace(contains=args.contains))[1] if args.to else None
     found = None
     for i in range(args.max if goal else args.times):
         if goal and (found := scr.find(screen, goal)):
@@ -415,7 +346,7 @@ def cmd_scroll(args) -> int:
         if not found:
             print(f"scrolled {args.direction}; {goal} not found")
             return EXIT_FAIL
-        print(f"scrolled {args.direction}; found {found.describe()}")
+        print(f"scrolled {args.direction}; found {describe(found)}")
     else:
         print(f"scrolled {args.direction} x{args.times}")
     return 0
@@ -433,7 +364,7 @@ def cmd_swipe(args) -> int:
 def cmd_wait(args) -> int:
     ctx = Ctx.from_args(args.device)
     _, sel = parse_target(args.target, args)
-    alts = [parse_target(a, argparse.Namespace())[1] for a in args.alt or []]
+    alts = [selector_of(a) for a in args.alt or []]
     stats: dict = {}
     ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, alternatives=alts)
     instead = alts[stats["alternative"]] if "alternative" in stats else None
@@ -441,10 +372,10 @@ def cmd_wait(args) -> int:
              "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None})
     state = "gone" if args.gone else "visible"
     if instead:
-        print(f"found instead: {instead} {el.describe()}")
+        print(f"found instead: {instead} {describe(el)}")
         return EXIT_INSTEAD
     if ok:
-        print(f"ok: {sel} is {state}" + (f" {el.describe()}" if el else ""))
+        print(f"ok: {sel} is {state}" + (f" {describe(el)}" if el else ""))
         return 0
     print(f"timeout after {args.timeout}s: {sel} not {state}")
     if not args.gone:
@@ -476,7 +407,8 @@ def cmd_check(args) -> int:
 
     _, sel = parse_target(args.target, args)
     stats: dict = {}
-    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats)
+    # Exact: "successful" must not pass on "Payment unsuccessful". `~text` / --contains stay partial.
+    ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, exact=True)
     if ok and el is not None:
         for flag, actual in (("checked", el.checked), ("enabled", el.enabled)):
             want = getattr(args, flag)
@@ -493,7 +425,7 @@ def cmd_check(args) -> int:
         event["shot"] = shot
     if ctx.run and not ok:
         dump = ctx.artifact("dumps", "check-fail", "xml")
-        dump.write_text(screen.xml)
+        save_xml(dump, screen.xml)
         event["dump"] = ctx.rel(dump)
     ctx.log(event)
     print(f"{'PASS' if ok else 'FAIL'} [ui] {what}")
@@ -538,40 +470,6 @@ def cmd_case(args) -> int:
     return 0
 
 
-def _end_case(ctx: Ctx, status: str | None, reason: str | None) -> str:
-    run = ctx.run
-    case = run.current_case()
-    checks = [e for e in rpt.case_events(run.events(), case) if e["type"] == "check"]
-    failed = [c for c in checks if not c["ok"]]
-    package = run.meta().get("package") or None
-    crash = dev.crashes(ctx.adb, package)
-    if status is None:
-        status = "fail" if failed or crash else ("pass" if checks else "blocked")
-        if not reason:
-            if failed:
-                reason = "failed: " + "; ".join(c["what"] for c in failed)
-            elif crash:
-                reason = "app crashed or ANR"
-            elif not checks:
-                reason = "no checks were recorded"
-    elif status == "pass" and (failed or crash):
-        status = "fail"
-        why = f"{len(failed)} failed check(s)" if failed else "app crashed"
-        reason = f"{why}; marked pass by the tester" + (f": {reason}" if reason else "")
-    event = {"type": "case_end", "case": case, "status": status, "reason": reason or ""}
-    if crash:
-        p = ctx.artifact("logs", f"{case}-crash", "txt")
-        p.write_text(crash)
-        event["crash"] = ctx.rel(p)
-    if status in ("fail", "blocked") or crash:
-        shot = evidence_shot(ctx, f"{case}-end")
-        log = ctx.artifact("logs", f"{case}-logcat", "txt")
-        log.write_text(dev.logcat_dump(ctx.adb))
-        event["evidence"] = ([shot] if shot else []) + [ctx.rel(log)]
-    ctx.log(event)
-    return status
-
-
 def cmd_note(args) -> int:
     ctx = Ctx.from_args(args.device)
     ctx.log({"type": "note", "kind": args.kind, "text": args.text})
@@ -585,24 +483,8 @@ def cmd_adb(args) -> int:
         raise UserError("usage: tnazar adb <adb args...>")
     proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args])
     ctx.log({"type": "adb", "args": redact(args.args), "exit": proc.returncode})
-    return proc.returncode
-
-
-def redact(argv: list[str]) -> list[str]:
-    """Hide any .env value or dashboard secret that appears in a recorded command line."""
-    values = {v for v in [os.environ[k] for k in _DOTENV_KEYS if k in os.environ] + live.secret_values() if v}
-    # A value of 1-2 characters would match inside unrelated words ("42" in "tcp:8420"),
-    # so it is hidden only when it is a whole argument.
-    inside = sorted((v for v in values if len(v) >= 3), key=len, reverse=True)
-    out = []
-    for a in argv:
-        if a in values:
-            out.append("••••")
-            continue
-        for v in inside:
-            a = a.replace(v, "••••")
-        out.append(a)
-    return out
+    # adb's own code could collide with tnazar's (3 held, 5 paused) and make a plan runner retry forever.
+    return EXIT_FAIL if proc.returncode else 0
 
 
 def cmd_say(args) -> int:
@@ -736,13 +618,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--to", metavar="TARGET", help="keep scrolling until this is visible")
     p.add_argument("--contains", action="store_true")
     p.add_argument("--within", metavar="TARGET", help="scroll inside this container")
-    p.add_argument("--max", type=int, default=10, help="max swipes when using --to")
+    p.add_argument("--max", type=int, default=dev.SCROLL_MAX, help="max swipes when using --to")
     p.add_argument("--times", type=int, default=1, help="swipes when not using --to")
 
     p = add("swipe", cmd_swipe, "raw swipe between two points")
     for n in ("x1", "y1", "x2", "y2"):
         p.add_argument(n, type=int)
-    p.add_argument("--ms", type=int, default=350)
+    p.add_argument("--ms", type=int, default=dev.SWIPE_MS)
 
     p = add("wait", cmd_wait, "wait until an element appears (or is gone)")
     _add_selector_flags(p, TARGET_HELP)
@@ -819,22 +701,6 @@ def _bool(v: str) -> bool:
     if v.lower() in ("false", "no", "0"):
         return False
     raise argparse.ArgumentTypeError("expected true or false")
-
-
-_DOTENV_KEYS: set[str] = set()
-
-
-def load_dotenv() -> None:
-    """KEY=VALUE lines from ./.env, without overriding the real environment."""
-    f = home() / ".env"
-    if not f.exists():
-        return
-    for line in f.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            _DOTENV_KEYS.add(key.strip())
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 def main(argv: list[str] | None = None) -> int:

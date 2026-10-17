@@ -7,13 +7,15 @@
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6ea; --text: #1d2228; --muted: #6b7480;
-  --accent: #3b5bdb; --ok: #2f9e44; --bad: #e03131; --warn: #e8590c; --amber: #f08c00;
+  --accent: #3b5bdb; --pass: #2f9e44; --fail: #e03131; --warn: #e8590c; --amber: #f08c00;
+  --on-fill: #fff;
   --chip: #eef1f5; --say: #f1f3ff; --msg: #fff4e6; --shadow: 0 1px 2px rgba(0,0,0,.06);
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #111418; --panel: #191d23; --line: #2a3038; --text: #e6e9ed; --muted: #8b95a1;
-    --accent: #748ffc; --ok: #51cf66; --bad: #ff6b6b; --warn: #ff922b; --amber: #fcc419;
+    --accent: #748ffc; --pass: #51cf66; --fail: #ff6b6b; --warn: #ff922b; --amber: #fcc419;
+    --on-fill: #111418;
     --chip: #232931; --say: #1e2433; --msg: #2b2218; --shadow: none;
   }
 }
@@ -30,7 +32,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.danger { background: var(--warn); border-color: var(--warn); color: #fff; }
 button:disabled { opacity: .5; cursor: default; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
-.dot.live { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.dot.live { background: var(--pass); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pass) 25%, transparent); }
 .dot.paused { background: var(--amber); }
 #status { display: flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap; }
 main { display: grid; grid-template-columns: minmax(320px, 1fr) 6px var(--w-control, 340px) 6px var(--w-screen, 380px); height: calc(100% - 51px); }
@@ -63,18 +65,18 @@ body.resizing iframe, body.resizing img { pointer-events: none; }
 .row .when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .row .what { overflow-wrap: anywhere; }
 .row .what .detail { display: block; color: var(--muted); font-size: 12px; }
-.row.bad .what { color: var(--bad); }
-.row.ok-check .ico { color: var(--ok); }
-.row.bug { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.row.bad .what { color: var(--fail); }
+.row.ok-check .ico { color: var(--pass); }
+.row.bug { background: color-mix(in srgb, var(--fail) 8%, transparent); }
 .row.user { background: var(--msg); border-radius: 6px; margin: 6px 0; }
 .dur { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; padding: 0 6px; border-radius: 10px; background: var(--chip); white-space: nowrap; }
-.dur.slow { color: #fff; background: var(--amber); }
+.dur.slow { color: var(--on-fill); background: var(--amber); }
 .meta { white-space: nowrap; text-align: right; }
 .tok { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 4px; white-space: nowrap; }
 .tok.big { color: var(--warn); border-color: var(--warn); }
 .case-cost { color: var(--muted); font-size: 12px; margin-left: 8px; }
-.pill { font-size: 12px; padding: 1px 8px; border-radius: 10px; color: #fff; }
-.pill.pass { background: var(--ok); } .pill.fail { background: var(--bad); }
+.pill { font-size: 12px; padding: 1px 8px; border-radius: 10px; color: var(--on-fill); }
+.pill.pass { background: var(--pass); } .pill.fail { background: var(--fail); }
 .pill.blocked, .pill.skipped { background: var(--muted); }
 #control { overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
@@ -86,7 +88,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
 .chips button { font-size: 12px; padding: 3px 8px; border-radius: 12px; }
 .inline { display: flex; gap: 6px; } .inline input { min-width: 0; flex: 1; }
 .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
-.err { color: var(--bad); font-size: 12px; margin-top: 6px; min-height: 1em; }
+.err { color: var(--fail); font-size: 12px; margin-top: 6px; min-height: 1em; }
 .msglist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .msglist li { background: var(--msg); border-radius: 6px; padding: 5px 8px; }
 .msglist .st { display: block; font-size: 11px; color: var(--muted); }
@@ -104,7 +106,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
 <body>
 <header>
   <h1>👁 Teesri Nazar</h1>
-  <span id="status"><span class="dot" id="dot"></span><span id="status-text">connecting…</span></span>
+  <span id="status"><span class="dot" id="dot"></span><span id="status-text" aria-live="polite">connecting…</span></span>
   <span class="spacer"></span>
   <select id="run-select" aria-label="Run"></select>
 </header>
@@ -127,7 +129,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
         <textarea id="msg" placeholder="e.g. try the OTP flow again, then log out"></textarea>
         <div class="chips" id="chips"></div>
         <button class="primary" id="send-btn">Send message</button>
-        <div class="err" id="msg-err"></div>
+        <div class="err" id="msg-err" aria-live="polite"></div>
         <div class="hint">The agent reads your message before its next step and changes what it does. If the agent is not running, the message waits.</div>
       </div>
       <div class="card">
@@ -138,7 +140,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
         </div>
         <input id="sec-note" placeholder="where to use it (optional), e.g. on the OTP screen" style="width:100%;margin-top:6px">
         <button id="sec-btn" style="margin-top:8px">Send hidden</button>
-        <div class="err" id="sec-err"></div>
+        <div class="err" id="sec-err" aria-live="polite"></div>
         <div class="hint">Never saved and never shown: logs and reports show ••••. Cleared when a new test run starts. <span id="sec-list"></span></div>
       </div>
       <div class="card"><h3>Messages</h3><ul class="msglist" id="msglist"><li style="background:none;color:var(--muted)">None yet</li></ul></div>
@@ -167,6 +169,7 @@ const CHIPS = ["Retry the last step", "Take a screenshot now", "Skip this case a
 
 let state = null, runs = [], view = null, follow = true, offset = 0, events = [], meta = null, report = false;
 let pinnedShot = null, stick = true, lastRender = -1, caseUsage = {}, usageKey = "";
+let slowMs = Infinity;  // the server's threshold arrives with the first /api/state
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -241,8 +244,9 @@ function row(e, t0) {
   r.append(w);
   const cell = el("span", "meta");
   if (typeof e.dur_ms === "number") {
-    const d = el("span", "dur" + (e.dur_ms > 5000 ? " slow" : ""), fmtDur(e.dur_ms));
-    d.title = e.dur_ms > 5000 ? "slow step (> 5 s)" : "how long this step took";
+    const slow = e.dur_ms > slowMs;
+    const d = el("span", "dur" + (slow ? " slow" : ""), fmtDur(e.dur_ms));
+    d.title = slow ? `slow step (> ${slowMs / 1000} s)` : "how long this step took";
     cell.append(d);
   }
   r.append(cell);
@@ -254,6 +258,11 @@ function row(e, t0) {
     r.classList.add("has-shot");
     r.title = "show this screenshot";
     r.onclick = () => pinShot(`/runs/${encodeURIComponent(view)}/${shot}`, `${what}`);
+    r.setAttribute("role", "button");
+    r.tabIndex = 0;
+    r.onkeydown = (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); r.onclick(); }
+    };
   }
   return r;
 }
@@ -418,6 +427,7 @@ async function tickState() {
   try {
     state = await getJSON("/api/state");
   } catch { state = null; renderControl(); return; }
+  if (state.slow_ms !== slowMs) { slowMs = state.slow_ms; lastRender = -1; }
   const active = state.active ? state.active.name : null;
   if (active && follow && view !== active) await switchRun(active, true);
   if (!view && !active && runs.length) await switchRun(runs[0].name, true);

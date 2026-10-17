@@ -17,6 +17,10 @@ KEYS = {
     "volume_up": 24, "volume_down": 25, "power": 26,
 }
 KEY_MOVE_END = 123
+CLEAR_KEYS = 40  # deletes for `--clear` when the field's length is unknown (password or no target)
+SCROLL_AREA = (0.15, 0.85)  # share of the screen height a scroll swipes in: clear of status and nav bars
+SWIPE_MS = 350
+SCROLL_MAX = 10  # swipes `scroll --to` tries before giving up
 
 _SAFE = re.compile(r"[A-Za-z0-9_.,:/@+=-]")
 ANIMATION_SETTINGS = ("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
@@ -82,7 +86,7 @@ def is_back(name: str) -> bool:
     return name.lower() == "back" or name == str(KEYS["back"])
 
 
-def swipe(adb: Adb, x1: int, y1: int, x2: int, y2: int, ms: int = 350) -> None:
+def swipe(adb: Adb, x1: int, y1: int, x2: int, y2: int, ms: int = SWIPE_MS) -> None:
     adb.shell("input", "swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
 
 
@@ -179,12 +183,6 @@ def keyboard_shown(adb: Adb) -> bool | None:
     return m.group(1) == "true" if m else None
 
 
-def foreground_package(adb: Adb) -> str:
-    out = adb.shell("dumpsys", "activity", "activities", check=False)
-    m = re.search(r"(?:mResumedActivity|topResumedActivity|ResumedActivity).*?\s([\w.]+)/", out)
-    return m.group(1) if m else ""
-
-
 def get_animations(adb: Adb) -> dict[str, str]:
     return {k: adb.shell("settings", "get", "global", k).strip() for k in ANIMATION_SETTINGS}
 
@@ -248,9 +246,11 @@ def wait_online(adb: Adb, timeout: float, host: str = "8.8.8.8") -> bool:
 
 def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
              interval: float | None = None, stats: dict | None = None,
-             alternatives: list[scr.Selector] | None = None) -> tuple[bool, scr.Screen, scr.Element | None]:
+             alternatives: list[scr.Selector] | None = None,
+             exact: bool = False) -> tuple[bool, scr.Screen, scr.Element | None]:
     """Poll until `sel` appears (or is gone). If one of `alternatives` shows up first, stop at once:
-    ok is False and stats["alternative"] says which one (e.g. an error instead of the next screen)."""
+    ok is False and stats["alternative"] says which one (e.g. an error instead of the next screen).
+    `exact`: no partial fallback for an exact selector, as a check needs; "gone" is always exact."""
     if interval is None:
         interval = 0.15 if uia2.active(adb) else 0.4  # a fast read makes frequent polling cheap
     deadline = time.monotonic() + timeout
@@ -266,7 +266,7 @@ def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
             if time.monotonic() >= deadline and screen is None:
                 raise
         else:
-            el = scr.find(screen, sel, strict=gone)
+            el = scr.find(screen, sel, strict=gone or exact)
             if (el is None) == gone:
                 return True, screen, el
             for i, alt in enumerate(alternatives or []):

@@ -306,11 +306,14 @@ attributes given:
 - **id:** `btn_login` matches `com.example.app:id/btn_login` (short form is fine).
 - **text / desc:** whitespace-collapsed, case-insensitive, and curly quotes (`’ “`) equal
   straight ones (`' "`). Exact by default; substring with `~` / `--contains`.
-- **Forgiving fallback:** a bare text selector is tried, in order, as exact text, exact
-  content-desc (Compose apps often put the label only there), partial text, partial
-  content-desc — a label typed loosely (`"Pay now"`) often lives inside a longer string.
-- **Except for "gone":** `--gone` checks match exactly (text or content-desc), so
-  `check Save --gone` is not fooled by a new "Couldn’t save? Try again" label.
+- **Forgiving fallback for actions:** for `tap`, `type --into` and `wait`, a
+  bare text selector is tried, in order, as exact text, exact content-desc (Compose apps
+  often put the label only there), partial text, partial content-desc — a label typed
+  loosely (`"Pay now"`) often lives inside a longer string.
+- **Checks are strict:** `check "Pay now"` matches exact text, then exact content-desc, and
+  never falls back to a partial match, so a check can't pass on a different label that
+  merely contains the words. Write `check '~Pay'` to mean "contains". The same goes for
+  `--gone`: `check Save --gone` is not fooled by a new "Couldn’t save? Try again" label.
 
 ### 7.3 The priority rule: id → desc → text → coordinates
 
@@ -519,6 +522,21 @@ This is a key safety rail: **the AI decides what to check; the tool decides whet
 Finally, Claude reports back in chat: summary line, case table, each failure as
 *expected vs. actual*, bugs, what was not tested, and the path to `report.html`.
 
+### Exit codes
+
+Every `tnazar` command, `tnazar run <plan>` and `tnazar replay` use the same codes, so
+Claude (and CI) can act on them without reading the output:
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `0` | OK: the command worked; for `run` / `replay`, every case passed | Go on. |
+| `1` | Failed: a check failed, an element was not found, or an adb command failed | Read the output; for `run`, see the report. |
+| `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags) | Fix the line or the setup; nothing was tested. |
+| `3` | Held: the user sent a dashboard message, so the command was **not run** | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. |
+| `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |
+| `5` | Still paused from the dashboard after 60 s; the command was **not run** | Run `./tnazar wait-resume` until it prints `resumed`, then continue. |
+| `130` | Interrupted (Ctrl-C) | — |
+
 ---
 
 ## 12. The brain — how Claude decides
@@ -704,8 +722,8 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
   (`say`, `note`, `case`) show pending messages without consuming them, so a chained
   `say … && tap …` still stops at the tap. Messages sent before `start` are dropped.
 - **Pause.** While `.tnazar/paused` exists a device command waits up to 60 s (under the
-  agent's 2-minute command timeout); if still paused it exits 3 and tells Claude to run
-  `./tnazar wait-resume`. The wait is logged as a `hold` event.
+  agent's 2-minute command timeout); if still paused it exits 5 and tells Claude to run
+  `./tnazar wait-resume` (exit 3 if a message arrived during the pause). The wait is logged as a `hold` event.
 - **Fast screen reads.** `uiautomator dump` starts a new process per read (~2 s, unbounded
   while the app is busy). When the device has the UiAutomator2 server, `start` launches it
   (`uia2.py`) and every read is an HTTP call to it (~0.05 s, waiting at most 300 ms for the
@@ -714,13 +732,13 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
   error while a window changes (Android 14+: `Cannot set AccessibilityNodeInfo's field
   'mSealed'`) is retried for up to ~3 s first. `stop` shuts the server down.
 - **Fail fast.** `wait A --or B` returns at once (exit 4) when B shows up instead of A.
+  All exit codes: [§11, Exit codes](#exit-codes).
 - **Slow steps.** Any step over 5 s prints `SLOW: <step> took Xs (N screen reads)` as it
   happens and is listed in the report's *Slow steps* table. A screen read costs ~2 s, so
   `tests/test_cli.py::DeviceBudgetTest` pins how many reads each command makes. A dump
   that hangs (the app never goes idle) is cut at 10 s, killed on the device
   (`pkill -x uiautomator`) and retried.
-- **Token cost per test case.** Each command's output size is logged (`io` event). The real
-  model usage per case — turns, new tokens, cached context re-read — comes from Claude
+- **Token cost per test case.** The real model usage per case — turns, new tokens, cached context re-read — comes from Claude
   Code's session log for this folder; a case owns the requests since the previous case
   ended. Shown on the case's line in the timeline and in the report's *Tokens* column.
 - **Narration and timings.** `./tnazar say "…"` records a `say` event, the timeline heading
@@ -729,7 +747,9 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
 - **Secrets.** A value typed in the dashboard stays in the server's memory. Claude is told
   the name (`UI_OTP`) and types it with `--env UI_OTP`; `type` fetches it from the server
   with a per-session token (in `.tnazar/ui.json`, mode 600). `tnazar adb` arguments that
-  contain any `.env` value or dashboard secret are logged as `••••`.
+  contain any `.env` value or dashboard secret are logged as `••••`. Masking covers printed output
+  and saved UI trees, not images: a secret typed into a plain (non-password) field is on the
+  device screen, so screenshots can show it.
 - **Secure screens.** The server reads `dumpsys window` and, when an on-screen window has
   `FLAG_SECURE`, shows *"Screen hidden by the app"* instead of a black frame. This is a
   capture limit, not a test failure; the timeline keeps going.
@@ -768,7 +788,9 @@ case TC-01 "Network & internet opens"
   is rejected (it would end blocked), as is a `check` inside `retry`.
 - **Blocks.** `flow`/`run` reuse steps; `retry N … end` repeats a block until all its steps
   pass (failed attempts are not recorded); `if "<target>" … else … end` reads the screen
-  once and never fails the case.
+  once and never fails the case; `if "A" --or "B" --wait 10` keeps reading until A or B shows
+  (or time runs out) and takes the `else` branch unless A is there. Use it to branch:
+  `wait A --or B` fails the case when B shows (exit 4).
 - **Failures.** A failed `check` is recorded and the case goes on. A failed action ends its
   case (recorded as a failed check naming the line); the run goes on with the next case, or
   stops with `--stop-on-fail`.
@@ -848,8 +870,12 @@ teesri_nazar/
 ├── device.py     Layer 4   tap, type (escaping), keys, swipe/scroll vectors, screenshot,
 │                           launch, clear data, deep links, animations, logcat, crashes,
 │                           wait_for (polling)
-├── cli.py        Layer 4–5 every `tnazar` command; target parsing and resolution;
-│                           checks; case start/end and the pass/fail rules; .env loading
+├── cli.py        Layer 4–5 argument parsing and every `tnazar` command's handler
+├── targets.py    Layer 3   targets as typed ("Text", ~partial, id=…, #index, x,y) → on screen
+├── judge.py      Layer 7   ending a case: the pass/fail rules, evidence for failures
+├── env.py                  .env loading; hiding secret values in commands, output, UI trees
+├── commands.py             every command and the event it records (one list for all modules)
+├── errors.py               exceptions the CLI turns into exit codes
 ├── session.py    Layer 6   run folder, run.json, append-only events.jsonl, artifacts,
 │                           the active-run pointer
 ├── report.py     Layer 7   events → cases → summary → report.md + report.html

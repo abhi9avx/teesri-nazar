@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from fakedevice import PACKAGE, FakeAdb, fake_device, login_app, node, tnazar
+from teesri_nazar import cli
 from teesri_nazar import report as rpt
 from teesri_nazar.session import Run, set_active
 
@@ -207,9 +208,10 @@ class ReplayGuardsTest(ReplayTestCase):
     def test_refuses_while_a_run_is_active(self):
         self.record_login()
         set_active(Run.load("demo"), "fake-1")
-        code, out, _ = tnazar("replay", "demo")
-        self.assertEqual(code, 2)
-        self.assertIn("a run is active", out)
+        code, out, err = tnazar("replay", "demo")
+        self.assertEqual(code, cli.EXIT_ERROR)
+        self.assertIn("a run is active", err)
+        self.assertNotIn("a run is active", out)
 
     def test_unknown_run(self):
         self.assertEqual(tnazar("replay", "nope")[0], 2)

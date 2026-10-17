@@ -1,16 +1,24 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from teesri_nazar import report as rpt
 from teesri_nazar import visual
 from teesri_nazar.session import Run
 
 
+def temp_home(test: unittest.TestCase) -> None:
+    tmp = tempfile.TemporaryDirectory()
+    test.addCleanup(tmp.cleanup)
+    env = mock.patch.dict(os.environ, {"TNAZAR_HOME": tmp.name})
+    env.start()
+    test.addCleanup(env.stop)
+
+
 class ReportTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        os.environ["TNAZAR_HOME"] = self.tmp.name
+        temp_home(self)
         self.run = Run.create("demo", {"package": "com.example.app", "prompt": "test <login>"})
         log = self.run.log
         log({"type": "case_start", "case": "TC-01", "title": "Login works"})
@@ -25,10 +33,6 @@ class ReportTest(unittest.TestCase):
         log({"type": "note", "kind": "bug", "text": "no error shown", "case": "TC-02"})
         log({"type": "case_end", "case": "TC-02", "status": "fail", "reason": "failed: attempts"})
         log({"type": "case_start", "case": "TC-03", "title": "Never finished"})
-
-    def tearDown(self):
-        os.environ.pop("TNAZAR_HOME", None)
-        self.tmp.cleanup()
 
     def test_steps_over_five_seconds_are_listed_with_their_screen_reads(self):
         s = rpt.summarize(self.run)
@@ -73,8 +77,7 @@ class ScreenshotTest(unittest.TestCase):
     """The report shows one screenshot per distinct screen, and puts failures first, highlighted."""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        os.environ["TNAZAR_HOME"] = self.tmp.name
+        temp_home(self)
         self.run = Run.create("shots", {})
         log = self.run.log
         log({"type": "case_start", "case": "TC-01", "title": "Help page"})
@@ -87,10 +90,6 @@ class ScreenshotTest(unittest.TestCase):
              "screen_sig": "article", "case": "TC-01"})
         log({"type": "case_end", "case": "TC-01", "status": "fail", "reason": "failed: title matches",
              "evidence": ["shots/end.png", "logs/x.txt"]})
-
-    def tearDown(self):
-        os.environ.pop("TNAZAR_HOME", None)
-        self.tmp.cleanup()
 
     def test_same_screen_is_shown_once_with_every_check_it_proves(self):
         page = rpt.to_html(self.run, rpt.summarize(self.run))

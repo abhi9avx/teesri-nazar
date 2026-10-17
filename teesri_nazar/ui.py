@@ -14,6 +14,7 @@ import os
 import re
 import secrets as _secrets
 import signal
+import sys
 import threading
 import time
 import webbrowser
@@ -26,6 +27,7 @@ from . import live
 from . import report as rpt
 from . import usage
 from .adb import Adb, AdbError, pick_serial
+from .cli import EXIT_ERROR
 from .session import NAME_RE, Run, get_active, runs_dir
 
 PAGE = Path(__file__).with_name("ui.html")
@@ -89,7 +91,8 @@ class Dashboard:
     # ------------------------------------------------------------ views
     def state(self) -> dict:
         active = get_active()
-        out: dict = {"active": None, "paused": live.paused(), "secrets": sorted(self.secrets)}
+        out: dict = {"active": None, "paused": live.paused(), "secrets": sorted(self.secrets),
+                     "slow_ms": rpt.SLOW_MS}
         if active:
             run, serial = active
             meta = run.meta()
@@ -216,7 +219,7 @@ def make_handler(dash: Dashboard):
                 elif path == "/api/runs":
                     self._json(dash.runs())
                 elif path == "/api/events":
-                    self._json(dash.events(q.get("run", [""])[0], int(q.get("from", ["0"])[0])))
+                    self._json(dash.events(q.get("run", [""])[0], max(0, int(q.get("from", ["0"])[0]))))
                 elif path == "/api/usage":
                     name = q.get("run", [""])[0]
                     if not NAME_RE.match(name):
@@ -289,8 +292,11 @@ def start(port: int) -> tuple[ThreadingHTTPServer, Dashboard]:
     httpd.daemon_threads = True
     dash.port = httpd.server_address[1]
     info = live.ui_file()
-    info.write_text(json.dumps({"port": dash.port, "token": dash.token, "pid": os.getpid()}) + "\n")
-    info.chmod(0o600)
+    # Created private: it holds the session token, so it must never be readable by others, even briefly.
+    fd = os.open(info, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)  # a stale ui.json keeps its old mode through O_CREAT
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps({"port": dash.port, "token": dash.token, "pid": os.getpid()}) + "\n")
     return httpd, dash
 
 
@@ -299,8 +305,8 @@ def serve(port: int, open_browser: bool = True) -> int:
         httpd, dash = start(port)
     except OSError as exc:
         print(f"error: cannot listen on 127.0.0.1:{port} ({exc.strerror}); "
-              f"is `tnazar ui` already running? try --port")
-        return 2
+              f"is `tnazar ui` already running? try --port", file=sys.stderr)
+        return EXIT_ERROR
     info = live.ui_file()
     url = f"http://127.0.0.1:{dash.port}/"
     print(f"dashboard: {url}  (Ctrl-C to stop)")

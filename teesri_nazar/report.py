@@ -7,10 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 from . import usage
+from .commands import ACTION_EVENTS as ACTIONS
 from .session import Run
 
 ICON = {"pass": "✅", "fail": "❌", "blocked": "⛔", "skipped": "⏭", "running": "⏳"}
-ACTIONS = {"launch", "open_url", "tap", "type", "key", "scroll", "swipe", "adb"}
 SLOW_MS = 5000
 
 
@@ -169,7 +169,7 @@ def to_markdown(run: Run, s: dict) -> str:
     if s["bugs"]:
         out += ["## Bugs found", ""] + [f"- {b['text']} (case {b.get('case') or '-'})" for b in s["bugs"]] + [""]
     if s["slow"]:
-        out += ["## Slow steps (> 5 s)", "", "| Case | Step | Took | Why |", "|---|---|---|---|"]
+        out += [f"## Slow steps (> {SLOW_MS / 1000:g} s)", "", "| Case | Step | Took | Why |", "|---|---|---|---|"]
         out += [f"| {_case_of(s, e) or '-'} | {step_label(e)} | {e['dur_ms'] / 1000:.1f}s | {slow_reason(e)} |"
                 for e in s["slow"]] + [""]
     return "\n".join(out)
@@ -278,7 +278,7 @@ def _slow_html(s: dict) -> str:
     e = html.escape
     rows = "".join(f"<tr><td>{e(_case_of(s, x) or '-')}</td><td>{e(step_label(x))}</td>"
                    f"<td>{x['dur_ms'] / 1000:.1f}s</td><td>{e(slow_reason(x))}</td></tr>" for x in s["slow"])
-    return (f"<h2>Slow steps (&gt; 5 s)</h2><table><tr><th>Case</th><th>Step</th><th>Took</th><th>Why</th></tr>"
+    return (f"<h2>Slow steps (&gt; {SLOW_MS / 1000:g} s)</h2><table><tr><th>Case</th><th>Step</th><th>Took</th><th>Why</th></tr>"
             f"{rows}</table>")
 
 

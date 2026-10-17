@@ -9,11 +9,12 @@ its output is captured, and shown when the step fails.
   goes on with the next case (or stops, with --stop-on-fail).
 - A dashboard message ends the run early and leaves it open, so the agent can act on the
   message and continue with `tnazar run <plan> --from <case>` (exit 3).
+- An unexpected error (device gone, a bad target) ends the case as blocked and stops the
+  run, so no run is left open (exit 2).
 """
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import io
 import os
@@ -25,6 +26,7 @@ from . import cli, live
 from . import device as dev
 from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
 from .session import Run, get_active
+from .targets import selector_of
 
 DETAIL_LINES = 6
 
@@ -58,7 +60,8 @@ def run(args) -> int:
     if not (active and active[0].meta().get("plan") == path):
         code, out = call(["start", p.name, "--package", p.app, "--prompt", f"plan {os.path.basename(path)}"])
         if code:
-            print(out.rstrip(), file=sys.stderr)
+            why = "; ".join(ln.strip().removeprefix("error: ") for ln in out.splitlines() if ln.strip())
+            print(f"setup error: {why or 'tnazar start failed'}", file=sys.stderr)
             return cli.EXIT_ERROR
         get_active()[0].update_meta(plan=path)
     the_run = get_active()[0]
@@ -67,8 +70,15 @@ def run(args) -> int:
     failed = False
     for case in cases:
         began = time.monotonic()
-        call(["case", "start", case.id, case.title] if case.title else ["case", "start", case.id])
-        result = Executor(p, the_run, case).body(case.body)
+        # "--": a title (or id) starting with "-" is not an option.
+        call(["case", "start", "--", case.id] + ([case.title] if case.title else []))
+        try:
+            result = Executor(p, the_run, case).body(case.body)
+        except Exception as exc:  # noqa: BLE001 - whatever broke, the run must not stay open
+            call(["case", "end", "blocked", "--reason", f"error: {exc}"])
+            print(f"{case.id:8} BLOCKED  error: {exc}")
+            _stop()
+            return cli.EXIT_ERROR
         if isinstance(result, HandedBack):
             call(["case", "end", "blocked", "--reason", "stopped: a message from the dashboard"])
             print(_tail(result.output))
@@ -85,9 +95,13 @@ def run(args) -> int:
             if args.stop_on_fail:
                 print("stopping at the first failed case (--stop-on-fail)")
                 break
+    _stop()
+    return cli.EXIT_FAIL if failed else 0
+
+
+def _stop() -> None:
     _, out = call(["stop"])
     print("\n".join(ln for ln in out.splitlines() if ln.startswith(("report:", " ")) or "case(s)" in ln))
-    return cli.EXIT_FAIL if failed else 0
 
 
 class Executor:
@@ -105,6 +119,9 @@ class Executor:
         if isinstance(item, RunFlow):
             return self.body(self.plan.flows[item.flow].body, record)
         if isinstance(item, If):
+            held = self.hold()
+            if held:
+                return held
             found, reads = self.visible(item.target, item.alts, item.wait)
             self.run.log({"type": "if", "target": item.target, "found": found, "reads": reads, "case": self.case.id})
             return self.body(item.then if found else item.other, record)
@@ -116,6 +133,17 @@ class Executor:
             return self.fail(item.line, f"retry {item.times}",
                              f"still failing after {item.times} attempts: {result.detail}", record)
         return self.step(item, record)
+
+    def hold(self) -> HandedBack | None:
+        """What the CLI does before a device command, for the screen read an `if` makes itself."""
+        while live.paused():
+            live.wait_resume()
+        if live.unread():
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                live.deliver(self.run.log)
+            return HandedBack(out.getvalue())
+        return None
 
     def step(self, step: Step, record: bool):
         while True:
@@ -140,7 +168,7 @@ class Executor:
     def visible(self, target: str, alts: list[str], wait: float) -> tuple[bool, int]:
         """Is `target` on screen? With --wait, read until it or one of `alts` shows (or time runs out)."""
         adb = cli.Ctx.from_args(None).adb
-        sel, *others = [cli.parse_target(t, argparse.Namespace())[1] for t in [target, *alts]]
+        sel, *others = [selector_of(t) for t in [target, *alts]]
         stats: dict = {}
         found, _, _ = dev.wait_for(adb, sel, wait, stats=stats, alternatives=others)
         return found, stats["polls"]

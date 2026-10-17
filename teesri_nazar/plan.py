@@ -24,18 +24,29 @@ A plan is the tnazar commands a tester would type, without the `./tnazar` prefix
 
 Lines starting with `#` are comments. Indentation is for people; blocks close with `end`.
 The whole file is checked before anything runs, so a typo never reaches the device.
+
+`wait A --or B` is a step like any other: when B shows up instead of A it fails (exit 4),
+which fails the case. To branch on whichever screen shows first, use
+`if A --or B --wait <seconds>`. `if` targets are selectors ("Text", ~partial, id=, desc=),
+never `#index` or `x,y`: there is no observed screen to index and no element to look for.
+
+`tnazar run` exits 0 when every case passed, 1 when a case failed, 2 on a plan or setup
+error (or an unexpected error mid-run, which ends the case as blocked and stops the run),
+and 3 when a dashboard message handed the run back (it stays open; continue with --from).
 """
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-STEPS = {"launch", "open-url", "observe", "tap", "type", "key", "scroll", "swipe", "wait", "check",
-         "shot", "note", "say", "adb", "wait-online"}
-NOT_IN_PLANS = {"start", "stop", "status", "case", "report", "runs", "replay", "ui", "run", "devices",
-                "packages", "wait-resume"}
+from .commands import NOT_IN_PLANS, PLAN_STEPS as STEPS
+from .errors import UserError
+from .targets import selector_of
 
 
 class PlanError(ValueError):
@@ -153,13 +164,16 @@ def parse(text: str, source: str = "plan") -> Plan:
         elif head == "else":
             if not opened or not isinstance(opened[-1][1], If):
                 fail(n, "`else` without an `if`")
+            if stack[-1] is opened[-1][1].other:
+                fail(n, f"a second `else` for the `if` on line {opened[-1][0]}")
             stack[-1] = opened[-1][1].other
         elif top is None:
             fail(n, "steps belong inside a `case` or a `flow`")
         elif head == "retry":
-            if len(args) != 1 or not args[0].isdigit() or int(args[0]) < 1:
+            times = _count(args)
+            if times is None:
                 fail(n, "use `retry <times>`, e.g. `retry 2`")
-            block = Retry(n, int(args[0]))
+            block = Retry(n, times)
             stack[-1].append(block)
             opened.append((n, block))
             stack.append(block.body)
@@ -167,7 +181,10 @@ def parse(text: str, source: str = "plan") -> Plan:
             opts = _if_options(args)
             if opts is None:
                 fail(n, 'use `if <target> [--or <target>]... [--wait <seconds>]`, e.g. `if "Get started" --wait 10`')
-            block = If(n, args[0], alts=opts.alt or [], wait=opts.wait)
+            for t in [opts.target, *(opts.alt or [])]:
+                if not _is_selector(t):
+                    fail(n, f"`if` needs a selector (\"Text\", ~partial, id=..., desc=...), not {t!r}")
+            block = If(n, opts.target, alts=opts.alt or [], wait=opts.wait)
             stack[-1].append(block)
             opened.append((n, block))
             stack.append(block.then)
@@ -205,8 +222,26 @@ def parse(text: str, source: str = "plan") -> Plan:
     return Plan(app, name or Path(source).stem, flows, cases)
 
 
+def _count(args: list[str]) -> int | None:
+    # isdigit() passes "²", which int() rejects; isdecimal() plus the try keep any odd digit a PlanError.
+    if len(args) != 1 or not args[0].isdecimal():
+        return None
+    try:
+        times = int(args[0])
+    except ValueError:
+        return None
+    return times if times >= 1 else None
+
+
+def _is_selector(target: str) -> bool:
+    try:
+        selector_of(target)
+    except UserError:
+        return False
+    return True
+
+
 def _if_options(args: list[str]):
-    import argparse
     p = argparse.ArgumentParser(add_help=False, exit_on_error=False)
     p.add_argument("target")
     p.add_argument("--or", dest="alt", action="append")
@@ -232,10 +267,6 @@ def _has_check(body: list, flows: dict[str, Flow], seen: frozenset = frozenset()
 
 def _check_args(words: list[str], fail) -> None:
     """Let the CLI's own parser reject bad flags now, not halfway through a run."""
-    import argparse
-    import contextlib
-    import io
-
     from .cli import build_parser
     err = io.StringIO()
     try:

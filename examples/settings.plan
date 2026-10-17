@@ -20,7 +20,7 @@ case TC-02 "Search finds Wi-Fi settings"
   run home
   tap "Search Settings"
   retry 2
-    type "wifi" --into id=open_search_view_edit_text
+    type "wifi" --into id=open_search_view_edit_text --clear
     wait "~Wi-Fi" --timeout 5
   end
   check "~Wi-Fi"

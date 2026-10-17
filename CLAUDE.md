@@ -25,14 +25,16 @@ see `testdata.example.yaml`) — read it if present.
 3. **Write the plan file** `plans/<short-name>.plan` (format: top of `teesri_nazar/plan.py`;
    example: `examples/settings.plan`). Every expected result is a `check`; shared steps
    (login, go to a screen) are `flow`s; flaky app steps go in `retry N … end` with `wait`
-   inside and the `check` after; `if "<target>" … else … end` for screens that vary.
+   inside and the `check` after; `if "<target>" … else … end` for screens that vary
+   (`if "A" --or "B" --wait 10` to wait for whichever shows). In a plan, `wait A --or B`
+   fails the case when B shows (exit 4): use it only when B means failure.
    Fixed values only: write the labels you observed. Secrets only as `--env NAME`.
 4. **Run it**: `./tnazar run plans/<name>.plan` (in the background: a plan can take longer
    than a 2-minute command). No model turn per step: read the output when it finishes.
-   Exit 0 = all passed, 1 = something failed, 2 = the plan has an error (fix the line it
-   names), 3 = the user sent a dashboard message: act on it, then continue with
-   `./tnazar run plans/<name>.plan --from <case>` (the run stays open). Re-run one case
-   with `--only TC-05`.
+   Exit 0 = all passed, 1 = something failed, 2 = plan or setup error (fix the line it
+   names, or the device/app setup), 3 = the user sent a dashboard message: act on it, then
+   continue with `./tnazar run plans/<name>.plan --from <case>` (the run stays open).
+   Re-run one case with `--only TC-05`. All exit codes: `ARCHITECTURE.md` §11 *Exit codes*.
    For one-off exploration you can still drive cases by hand between
    `./tnazar case start TC-01 "title"` and `./tnazar case end`, then `./tnazar stop`.
 5. **Report back** in chat: the summary line, a table of cases with result and reason,
@@ -91,7 +93,8 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
 ## Verifying
 
 ```bash
-./tnazar check "Payment successful"                 # UI: visible within 5 s
+./tnazar check "Payment successful"                 # UI: visible within 5 s (exact text or label)
+./tnazar check '~Payment'                           # partial match: say so explicitly
 ./tnazar check "Pay" --enabled false                # state checks: --checked / --enabled
 ./tnazar check id=loader --gone --timeout 15
 ./tnazar check --result pass --kind db --what "txn row status = SUCCESS" \
@@ -102,6 +105,9 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
 ```
 
 - **UI:** every expected result is a `check`; each one saves a screenshot automatically.
+  `check` matches exactly (text, then accessibility label); taps and waits also fall back
+  to partial matches, checks do not. Screenshots show the screen as is: a secret typed into
+  a plain (non-password) field is visible in them.
 - **DB:** read-only queries only, against the test environment named in `testdata.yaml`.
   Never write, update or delete. Record the query and the result in `--detail`.
   Never run against production; if the connection looks like prod, stop and ask.
