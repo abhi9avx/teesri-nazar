@@ -254,7 +254,7 @@ def cmd_launch(args) -> int:
         dev.clear_data(ctx.adb, package)
     elif args.restart:
         dev.force_stop(ctx.adb, package)
-    component = dev.launch(ctx.adb, package)
+    component = dev.launch(ctx.adb, package, clean=args.fresh or args.restart)
     ctx.log({"type": "launch", "package": package, "fresh": args.fresh, "restart": args.restart})
     print(f"launched {component}")
     return 0

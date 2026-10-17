@@ -51,7 +51,7 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
             dev.clear_data(adb, e["package"])
         elif e.get("restart"):
             dev.force_stop(adb, e["package"])
-        dev.launch(adb, e["package"])
+        dev.launch(adb, e["package"], clean=bool(e.get("fresh") or e.get("restart")))
     elif t == "open_url":
         dev.open_url(adb, e["url"])
     elif t == "tap":

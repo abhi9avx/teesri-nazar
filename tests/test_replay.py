@@ -85,6 +85,21 @@ class FaithfulReplayTest(ReplayTestCase):
         self.assertIn(["shell", "pm", "clear", PACKAGE], self.adb.calls)
 
 
+    def test_replayed_restart_starts_clean(self):
+        self.adb.app.screens["search"] = [node(id="search_box", text="Search results", clickable=False)]
+        self.ok("start", "demo", "--package", PACKAGE)
+        self.ok("case", "start", "TC-01", "Relaunch")
+        self.ok("launch", "--restart")
+        self.ok("check", "Welcome back")
+        self.ok("case", "end")
+        self.ok("stop")
+        self.fresh_device()
+        self.adb.foreign_top = "search"  # left behind by an earlier, failed replay
+        code, out, run = self.replay()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.statuses(run), {"TC-01": "pass"})
+
+
 class RegressionDetectionTest(ReplayTestCase):
     def test_changed_text_fails_the_check(self):
         self.record_login()

@@ -116,10 +116,15 @@ def clear_data(adb: Adb, package: str) -> None:
         raise AdbError(f"pm clear {package} failed: {out.strip()}")
 
 
-def launch(adb: Adb, package: str) -> str:
+FLAG_NEW_CLEAR_TASK = "0x10008000"
+
+
+def launch(adb: Adb, package: str, clean: bool = False) -> str:
+    """Start the app; `clean` also drops activities left in its task, including other packages' ones."""
     component = launcher_activity(adb, package)
     if component:
-        out = adb.shell("am", "start", "-W", "-n", component, check=False)
+        flags = ["-f", FLAG_NEW_CLEAR_TASK] if clean else []
+        out = adb.shell("am", "start", "-W", *flags, "-n", component, check=False)
         if "Error" not in out:
             return component
     out = adb.shell("monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1", check=False)

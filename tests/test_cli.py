@@ -94,6 +94,18 @@ class LifecycleTest(CliTestCase):
         self.assertIn(["shell", "pm", "clear", PACKAGE], self.adb.calls)
         self.assertEqual(self.adb.current, "login")
 
+    def test_restart_clears_another_apps_screen_from_the_task(self):
+        self.adb.app.screens["search"] = [node(id="search_box", text="Search results", clickable=False)]
+        self.adb.foreign_top = "search"  # e.g. Settings search lives in another package
+        self.ok("launch", PACKAGE, "--restart")
+        self.assertEqual(self.adb.current, "login")
+
+    def test_plain_launch_resumes_where_the_app_was(self):
+        self.adb.app.screens["search"] = [node(id="search_box", text="Search results", clickable=False)]
+        self.adb.foreign_top = "search"
+        self.ok("launch", PACKAGE)
+        self.assertEqual(self.adb.current, "search")
+
     def test_stop_without_run(self):
         self.assertEqual(tnazar("stop")[0], 2)
         self.assertEqual(tnazar("stop", "--if-active")[0], 0)

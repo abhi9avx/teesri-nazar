@@ -99,6 +99,7 @@ class FakeAdb:
         self.dump_failures = 0  # next N dumps fail like an animating screen
         self.files: dict[str, str] = {}  # device files tnazar writes via the shell
         self.keyboard = False  # soft keyboard showing
+        self.foreign_top: str | None = None  # another package's screen on top of the app's task
         self.keyboard_on_focus = True  # False: focusing a field leaves it hidden (hardware keyboard, timing)
         self.typed: list[str] = []
         self.taps: list[tuple[int, int]] = []
@@ -209,6 +210,11 @@ class FakeAdb:
         if a[:2] == ["cmd", "package"]:
             return f"priority=0\n{PACKAGE}/.Main\n"
         if a[:2] == ["am", "start"]:
+            if "-n" in a:  # launching the app's own activity resumes its task
+                if "0x10008000" in a:  # NEW_TASK | CLEAR_TASK
+                    self.foreign_top = None
+                if self.foreign_top:
+                    self.current = self.foreign_top
             return "Status: ok\n"
         if a[:2] == ["am", "force-stop"]:
             self.current = self.app.start
