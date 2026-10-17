@@ -22,7 +22,7 @@ def runs_dir() -> Path:
 
 def state_dir() -> Path:
     d = home() / ".tnazar"
-    d.mkdir(exist_ok=True)
+    d.mkdir(parents=True, exist_ok=True)
     return d
 
 

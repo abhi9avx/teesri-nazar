@@ -33,6 +33,12 @@ class RunCreateTest(SessionTestCase):
             with self.subTest(name=bad), self.assertRaises(ValueError):
                 Run.create(bad, {})
 
+    def test_home_folder_is_created_when_missing(self):
+        missing = os.path.join(self.tmp.name, "not", "yet")
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": missing}):
+            self.assertTrue(session.state_dir().is_dir())
+            self.assertTrue(Run.create("r", {}).path.is_dir())
+
     def test_update_meta_merges(self):
         run = Run.create("r", {"a": 1})
         run.update_meta(b=2)
