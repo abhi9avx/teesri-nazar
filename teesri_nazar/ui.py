@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import live
 from . import report as rpt
+from . import usage
 from .adb import Adb, AdbError, pick_serial
 from .session import NAME_RE, Run, get_active, runs_dir
 
@@ -49,9 +50,20 @@ class Dashboard:
     def __init__(self, port: int):
         self.port = port
         self.token = _secrets.token_urlsafe(24)
-        self.secrets: dict[str, str] = {}
+        self._secrets: dict[str, str] = {}
+        self._secrets_run: str | None = None
         self._screen_lock = threading.Lock()
         self._screen: tuple[float, dict] | None = None
+
+    @property
+    def secrets(self) -> dict[str, str]:
+        """Secrets belong to the run they were sent for; a new run starts with none."""
+        active = get_active()
+        name = active[0].name if active else None
+        if name != self._secrets_run:
+            self._secrets.clear()
+            self._secrets_run = name
+        return self._secrets
 
     # ------------------------------------------------------------ device screen
     def screen(self) -> dict:
@@ -205,6 +217,11 @@ def make_handler(dash: Dashboard):
                     self._json(dash.runs())
                 elif path == "/api/events":
                     self._json(dash.events(q.get("run", [""])[0], int(q.get("from", ["0"])[0])))
+                elif path == "/api/usage":
+                    name = q.get("run", [""])[0]
+                    if not NAME_RE.match(name):
+                        raise ValueError("bad run name")
+                    self._json(usage.per_case(Run.load(name)))
                 elif path == "/api/screen":
                     shot = dash.screen()
                     headers = {"X-Screen-Hidden": shot["hidden"] or "", "X-Screen-Error": (shot["error"] or "")[:200]}

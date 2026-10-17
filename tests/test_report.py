@@ -14,7 +14,8 @@ class ReportTest(unittest.TestCase):
         self.run = Run.create("demo", {"package": "com.example.app", "prompt": "test <login>"})
         log = self.run.log
         log({"type": "case_start", "case": "TC-01", "title": "Login works"})
-        log({"type": "tap", "selector": {"text": "Login"}, "xy": [1, 1]})
+        log({"type": "tap", "selector": {"text": "Login"}, "xy": [1, 1], "label": "Login", "dur_ms": 900})
+        log({"type": "wait", "selector": {"desc": "homeScreen"}, "ok": True, "polls": 4, "dur_ms": 8400})
         log({"type": "check", "kind": "ui", "ok": True, "what": "Home visible", "case": "TC-01",
              "shot": "shots/a.png"})
         log({"type": "case_end", "case": "TC-01", "status": "pass", "reason": ""})
@@ -28,6 +29,14 @@ class ReportTest(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("TNAZAR_HOME", None)
         self.tmp.cleanup()
+
+    def test_steps_over_five_seconds_are_listed_with_their_screen_reads(self):
+        s = rpt.summarize(self.run)
+        self.assertEqual([(e["type"], e["dur_ms"]) for e in s["slow"]], [("wait", 8400)])
+        md = rpt.to_markdown(self.run, s)
+        self.assertIn("## Slow steps (> 5 s)", md)
+        self.assertIn('| TC-01 | wait desc="homeScreen" | 8.4s | 4 screen reads |', md)
+        self.assertIn("Slow steps", rpt.to_html(self.run, s))
 
     def test_summary(self):
         s = rpt.summarize(self.run)
@@ -58,6 +67,52 @@ class ReportTest(unittest.TestCase):
         a = self.run.artifact("shots", "x", "png")
         a.write_bytes(b"1")
         self.assertNotEqual(a, self.run.artifact("shots", "x", "png"))
+
+
+class ScreenshotTest(unittest.TestCase):
+    """The report shows one screenshot per distinct screen, and puts failures first, highlighted."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["TNAZAR_HOME"] = self.tmp.name
+        self.run = Run.create("shots", {})
+        log = self.run.log
+        log({"type": "case_start", "case": "TC-01", "title": "Help page"})
+        for what, shot in (("greeting shown", "a.png"), ("chat shown", "b.png"), ("menu shown", "c.png")):
+            log({"type": "check", "kind": "ui", "ok": True, "what": what, "shot": f"shots/{shot}",
+                 "screen_sig": "help", "case": "TC-01"})
+        log({"type": "check", "kind": "ui", "ok": True, "what": "article opens", "shot": "shots/d.png",
+             "screen_sig": "article", "case": "TC-01"})
+        log({"type": "check", "kind": "ui", "ok": False, "what": "title matches", "shot": "shots/e.png",
+             "screen_sig": "article", "case": "TC-01"})
+        log({"type": "case_end", "case": "TC-01", "status": "fail", "reason": "failed: title matches",
+             "evidence": ["shots/end.png", "logs/x.txt"]})
+
+    def tearDown(self):
+        os.environ.pop("TNAZAR_HOME", None)
+        self.tmp.cleanup()
+
+    def test_same_screen_is_shown_once_with_every_check_it_proves(self):
+        page = rpt.to_html(self.run, rpt.summarize(self.run))
+        self.assertIn("shots/a.png", page)
+        self.assertNotIn("shots/b.png", page)
+        self.assertNotIn("shots/c.png", page)
+        self.assertIn("3 checks on this screen", page)
+
+    def test_failures_come_first_and_are_highlighted(self):
+        page = rpt.to_html(self.run, rpt.summarize(self.run))
+        self.assertIn("class='shot failed'", page)
+        self.assertIn("Failed here: title matches", page)
+        self.assertLess(page.index("shots/e.png"), page.index("shots/a.png"))
+
+    def test_end_of_case_screen_only_when_no_check_shows_the_failure(self):
+        page = rpt.to_html(self.run, rpt.summarize(self.run))
+        self.assertNotIn("shots/end.png", page)  # the failed check's own shot already shows it
+
+    def test_links_are_readable_in_dark_mode(self):
+        css = rpt.CSS
+        self.assertIn("a{color:var(--link)}", css)
+        self.assertEqual(css.count("--link:"), 2)  # one per theme
 
 
 class VisualParseTest(unittest.TestCase):

@@ -6,10 +6,12 @@ import html
 from datetime import datetime
 from pathlib import Path
 
+from . import usage
 from .session import Run
 
 ICON = {"pass": "✅", "fail": "❌", "blocked": "⛔", "skipped": "⏭", "running": "⏳"}
 ACTIONS = {"launch", "open_url", "tap", "type", "key", "scroll", "swipe", "adb"}
+SLOW_MS = 5000
 
 
 def case_events(events: list[dict], case: str) -> list[dict]:
@@ -73,7 +75,25 @@ def summarize(run: Run) -> dict:
         "checks_total": len(checks),
         "checks_failed": sum(1 for ch in checks if not ch["ok"]),
         "bugs": [n for c in cases for n in c["notes"] if n.get("kind") == "bug"],
+        "slow": [e for e in run.events() if e.get("dur_ms", 0) > SLOW_MS],
     }
+
+
+def step_label(e: dict) -> str:
+    """One line naming a recorded step: `tap "Login"`, `wait desc="homeScreen"`."""
+    if e["type"] == "check":
+        return f"check {e.get('what', '')}"
+    target = e.get("label") or e.get("selector") or e.get("to") or e.get("package") or ""
+    if isinstance(target, dict):
+        target = " ".join(f'{k}="{v}"' if k != "id" else f"id={v}" for k, v in target.items()
+                          if k in ("id", "desc", "text"))
+    elif target and e.get("label"):
+        target = f'"{target}"'
+    return f"{e['type']} {target}".strip()
+
+
+def slow_reason(e: dict) -> str:
+    return f"{e['polls']} screen reads" if e.get("polls") else ""
 
 
 def summary_line(s: dict) -> str:
@@ -116,12 +136,17 @@ def to_markdown(run: Run, s: dict) -> str:
         out += ["**Request:** " + m["prompt"], ""]
     out += ["## Summary", "", summary_line(s), ""]
     cases = s["cases"]
+    tokens = usage.per_case(run)
     if cases:
-        out += ["| Case | Title | Result | Checks | Reason |", "|---|---|---|---|---|"]
+        if tokens:
+            out += ["| Case | Title | Result | Checks | Tokens | Reason |", "|---|---|---|---|---|---|"]
+        else:
+            out += ["| Case | Title | Result | Checks | Reason |", "|---|---|---|---|---|"]
         for c in cases:
             ok = sum(1 for ch in c["checks"] if ch["ok"])
+            cost = f" {usage.label(tokens.get(c['id'])) or '-'} |" if tokens else ""
             out.append(f"| {c['id']} | {c['title']} | {ICON.get(c['status'], '')} {c['status']} | "
-                       f"{ok}/{len(c['checks'])} | {c['reason']} |")
+                       f"{ok}/{len(c['checks'])} |{cost} {c['reason']} |")
         out.append("")
     for c in cases:
         out += [f"## {ICON.get(c['status'], '')} {c['id']}: {c['title']}".rstrip(": "), ""]
@@ -143,19 +168,31 @@ def to_markdown(run: Run, s: dict) -> str:
         out.append("")
     if s["bugs"]:
         out += ["## Bugs found", ""] + [f"- {b['text']} (case {b.get('case') or '-'})" for b in s["bugs"]] + [""]
+    if s["slow"]:
+        out += ["## Slow steps (> 5 s)", "", "| Case | Step | Took | Why |", "|---|---|---|---|"]
+        out += [f"| {_case_of(s, e) or '-'} | {step_label(e)} | {e['dur_ms'] / 1000:.1f}s | {slow_reason(e)} |"
+                for e in s["slow"]] + [""]
     return "\n".join(out)
 
 
+def _case_of(s: dict, e: dict) -> str | None:
+    return e.get("case") or next((c["id"] for c in s["cases"] if e in c["events"]), None)
+
+
 CSS = """
-:root{--bg:#fff;--fg:#1d1d1f;--muted:#6e6e73;--line:#e5e5ea;--card:#f7f7f9;--pass:#1a7f37;--fail:#cf222e;--block:#9a6700}
-@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#ececf1;--muted:#a1a1aa;--line:#2a2a30;--card:#1a1a1e;--pass:#3fb950;--fail:#f85149;--block:#d29922}}
+:root{--bg:#fff;--fg:#1d1d1f;--muted:#5f5f66;--line:#e5e5ea;--card:#f7f7f9;--pass:#1a7f37;--fail:#cf222e;--block:#9a6700;--link:#0b57d0}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#ececf1;--muted:#b4b4bd;--line:#2a2a30;--card:#1a1a1e;--pass:#3fb950;--fail:#ff7b72;--block:#e3b341;--link:#8ab4f8}}
+a{color:var(--link)}a:visited{color:var(--link)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,system-ui,sans-serif}
 main{max-width:980px;margin:0 auto;padding:24px 16px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
 .muted{color:var(--muted)}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
 .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid currentColor}
 .pass{color:var(--pass)}.fail{color:var(--fail)}.blocked,.running{color:var(--block)}.skipped{color:var(--muted)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
-.shots{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.shots img{height:220px;border:1px solid var(--line);border-radius:6px}
+.shots{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;align-items:flex-start}
+.shot{margin:0;max-width:150px}.shot img{height:300px;max-width:150px;object-fit:contain;border:1px solid var(--line);border-radius:6px;display:block}
+.shot figcaption{font-size:12px;margin-top:4px;color:var(--muted);overflow-wrap:anywhere}
+.shot.failed img{border:3px solid var(--fail)}.shot.failed figcaption{color:var(--fail);font-weight:600}
 ul{margin:6px 0;padding-left:20px}code{font-size:13px}
 .tiles{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
 .tile b{display:block;font-size:22px}
@@ -167,11 +204,13 @@ def to_html(run: Run, s: dict) -> str:
     e = html.escape
     app = f"{m.get('package') or '-'} {m.get('app_version', '')}".strip()
     rows = []
+    tokens = usage.per_case(run)
     for c in s["cases"]:
         ok = sum(1 for ch in c["checks"] if ch["ok"])
+        cost = f"<td>{e(usage.label(tokens.get(c['id'])) or '-')}</td>" if tokens else ""
         rows.append(f"<tr><td><a href='#c-{e(c['id'])}'>{e(c['id'])}</a></td><td>{e(c['title'])}</td>"
                     f"<td><span class='pill {c['status']}'>{c['status']}</span></td>"
-                    f"<td>{ok}/{len(c['checks'])}</td><td>{e(c['reason'])}</td></tr>")
+                    f"<td>{ok}/{len(c['checks'])}</td>{cost}<td>{e(c['reason'])}</td></tr>")
     tiles = "".join(f"<div class='tile {k}'><b>{s['counts'].get(k, 0)}</b>{k}</div>"
                     for k in ("pass", "fail", "blocked", "skipped"))
     cards = []
@@ -186,9 +225,7 @@ def to_html(run: Run, s: dict) -> str:
         for ev in c.get("evidence", []):
             if not ev.endswith(".png"):
                 items.append(f"<li>evidence: <a href='{e(ev)}'>{e(ev)}</a></li>")
-        imgs = [ch["shot"] for ch in c["checks"] if ch.get("shot")] + [x["file"] for x in c["shots"]] \
-            + [ev for ev in c.get("evidence", []) if ev.endswith(".png")]
-        shots = "".join(f"<a href='{e(p)}'><img loading='lazy' src='{e(p)}' alt=''></a>" for p in imgs)
+        shots = "".join(_figure(*f) for f in _screenshots(c))
         cards.append(
             f"<div class='card' id='c-{e(c['id'])}'><div><span class='pill {c['status']}'>{c['status']}</span> "
             f"<b>{e(c['id'])}</b> {e(c['title'])} <span class='muted'>· {c['steps']} steps "
@@ -205,10 +242,44 @@ def to_html(run: Run, s: dict) -> str:
 · {e(m.get('started_at', ''))} · {_duration(m.get('started_at'), m.get('finished_at')) or 'running'}</div>
 {prompt}<div class="tiles">{tiles}</div>
 <p class="muted">checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed</p>
-<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th><th>Reason</th></tr>{''.join(rows)}</table>
-<h2>Details</h2>{''.join(cards)}
+<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th>{'<th>Tokens</th>' if tokens else ''}<th>Reason</th></tr>{''.join(rows)}</table>
+<h2>Details</h2>{''.join(cards)}{_slow_html(s)}
 </main></body></html>
 """
+
+
+def _screenshots(c: dict) -> list[tuple[str, str, str, str]]:
+    """(path, caption, tooltip, css class): failures first, then one shot per distinct screen."""
+    out = [(ch["shot"], f"❌ Failed here: {ch['what']}", ch.get("detail", ""), "shot failed")
+           for ch in c["checks"] if not ch["ok"] and ch.get("shot")]
+    if c["status"] in ("fail", "blocked") and not out:
+        out += [(p, "❌ Screen when the case ended", "", "shot failed")
+                for p in c.get("evidence", []) if p.endswith(".png")]
+    screens: dict[str, list[dict]] = {}
+    for ch in c["checks"]:
+        if ch["ok"] and ch.get("shot"):
+            screens.setdefault(ch.get("screen_sig") or ch["shot"], []).append(ch)
+    for checks in screens.values():
+        caption = f"✅ {checks[0]['what']}" if len(checks) == 1 else f"✅ {len(checks)} checks on this screen"
+        out.append((checks[0]["shot"], caption, "\n".join(ch["what"] for ch in checks), "shot"))
+    out += [(x["file"], f"📸 {x.get('label') or 'screenshot'}", "", "shot") for x in c["shots"]]
+    return out
+
+
+def _figure(path: str, caption: str, tooltip: str, cls: str) -> str:
+    e = html.escape
+    return (f"<figure class='{cls}'><a href='{e(path)}'><img loading='lazy' src='{e(path)}' alt='{e(caption)}'></a>"
+            f"<figcaption title='{e(tooltip)}'>{e(caption)}</figcaption></figure>")
+
+
+def _slow_html(s: dict) -> str:
+    if not s["slow"]:
+        return ""
+    e = html.escape
+    rows = "".join(f"<tr><td>{e(_case_of(s, x) or '-')}</td><td>{e(step_label(x))}</td>"
+                   f"<td>{x['dur_ms'] / 1000:.1f}s</td><td>{e(slow_reason(x))}</td></tr>" for x in s["slow"])
+    return (f"<h2>Slow steps (&gt; 5 s)</h2><table><tr><th>Case</th><th>Step</th><th>Took</th><th>Why</th></tr>"
+            f"{rows}</table>")
 
 
 def write(run: Run) -> list[Path]:

@@ -69,6 +69,10 @@ body.resizing iframe, body.resizing img { pointer-events: none; }
 .row.user { background: var(--msg); border-radius: 6px; margin: 6px 0; }
 .dur { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; padding: 0 6px; border-radius: 10px; background: var(--chip); white-space: nowrap; }
 .dur.slow { color: #fff; background: var(--amber); }
+.meta { white-space: nowrap; text-align: right; }
+.tok { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 4px; white-space: nowrap; }
+.tok.big { color: var(--warn); border-color: var(--warn); }
+.case-cost { color: var(--muted); font-size: 12px; margin-left: 8px; }
 .pill { font-size: 12px; padding: 1px 8px; border-radius: 10px; color: #fff; }
 .pill.pass { background: var(--ok); } .pill.fail { background: var(--bad); }
 .pill.blocked, .pill.skipped { background: var(--muted); }
@@ -162,7 +166,7 @@ const CHIPS = ["Retry the last step", "Take a screenshot now", "Skip this case a
                "Log out and log back in", "Stop after this case and write the report"];
 
 let state = null, runs = [], view = null, follow = true, offset = 0, events = [], meta = null, report = false;
-let pinnedShot = null, stick = true, lastRender = -1;
+let pinnedShot = null, stick = true, lastRender = -1, caseUsage = {}, usageKey = "";
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -185,6 +189,8 @@ async function post(path, body) {
 }
 
 // ------------------------------------------------------------------ formatting
+const fmtTok = (n) => n < 1000 ? "<1k" : n < 10000 ? `${(n / 1000).toFixed(1).replace(".0", "")}k` : `${Math.round(n / 1000)}k`;
+const usageLabel = (u) => u && u.turns ? `${u.turns} turns · ${fmtTok(u.new)} new · ${fmtTok(u.cached)} cached` : "";
 const fmtDur = (ms) => ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s` : `${(ms / 1000).toFixed(1)}s`;
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
 // What the user sees for their own message; secrets show by name, never by the agent's instruction text.
@@ -231,11 +237,13 @@ function row(e, t0) {
   const w = el("span", "what", what);
   if (detail) w.append(el("span", "detail", detail));
   r.append(w);
+  const cell = el("span", "meta");
   if (typeof e.dur_ms === "number") {
     const d = el("span", "dur" + (e.dur_ms > 5000 ? " slow" : ""), fmtDur(e.dur_ms));
     d.title = e.dur_ms > 5000 ? "slow step (> 5 s)" : "how long this step took";
-    r.append(d);
-  } else r.append(el("span"));
+    cell.append(d);
+  }
+  r.append(cell);
   if (e.type === "check") r.classList.add(e.ok ? "ok-check" : "bad");
   if (e.type === "wait" && !e.ok) r.classList.add("bad");
   if (e.type === "note" && e.kind === "bug") r.classList.add("bug");
@@ -258,7 +266,7 @@ function render() {
     return;
   }
   const t0 = meta && meta.started_at ? Date.parse(meta.started_at) : null;
-  let group = null, steps = 0, total = 0;
+  let group = null, steps = 0, total = 0, lastRow = null;
   const closeGroup = () => {
     if (!group) return;
     group.querySelector(".gmeta").textContent = steps ? `${steps} step${steps > 1 ? "s" : ""} · ${fmtDur(total)}` : "";
@@ -274,7 +282,11 @@ function render() {
       closeGroup();
       const c = el("div", "case-end");
       c.append(el("span", `pill ${e.status}`, e.status.toUpperCase()), document.createTextNode(e.reason ? `  ${e.reason}` : ""));
+      const cost = usageLabel(caseUsage[e.case]);
+      if (cost) { const s = el("span", "case-cost", `🪙 ${cost}`); s.title = "model usage for this case (from the Claude Code session log)"; c.append(s); }
       tl.append(c);
+    } else if (e.type === "io") {
+      // Token cost is shown per test case (on its result line), not per step.
     } else if (e.type === "say") {
       closeGroup();
       group = el("div", "group");
@@ -288,6 +300,7 @@ function render() {
       tl.append(r);
     } else {
       const r = row(e, t0);
+      lastRow = r;
       if (group) {
         group.querySelector(".gbody").append(r);
         steps++; total += e.dur_ms || 0;
@@ -304,6 +317,7 @@ $("timeline").addEventListener("scroll", () => {
 
 async function switchRun(name, followActive) {
   view = name; follow = followActive; offset = 0; events = []; meta = null; lastRender = -1; stick = true;
+  caseUsage = {}; usageKey = "";
   pinnedShot = null;
   render();
   renderRunSelect();
@@ -364,6 +378,11 @@ function renderRunCard() {
   add("State", live ? `running${state.active.case ? ` · case ${state.active.case}` : ""}` : (meta.finished_at ? "finished" : "not finished"));
   if (live) add("Result", state.active.summary);
   else { const r = runs.find((x) => x.name === meta.name); if (r) add("Result", r.summary); }
+  const all = Object.values(caseUsage);
+  if (all.length) {
+    const sum = all.reduce((a, u) => ({ turns: a.turns + u.turns, new: a.new + u.new, cached: a.cached + u.cached }), { turns: 0, new: 0, cached: 0 });
+    add("Tokens", usageLabel(sum));
+  }
   if (meta.prompt) add("Request", meta.prompt);
   if (report) add("Report", "report.html", `/runs/${encodeURIComponent(meta.name)}/report.html`);
 }
@@ -402,6 +421,15 @@ async function tickState() {
   renderControl();
   renderRunCard();
   updateScreenMode();
+}
+async function tickUsage() {
+  if (!view) return;
+  try {
+    const u = await getJSON(`/api/usage?run=${encodeURIComponent(view)}`);
+    const key = JSON.stringify(u);
+    if (key === usageKey) return;
+    usageKey = key; caseUsage = u; lastRender = -1; render(); renderRunCard();
+  } catch {}
 }
 async function tickRuns() {
   try { runs = await getJSON("/api/runs"); renderRunSelect(); } catch {}
@@ -537,6 +565,8 @@ applyWidths(false);
   setInterval(tickState, 1000);
   setInterval(tickEvents, 800);
   setInterval(tickRuns, 5000);
+  setInterval(tickUsage, 5000);
+  tickUsage();
   setInterval(tickScreen, 1500);
   tickScreen();
 })();

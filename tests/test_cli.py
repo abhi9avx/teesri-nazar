@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from fakedevice import PACKAGE, FakeAdb, FakeApp, fake_device, login_app, node, tnazar
+from teesri_nazar import cli
 from teesri_nazar import report as rpt
 from teesri_nazar.session import Run, get_active
 
@@ -31,6 +32,54 @@ class CliTestCase(unittest.TestCase):
 
     def case_end_event(self, run, case):
         return [e for e in run.events() if e["type"] == "case_end" and e["case"] == case][-1]
+
+
+class ScreenReadTest(CliTestCase):
+    def test_a_hung_screen_read_is_killed_and_retried(self):
+        self.adb.dump_hangs = 1  # the app never went idle, so uiautomator never returned
+        out = self.ok("observe")
+        self.assertIn("Welcome back", out)
+        self.assertIn(["shell", "pkill", "-x", "uiautomator"], self.adb.calls)
+
+
+class ScreenFingerprintTest(CliTestCase):
+    def test_checks_on_the_same_screen_share_a_fingerprint(self):
+        run = self.start()
+        self.ok("check", "Login")
+        self.ok("check", "Welcome back")
+        self.ok("tap", "Login")
+        self.ok("check", "Pay now")
+        sigs = [e["screen_sig"] for e in run.events() if e["type"] == "check"]
+        self.assertEqual(sigs[0], sigs[1])
+        self.assertNotEqual(sigs[1], sigs[2])
+
+
+class SlowStepTest(CliTestCase):
+    def test_step_over_five_seconds_is_flagged_as_it_happens(self):
+        self.start()
+        clock = mock.Mock(side_effect=[0.0, 6.2])  # Ctx created, then the step is logged 6.2 s later
+        with mock.patch.object(cli.time, "monotonic", clock):
+            _, _, err = tnazar("tap", "Login")
+        self.assertIn("SLOW: tap took 6.2s", err)
+
+
+class DeviceBudgetTest(CliTestCase):
+    """Every screen read costs ~2 s on a real device: these counts are a performance budget."""
+
+    def reads(self, *argv):
+        before = len(self.adb.calls)
+        self.ok(*argv)
+        return sum(1 for c in self.adb.calls[before:] if "uiautomator dump" in " ".join(c))
+
+    def test_screen_reads_per_command(self):
+        self.start()
+        self.assertEqual(self.reads("observe"), 1)
+        self.assertEqual(self.reads("check", "Login"), 1)
+        self.assertEqual(self.reads("type", "hello", "--into", "id=phone_input"), 1)
+        self.assertEqual(self.reads("key", "back"), 0)
+        self.assertEqual(self.reads("tap", "Login"), 1)
+        self.assertEqual(self.reads("say", "next"), 0)
+        self.assertEqual(self.reads("shot"), 0)
 
 
 class LifecycleTest(CliTestCase):
@@ -512,6 +561,18 @@ class NavigationTest(CliTestCase):
         self.assertIn("not found", out)
         swipes = [c for c in self.adb.calls if c[:3] == ["shell", "input", "swipe"]]
         self.assertEqual(len(swipes), 2)  # stops once the screen no longer changes
+
+    def test_plain_scroll_does_not_read_the_screen(self):
+        # Reading the screen costs ~2 s per swipe; a scroll with no target has nothing to look for.
+        self.ok("scroll", "down", "--times", "3")
+        dumps = [c for c in self.adb.calls if "uiautomator dump" in " ".join(c)]
+        swipes = [c for c in self.adb.calls if c[:3] == ["shell", "input", "swipe"]]
+        self.assertEqual((len(dumps), len(swipes)), (0, 3))
+
+    def test_gone_check_is_not_fooled_by_a_longer_label(self):
+        # After a failed save the button goes and a "Couldn't save? Try again" message appears.
+        self.adb.app.screens["top"].append(node(desc="Couldn\u2019t save? Try again", bounds=(0, 500, 1080, 600)))
+        self.ok("check", "Save", "--gone", "--timeout", "1")
 
     def test_wait_timeout(self):
         self.assertEqual(tnazar("wait", "Transaction history", "--timeout", "2")[0], 1)

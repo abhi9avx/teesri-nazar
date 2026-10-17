@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import subprocess
@@ -55,6 +56,9 @@ class Ctx:
                 now = time.monotonic()
                 event["dur_ms"] = round((now - self._mark) * 1000)
                 self._mark = now
+                if event["dur_ms"] > rpt.SLOW_MS:
+                    why = f" ({event['polls']} screen reads)" if event.get("polls") else ""
+                    print(f"SLOW: {event['type']} took {event['dur_ms'] / 1000:.1f}s{why}", file=sys.stderr)
             self.run.log(event)
 
     def capture(self) -> scr.Screen:
@@ -372,7 +376,8 @@ def cmd_key(args) -> int:
 
 def cmd_scroll(args) -> int:
     ctx = Ctx.from_args(args.device)
-    screen = ctx.capture()
+    # Each read costs ~2 s; only read when there is something to look for or a container to find.
+    screen = ctx.capture() if args.to or args.within else None
     width, height = ctx.adb.screen_size()
     area = (0, int(height * 0.15), width, int(height * 0.85))
     if args.within:
@@ -387,9 +392,11 @@ def cmd_scroll(args) -> int:
         if goal and (found := scr.find(screen, goal)):
             break
         dev.swipe(ctx.adb, *vec)
+        if not goal:
+            continue
         before = screen.signature()
         screen = ctx.capture()
-        if goal and screen.signature() == before:
+        if screen.signature() == before:
             break  # reached the end of the list
     if goal and not found:
         found = scr.find(screen, goal)
@@ -457,6 +464,9 @@ def cmd_check(args) -> int:
     label = "pass" if ok else "fail"
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
              "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls")}
+    if screen is not None:
+        # Same screen, same fingerprint: the report shows one screenshot for all its checks.
+        event["screen_sig"] = hashlib.sha1(screen.signature().encode()).hexdigest()[:12]
     if shot := evidence_shot(ctx, f"check-{label}"):
         event["shot"] = shot
     if ctx.run and not ok:
@@ -782,9 +792,34 @@ def load_dotenv() -> None:
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+class _Counted:
+    """Passes writes through and counts characters: the agent reads all of it as context."""
+
+    def __init__(self, inner):
+        self.inner, self.chars = inner, 0
+
+    def write(self, s: str) -> int:
+        self.chars += len(s)
+        return self.inner.write(s)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     load_dotenv()
+    out, err = _Counted(sys.stdout), _Counted(sys.stderr)
+    sys.stdout, sys.stderr = out, err
+    try:
+        return _run(args)
+    finally:
+        sys.stdout, sys.stderr = out.inner, err.inner
+        if args.cmd != "ui" and (active := get_active()):
+            active[0].log({"type": "io", "cmd": args.cmd, "tokens": -(-(out.chars + err.chars) // 4)})
+
+
+def _run(args) -> int:
     try:
         active = get_active() if args.cmd in HELD else None
         if active and (held := _hold(active[0])) is not None:

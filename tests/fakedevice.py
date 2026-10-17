@@ -17,6 +17,7 @@ from unittest import mock
 from xml.sax.saxutils import quoteattr
 
 from teesri_nazar import cli
+from teesri_nazar.adb import AdbError
 
 PACKAGE = "com.example.app"
 SERIAL = "fake-1"
@@ -97,6 +98,7 @@ class FakeAdb:
         self.crash_log = ""
         self.secure = False  # FLAG_SECURE screen: screencap yields no PNG
         self.dump_failures = 0  # next N dumps fail like an animating screen
+        self.dump_hangs = 0  # next N dumps hang until adb's timeout (app never goes idle)
         self.files: dict[str, str] = {}  # device files tnazar writes via the shell
         self.keyboard = False  # soft keyboard showing
         self.foreign_top: str | None = None  # another package's screen on top of the app's task
@@ -121,6 +123,9 @@ class FakeAdb:
     def exec_out(self, command: str, timeout: float = 60) -> bytes:
         self.calls.append(["exec-out", command])
         if "uiautomator dump" in command:
+            if self.dump_hangs:
+                self.dump_hangs -= 1
+                raise AdbError(f"adb timed out after {timeout}s: exec-out {command}")
             if self.dump_failures:
                 self.dump_failures -= 1
                 return b"ERROR: could not get idle state."
@@ -221,6 +226,8 @@ class FakeAdb:
             return "Status: ok\n"
         if a[:2] == ["am", "force-stop"]:
             self.current = self.app.start
+            return ""
+        if a[:2] == ["pkill", "-x"]:
             return ""
         if a[:1] == ["monkey"]:
             return "Events injected: 1\n"

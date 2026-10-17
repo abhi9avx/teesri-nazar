@@ -70,6 +70,42 @@ class FindTest(unittest.TestCase):
     def test_partial_does_not_match_when_exact_requested_with_id(self):
         self.assertIsNone(self.find(id="link", text="Terms"))
 
+    def test_text_selector_falls_back_to_content_desc(self):
+        # Compose apps often put the visible label only in content-desc.
+        compose = scr.parse(
+            "<hierarchy><node class='android.view.View' text='' resource-id='' content-desc='Thanks for your feedback!'"
+            " bounds='[0,0][100,100]'/><node class='android.view.View' text='' resource-id=''"
+            " content-desc='Did this answer your question?' bounds='[0,100][100,200]'/></hierarchy>")
+        hit = lambda **kw: (scr.find(compose, scr.Selector(**kw)) or scr.Element(0, "", "", "", "", (0, 0, 0, 0))).desc
+        self.assertEqual(hit(text="Did this answer your question?"), "Did this answer your question?")
+        self.assertEqual(hit(text="Thanks for your", contains=True), "Thanks for your feedback!")
+
+    def test_visible_text_still_wins_over_content_desc(self):
+        both = scr.parse(
+            "<hierarchy><node class='a' text='' resource-id='' content-desc='Login' bounds='[0,0][100,100]'/>"
+            "<node class='b' text='Login' resource-id='' content-desc='' bounds='[0,100][100,200]'/></hierarchy>")
+        self.assertEqual(scr.find(both, scr.Selector(text="Login")).cls, "b")
+
+    def test_exact_desc_is_tried_before_partial_text(self):
+        both = scr.parse(
+            "<hierarchy><node class='a' text='Login with OTP' resource-id='' content-desc='' bounds='[0,0][100,100]'/>"
+            "<node class='b' text='' resource-id='' content-desc='Login' bounds='[0,100][100,200]'/></hierarchy>")
+        self.assertEqual(scr.find(both, scr.Selector(text="Login")).cls, "b")
+
+    def test_strict_find_does_not_match_a_longer_label(self):
+        after = scr.parse(
+            "<hierarchy><node class='a' text='' resource-id='' content-desc='Couldn\u2019t save? Try again'"
+            " bounds='[0,0][100,100]'/></hierarchy>")
+        self.assertIsNotNone(scr.find(after, scr.Selector(text="Save")))
+        self.assertIsNone(scr.find(after, scr.Selector(text="Save"), strict=True))
+
+    def test_curly_and_straight_quotes_match(self):
+        curly = scr.parse(
+            "<hierarchy><node class='a' text='Couldn\u2019t save? Try again' resource-id='' content-desc=''"
+            " bounds='[0,0][100,100]'/></hierarchy>")
+        self.assertIsNotNone(scr.find(curly, scr.Selector(text="Couldn't save", contains=True)))
+        self.assertIsNotNone(scr.find(curly, scr.Selector(text="Couldn\u2019t save? Try again")))
+
     def test_desc_and_nth(self):
         self.assertEqual(self.find(desc="phone number"), "Phone number")
         self.assertEqual(self.find(id="link", nth=1), "Terms of service")

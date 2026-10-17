@@ -304,11 +304,13 @@ take its `bounds`, compute the center, tap there.
 attributes given:
 
 - **id:** `btn_login` matches `com.example.app:id/btn_login` (short form is fine).
-- **text / desc:** whitespace-collapsed and case-insensitive. Exact by default;
-  substring with `~` / `--contains`.
-- **Forgiving fallback:** if an exact text match fails, `find()` retries as a partial
-  match — a label typed loosely (`"Pay now"`) often lives inside a longer string
-  (`"Pay now ₹500"`).
+- **text / desc:** whitespace-collapsed, case-insensitive, and curly quotes (`’ “`) equal
+  straight ones (`' "`). Exact by default; substring with `~` / `--contains`.
+- **Forgiving fallback:** a bare text selector is tried, in order, as exact text, exact
+  content-desc (Compose apps often put the label only there), partial text, partial
+  content-desc — a label typed loosely (`"Pay now"`) often lives inside a longer string.
+- **Except for "gone":** `--gone` checks match exactly (text or content-desc), so
+  `check Save --gone` is not fooled by a new "Couldn’t save? Try again" label.
 
 ### 7.3 The priority rule: id → desc → text → coordinates
 
@@ -704,6 +706,15 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
 - **Pause.** While `.tnazar/paused` exists a device command waits up to 60 s (under the
   agent's 2-minute command timeout); if still paused it exits 3 and tells Claude to run
   `./tnazar wait-resume`. The wait is logged as a `hold` event.
+- **Slow steps.** Any step over 5 s prints `SLOW: <step> took Xs (N screen reads)` as it
+  happens and is listed in the report's *Slow steps* table. A screen read costs ~2 s, so
+  `tests/test_cli.py::DeviceBudgetTest` pins how many reads each command makes. A dump
+  that hangs (the app never goes idle) is cut at 10 s, killed on the device
+  (`pkill -x uiautomator`) and retried.
+- **Token cost per test case.** Each command's output size is logged (`io` event). The real
+  model usage per case — turns, new tokens, cached context re-read — comes from Claude
+  Code's session log for this folder; a case owns the requests since the previous case
+  ended. Shown on the case's line in the timeline and in the report's *Tokens* column.
 - **Narration and timings.** `./tnazar say "…"` records a `say` event, the timeline heading
   for the steps after it. Every action event carries `dur_ms`; `wait` and `check` add
   `polls` (screen dumps it took). Steps over 5 s are highlighted.

@@ -250,7 +250,7 @@ def wait_for(adb: Adb, sel: scr.Selector, timeout: float, gone: bool = False,
             if time.monotonic() >= deadline and screen is None:
                 raise
         else:
-            el = scr.find(screen, sel)
+            el = scr.find(screen, sel, strict=gone)
             if (el is None) == gone:
                 return True, screen, el
         if time.monotonic() >= deadline:

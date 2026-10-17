@@ -68,8 +68,11 @@ def _quote(s: str, limit: int = 60) -> str:
     return '"' + (s if len(s) <= limit else s[: limit - 1] + "…") + '"'
 
 
+_QUOTES = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})
+
+
 def _norm(s: str) -> str:
-    return " ".join(s.split()).casefold()
+    return " ".join(s.translate(_QUOTES).split()).casefold()
 
 
 @dataclass
@@ -122,14 +125,24 @@ def parse(xml: str) -> Screen:
     return Screen(elements, xml, (width, height), package)
 
 
+DUMP_TIMEOUT = 10
+
+
 def capture(adb: Adb, attempts: int = 3) -> Screen:
     """Dump and read the UI tree in one adb round trip, retrying while the UI animates."""
     last_err = ""
     for attempt in range(attempts):
-        raw = adb.exec_out(
-            f"rm -f {DUMP_PATH}; uiautomator dump {DUMP_PATH} >/dev/null 2>&1; cat {DUMP_PATH}",
-            timeout=30,
-        ).decode("utf-8", errors="replace")
+        try:
+            raw = adb.exec_out(
+                f"rm -f {DUMP_PATH}; uiautomator dump {DUMP_PATH} >/dev/null 2>&1; cat {DUMP_PATH}",
+                timeout=DUMP_TIMEOUT,
+            ).decode("utf-8", errors="replace")
+        except AdbError as exc:
+            # uiautomator waits for the app to go idle; a busy app can hold it for 30 s or more.
+            # Kill the stuck dump on the device (exact name: leaves other servers alone) and retry.
+            adb.shell("pkill", "-x", "uiautomator", check=False)
+            last_err = str(exc)
+            continue
         start = raw.find("<?xml")
         if start >= 0 and "</hierarchy>" in raw:
             return parse(raw[start: raw.rindex("</hierarchy>") + len("</hierarchy>")])
@@ -200,15 +213,28 @@ def find_all(screen: Screen, sel: Selector) -> list[Element]:
     return hits
 
 
-def find(screen: Screen, sel: Selector) -> Element | None:
-    hits = find_all(screen, sel)
-    if len(hits) <= sel.nth:
-        # A label someone typed loosely ("Pay now") often lives in a longer string.
-        if sel.text and not sel.contains and not sel.id and not sel.desc:
-            hits = find_all(screen, Selector(text=sel.text, contains=True))
-        if len(hits) <= sel.nth:
-            return None
-    return hits[sel.nth]
+def find(screen: Screen, sel: Selector, strict: bool = False) -> Element | None:
+    """`strict`: no loose fallbacks; used for "is it gone?", where a longer label must not count."""
+    for attempt in _fallbacks(sel, strict):
+        hits = find_all(screen, attempt)
+        if len(hits) > sel.nth:
+            return hits[sel.nth]
+    return None
+
+
+def _fallbacks(sel: Selector, strict: bool = False) -> list[Selector]:
+    """A bare text selector also tries content-desc, where Compose apps put labels.
+
+    Order: as given (visible text), the same match on content-desc, then for an exact selector
+    the partial forms: a label typed loosely ("Pay now") often lives in a longer string.
+    """
+    out = [sel]
+    if not sel.text or sel.id or sel.desc:
+        return out
+    out.append(Selector(desc=sel.text, contains=sel.contains))
+    if not sel.contains and not strict:
+        out += [Selector(text=sel.text, contains=True), Selector(desc=sel.text, contains=True)]
+    return out
 
 
 def stable_selector(screen: Screen, el: Element) -> Selector:

@@ -257,6 +257,14 @@ class ServerTest(unittest.TestCase):
         self.assertNotIn("7531", on_disk)
         self.assertIn("UI_MPIN", on_disk)  # the agent is told the name
 
+    def test_secrets_do_not_carry_over_into_the_next_run(self):
+        self.active_run()
+        self.call("POST", "/api/secret", {"name": "mpin", "value": "7531"})
+        next_run = Run.create("next", {"package": "com.example.app"})
+        set_active(next_run, "fake-1")
+        self.assertEqual(self.call("GET", "/api/secret/UI_MPIN")[0], 404)
+        self.assertEqual(json.loads(self.call("GET", "/api/state")[1])["secrets"], [])
+
     def test_secret_shows_in_the_inbox_by_name_and_note_only(self):
         self.active_run()
         self.call("POST", "/api/secret", {"name": "otp", "value": "4455", "note": "use it on the OTP screen"})
