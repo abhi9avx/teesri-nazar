@@ -148,7 +148,7 @@ def cmd_start(args) -> int:
             print("app data cleared")
     if not args.keep_animations:
         print("animations: off (restored on stop)")
-    print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
+    print(uia2.start_line(adb))
     return 0
 
 
