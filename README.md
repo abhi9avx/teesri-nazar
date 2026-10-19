@@ -111,6 +111,8 @@ Login with the test user and verify the home screen loads.
 | `./tnazar case start TC-01 "title"` / `case end` | Group steps into a test case |
 | `./tnazar stop` | Finish and write the report |
 | `./tnazar run plans/x.plan` | Run every case of a plan file in one go (no AI turn per step) |
+| `./tnazar flows` | List the saved routes (the app map: `flow`s in `plans/*.plan` for the run's app) |
+| `./tnazar flow open_settings` | Run one saved route on the active run, in one command |
 | `./tnazar ui` | Live dashboard: screen, timeline, messages to Claude |
 | `./tnazar say "Opening login"` | Narrate the next step (timeline heading) |
 | `./tnazar replay <name>` | Run a recorded test again |
