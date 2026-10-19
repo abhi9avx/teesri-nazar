@@ -67,7 +67,9 @@ class LearnEdgesTest(unittest.TestCase):
         self.assertEqual(edges(learn(log)), [("HOME", "SAV", "tap"), ("SAV", "PB", "tap")])
 
     def test_a_tap_that_stays_on_the_same_screen_learns_nothing(self):
-        log = Log().tap("HOME", text="Dark mode").wait("HOME").tap("HOME", text="Savings").wait("SAV")
+        log = Log().tap("HOME", text="Dark mode").wait("HOME")
+        log.t += 3  # long enough to know the toggle did not move the app
+        log.tap("HOME", text="Savings").wait("SAV")
         self.assertEqual(edges(learn(log)), [("HOME", "SAV", "tap")])
 
     def test_a_look_right_after_the_tap_before_the_screen_changed_keeps_the_tap(self):
@@ -82,6 +84,18 @@ class LearnEdgesTest(unittest.TestCase):
         log.t += 4
         log.seen("HOME").add(type="key", key="back").seen("PREV")
         self.assertEqual([x for x in edges(learn(log)) if x[2] == "tap"], [])
+
+    def test_a_later_move_the_tap_did_not_cause_is_not_credited_to_it(self):
+        """OTP: Resend does nothing, a look at +1 s, then SMS auto-read moves the app 15 s later."""
+        log = Log().seen("OTP").tap("OTP", text="Resend")
+        log.seen("OTP")
+        log.t += 14
+        log.wait("HOME")
+        self.assertEqual(edges(learn(log)), [])
+
+    def test_a_second_tap_soon_after_a_slow_one_learns_nothing(self):
+        log = Log().seen("S").tap("S", text="Continue").tap("S", text="Help").wait("X")
+        self.assertEqual(edges(learn(log)), [])
 
     def test_two_actions_before_the_next_read_learn_nothing(self):
         log = Log().tap("HOME", text="Savings").add(type="tap", selector=None, xy=[1, 2], label="1,2").wait("PB")
