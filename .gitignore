@@ -34,3 +34,6 @@ bench-*.json
 __pycache__/
 *.egg-info/
 .DS_Store
+
+# Built website (site/build.py output).
+site/_site/

@@ -1,0 +1,35 @@
+<!--
+title: About: why it is called the third eye | Teesri Nazar
+description: Teesri Nazar means "the third eye" in Hindi. Why an AI tester for Android apps carries that name, and the principles it is built on.
+-->
+<div class="prose">
+  <h1>About</h1>
+  <p class="lede"><span class="hindi" lang="hi">तीसरी नज़र</span> means <em>the third eye</em>.</p>
+
+  <h2>The name</h2>
+  <p>Two eyes already look at every feature. The developer builds it and the product manager designs it. Both know what it is
+    supposed to do, and that is exactly why they miss what it actually does on a real phone.</p>
+  <p>The third eye has no stake in the feature. It opens the app like a customer, taps through every case, tries the edge cases
+    nobody wrote down and comes back with proof. Dev builds it, PM designs it, Teesri Nazar checks it.</p>
+
+  <h2>Why it exists</h2>
+  <p>Mobile teams test new features in one of two ways. A person taps through the app by hand, which is slow, skips edge cases and
+    leaves nothing to run next release. Or someone writes automation, which arrives after the feature ships and breaks when the screen
+    changes.</p>
+  <p>An AI agent can do what the manual tester does, judge what to check, and leave behind a report and a test that runs again.
+    Teesri Nazar is that agent for Android.</p>
+
+  <h2>How it is built</h2>
+  <ul>
+    <li><strong>Open source</strong>, under the MIT license. Read every line before you point it at your app.</li>
+    <li><strong>Runs on your machine.</strong> Your app’s screens stay on your computer. The dashboard listens on 127.0.0.1 only.</li>
+    <li><strong>No installs.</strong> Python’s standard library, adb and Claude Code. Your app needs no SDK and no changes.</li>
+    <li><strong>Secrets stay secret.</strong> PINs and OTPs are typed from <code>.env</code> or the dashboard and never printed, logged or saved.</li>
+    <li><strong>Tested itself.</strong> Unit tests on a fake device run on every push, on Python 3.9 and 3.13.</li>
+  </ul>
+
+  <h2>Who makes it</h2>
+  <p>Teesri Nazar is made by <a href="https://github.com/abhi9avx">Abhinav Kumar</a>, a QA engineer who got tired of tapping through
+    the same screens every release. Questions, bugs and ideas are welcome on
+    <a href="https://github.com/abhi9avx/teesri-nazar/issues">GitHub</a>.</p>
+</div>
