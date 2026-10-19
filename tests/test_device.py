@@ -60,3 +60,18 @@ class ScaleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdbOutputTest(unittest.TestCase):
+    def test_bytes_that_are_not_utf8_do_not_crash_a_read(self):
+        # Logcat carries whatever apps log; one stray byte used to crash `case end`.
+        import os, stat, tempfile
+        from teesri_nazar.adb import Adb
+        with tempfile.TemporaryDirectory() as d:
+            fake = os.path.join(d, "adb")
+            with open(fake, "w") as f:
+                f.write("#!/bin/sh\nprintf 'before \\300 after'\n")
+            os.chmod(fake, stat.S_IRWXU)
+            adb = Adb("fake-1")
+            adb._bin = fake
+            self.assertEqual(dev.logcat_dump(adb), "before � after")
