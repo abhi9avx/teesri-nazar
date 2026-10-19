@@ -133,7 +133,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
         <div class="chips" id="chips"></div>
         <button class="primary" id="send-btn">Send message</button>
         <div class="err" id="msg-err" aria-live="polite"></div>
-        <div class="hint">The agent reads your message before its next step and changes what it does. If the agent is not running, the message waits.</div>
+        <div class="hint">While the line above says <b>Listening</b>, your message reaches the agent in about a second; otherwise at its next step. It finishes the step in progress first.</div>
       </div>
       <div class="card">
         <h3>Send OTP / PIN (kept hidden)</h3>
@@ -457,8 +457,9 @@ function renderControl() {
   if (!inbox.length) { const li = el("li", null, "None yet"); li.style.cssText = "background:none;color:var(--muted)"; ul.append(li); }
   for (const m of inbox.slice().reverse()) {
     const li = el("li", null, userText(m));
-    if (m.secret) li.title = `The agent types it with --env ${m.secret}`;
-    li.append(el("span", "st", `${clock(m.t)} · ${m.delivered ? "✓ delivered to the agent" : "waiting for the agent's next step…"}`));
+    if (m.secret) li.title = m.info ? "Typed on the device from the dashboard" : `The agent types it with --env ${m.secret}`;
+    const st = m.info ? "✓ typed on the device" : m.delivered ? "✓ delivered to the agent" : "waiting for the agent…";
+    li.append(el("span", "st", `${clock(m.t)} · ${st}`));
     ul.append(li);
   }
 }

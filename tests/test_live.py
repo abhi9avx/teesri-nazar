@@ -545,6 +545,13 @@ class ServerTest(unittest.TestCase):
         [msg] = live.unread()
         self.assertTrue(msg["info"])
 
+    def test_an_already_typed_note_is_marked_info_in_the_message_list(self):
+        self.active_run()
+        with mock.patch.object(ui, "Adb"), mock.patch.object(ui.dev.time, "sleep"):
+            self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        [msg] = json.loads(self.call("GET", "/api/state")[1])["inbox"]
+        self.assertEqual((msg["info"], msg["delivered"]), (True, False))
+
     def test_events_resume_from_an_offset_and_skip_a_half_written_line(self):
         run = self.active_run()
         run.log({"type": "say", "text": "one"})

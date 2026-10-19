@@ -104,7 +104,7 @@ class Dashboard:
             started = meta.get("started_at", "")
             read = live.delivered()
             out["inbox"] = [{"text": m["text"], "t": m["t"], "delivered": i < read,
-                             "secret": m.get("secret"), "note": m.get("note")}
+                             "secret": m.get("secret"), "note": m.get("note"), "info": bool(m.get("info"))}
                             for i, m in enumerate(live.messages()) if m["t"] >= started][-30:]
         return out
 

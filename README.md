@@ -169,7 +169,8 @@ the panes stack.
 - **Messages.** The agent keeps `./tnazar wait-message` running in the background, so your
   message reaches it in about a second, even while it is idle or busy elsewhere. Its next
   device step is held back (not run) so it can change course. The list shows *"waiting for
-  the agent's next step…"* until then, and *"✓ delivered"* after.
+  the agent…"* until then, and *"✓ delivered"* after (*"✓ typed on the device"* for a PIN
+  or OTP the dashboard typed itself).
 - **What the agent is doing.** A line above the message box: *Listening*, *Got your
   message*, *Thinking about your message* (no step for 5 s), *Working: …* (its last
   narration), or *Not listening right now* (the message waits for its next step).
