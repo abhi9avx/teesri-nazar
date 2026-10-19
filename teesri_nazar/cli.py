@@ -509,6 +509,20 @@ def cmd_wait_resume(args) -> int:
     return live.EXIT_PAUSED
 
 
+def cmd_wait_message(args) -> int:
+    active = get_active()
+    if not active:
+        print("no active run")
+        return 0
+    run = active[0]
+    if not live.wait_message(args.timeout, lambda: (a := get_active()) is not None and a[0].path == run.path):
+        print("no active run" if not get_active() else f"no message in {args.timeout:g}s")
+        return 0
+    live.deliver(run.log)
+    print("Read the user's message above and act on it now.")
+    return live.EXIT_HELD
+
+
 def cmd_ui(args) -> int:
     from . import ui
     return ui.serve(args.port, open_browser=not args.no_open)
@@ -677,6 +691,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("say", cmd_say, "narrate what you are about to do (shown in the dashboard timeline)")
     p.add_argument("text")
+    p = add("wait-message", cmd_wait_message,
+            "block until the user sends a dashboard message (run it in the background while idle)")
+    p.add_argument("--timeout", type=float, default=live.MESSAGE_WAIT)
     add("wait-resume", cmd_wait_resume, f"wait up to {int(live.PAUSE_WAIT)}s for the user to resume a paused run")
     p = add("ui", cmd_ui, "live dashboard on localhost: screen, timeline, messages to the agent")
     p.add_argument("--port", type=int, default=8765)

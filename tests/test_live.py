@@ -14,7 +14,7 @@ from unittest import mock
 
 from fakedevice import FakeClock, tnazar
 from teesri_nazar import cli, live, ui
-from teesri_nazar.session import Run, set_active
+from teesri_nazar.session import Run, clear_active, set_active
 
 from test_cli import CliTestCase
 
@@ -99,6 +99,41 @@ class InboxTest(CliTestCase):
             f.write('{"id": "x", "t": "2026-01-01T00:00:00Z", "te')
         self.ok("tap", "Login")
         self.assertEqual(len(self.adb.taps), 1)
+
+
+class WaitMessageTest(CliTestCase):
+    def test_returns_as_soon_as_the_user_sends_a_message(self):
+        run = self.start()
+        timer = threading.Timer(0.3, live.post, ["log out and log back in"])
+        timer.start()
+        self.addCleanup(timer.join)
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn(">> USER (dashboard): log out and log back in", out)
+        self.assertEqual(events(run, "user_msg")[0]["text"], "log out and log back in")
+        self.ok("tap", "Login")  # already delivered: the next step is not held for it
+
+    def test_a_message_already_waiting_returns_at_once(self):
+        self.start()
+        live.post("retry the PIN")
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn("retry the PIN", out)
+
+    def test_times_out_quietly_with_no_message(self):
+        self.start()
+        code, out, _ = tnazar("wait-message", "--timeout", "0.3")
+        self.assertEqual(code, 0)
+        self.assertIn("no message", out)
+
+    def test_stops_when_the_run_ends(self):
+        self.start()
+        timer = threading.Timer(0.3, clear_active)
+        timer.start()
+        self.addCleanup(timer.join)  # it must never fire after the test's home is gone
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, 0)
+        self.assertIn("no active run", out)
 
 
 class SteeringUnderLoadTest(CliTestCase):
@@ -349,6 +384,31 @@ class ServerTest(unittest.TestCase):
         [msg] = json.loads(self.call("GET", "/api/state")[1])["inbox"]
         self.assertEqual((msg["secret"], msg["note"]), ("UI_OTP", "use it on the OTP screen"))
         self.assertNotIn("4455", json.dumps(msg))
+
+    def test_type_now_types_into_the_focused_field_without_waiting_for_the_agent(self):
+        run = self.active_run()
+        adb = mock.MagicMock()
+        with mock.patch.object(ui, "Adb", return_value=adb) as make, mock.patch.object(ui.dev.time, "sleep"):
+            status, body = self.call("POST", "/api/secret", {"name": "mpin", "value": "7531", "type_now": True})
+        self.assertEqual((status, json.loads(body)["typed"]), (200, True))
+        make.assert_called_once_with("fake-1")
+        self.assertEqual([c.args for c in adb.shell.call_args_list], [("input", "text", d) for d in "7531"])
+        [typed] = events(run, "type")
+        self.assertEqual((typed["secret"], typed["env"], typed["by"], typed["text"]), (True, "UI_MPIN", "dashboard", None))
+        [msg] = live.unread()
+        self.assertIn("already typed", msg["text"])
+        on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
+        self.assertNotIn("7531", on_disk)
+
+    def test_type_now_reports_a_device_error_and_still_keeps_the_secret(self):
+        self.active_run()
+        adb = mock.MagicMock()
+        adb.shell.side_effect = ui.AdbError("device offline")
+        with mock.patch.object(ui, "Adb", return_value=adb):
+            status, body = self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        self.assertEqual(status, 400)
+        self.assertIn("device offline", json.loads(body)["error"])
+        self.assertEqual(json.loads(self.call("GET", "/api/secret/UI_OTP")[1]), {"value": "0000"})
 
     def test_events_resume_from_an_offset_and_skip_a_half_written_line(self):
         run = self.active_run()

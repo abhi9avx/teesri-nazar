@@ -6,7 +6,9 @@ import json
 import os
 import re
 import socket
+import shutil
 import stat
+import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -130,3 +132,35 @@ class PageTest(unittest.TestCase):
         self.assertIn("--on-fill: #111418", dark)
         self.assertIn(".dur.slow { color: var(--on-fill)", HTML)
         self.assertIn(".pill { font-size: 12px; padding: 1px 8px; border-radius: 10px; color: var(--on-fill)", HTML)
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node to run the dashboard's describe()")
+class TimelineWordingTest(unittest.TestCase):
+    """The timeline says what happened in plain words, and never 'timed out' when something else showed."""
+
+    def describe(self, *events):
+        a = HTML.index("const fmtDur")
+        script = (HTML[a:HTML.index("\n", a)] + "\n" + HTML[HTML.index("// Ids are written"):
+                  HTML.index("// ------------------------------------------------------------------ timeline")]
+                  + f"\nfor (const e of {json.dumps(events)}) console.log(describe(e)[1]);")
+        out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
+        return out.splitlines()
+
+    def test_a_wait_that_found_the_other_screen_says_so(self):
+        [line] = self.describe({"type": "wait", "ok": False, "selector": {"id": "get_started_button"},
+                                "found_instead": {"text": "Something went wrong"}, "timeout": 20})
+        self.assertEqual(line, 'Expected "get started", but "Something went wrong" showed instead')
+
+    def test_a_real_timeout_names_the_time(self):
+        [line] = self.describe({"type": "wait", "ok": False, "selector": {"desc": "homeScreenTag"}, "timeout": 20})
+        self.assertEqual(line, '"home screen" did not appear within 20s')
+
+    def test_ids_read_like_words_and_labels_stay_as_written(self):
+        lines = self.describe({"type": "tap", "selector": {"id": "HOME_TOOLBAR_PROFILE_BTN_ID"}, "label": "HOME_TOOLBAR_PROFILE_BTN_ID"},
+                              {"type": "tap", "selector": {"desc": "App settings"}, "label": "App settings"},
+                              {"type": "type", "secret": True, "env": "UI_MPIN", "selector": {"id": "pin_entry_input_field"}},
+                              {"type": "type", "secret": True, "env": "UI_MPIN", "by": "dashboard"},
+                              {"type": "launch", "restart": True})
+        self.assertEqual(lines, ['Tap "home toolbar profile"', 'Tap "App settings"',
+                                 'Type the MPIN (hidden) into "pin entry"',
+                                 "You typed the MPIN from the dashboard (hidden)", "Restart the app"])

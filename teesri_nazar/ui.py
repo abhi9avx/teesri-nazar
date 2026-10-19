@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from . import device as dev
 from . import live
 from . import report as rpt
 from . import usage
@@ -161,10 +162,25 @@ class Dashboard:
             raise ValueError("give a name (letters, digits, _) and a value up to 256 characters")
         self.secrets[name] = value
         note = str(body.get("note", "")).strip()
-        live.post((f"{note} — " if note else "") +
-                  f"Secret value provided as {name}: type it with `./tnazar type --env {name} --into <field>`."
+        lead = f"{note} — " if note else ""
+        if body.get("type_now"):
+            # PIN and OTP screens expire: typing waits for nobody, the agent hears about it afterwards.
+            run, serial = get_active()
+            try:
+                dev.type_text(Adb(serial), value)
+            except (AdbError, ValueError) as exc:
+                live.post(f"{lead}Secret value provided as {name}; typing it from the dashboard failed ({exc}): "
+                          f"type it with `./tnazar type --env {name} --into <field>`. Never print or note the value.",
+                          secret=name, note=note)
+                raise ValueError(f"{name} saved for the agent, but typing it failed: {exc}") from exc
+            run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard"})
+            live.post(f"{lead}{name} was already typed into the focused field by the dashboard: check the screen; "
+                      f"re-type with `./tnazar type --env {name} --into <field>` only if it did not land."
+                      f" Never print or note the value.", secret=name, note=note)
+            return {"ok": True, "name": name, "typed": True}
+        live.post(f"{lead}Secret value provided as {name}: type it with `./tnazar type --env {name} --into <field>`."
                   f" Never print or note the value.", secret=name, note=note)
-        return {"ok": True, "name": name}
+        return {"ok": True, "name": name, "typed": False}
 
 
 def make_handler(dash: Dashboard):

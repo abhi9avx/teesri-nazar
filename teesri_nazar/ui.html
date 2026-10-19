@@ -139,6 +139,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
           <input id="sec-value" type="password" autocomplete="off" placeholder="the number" aria-label="value">
         </div>
         <input id="sec-note" placeholder="where to use it (optional), e.g. on the OTP screen" style="width:100%;margin-top:6px">
+        <label style="display:block;margin-top:6px"><input type="checkbox" id="sec-now" checked> Type it now into the field that has focus (PIN/OTP screens expire)</label>
         <button id="sec-btn" style="margin-top:8px">Send hidden</button>
         <div class="err" id="sec-err" aria-live="polite"></div>
         <div class="hint">Never saved and never shown: logs and reports show ••••. Cleared when a new test run starts. <span id="sec-list"></span></div>
@@ -200,34 +201,49 @@ const clock = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
 const userText = (m) => m.secret
   ? `🔒 ${m.secret.replace(/^UI_/, "")} sent (value hidden)${m.note ? ` — ${m.note}` : ""}`
   : m.text;
+// Ids are written for code ("pin_entry_input_field"); the timeline names them like a person would ("pin entry").
+const NOISE = new Set(["id", "btn", "button", "tag", "iv", "tv", "view", "field", "input", "layout", "container", "text"]);
+function human(raw) {
+  if (/\s/.test(raw) && !/_/.test(raw)) return String(raw);  // already words, like "App settings"
+  const words = String(raw).replace(/([a-z])([A-Z])/g, "$1 $2").split(/[\s_.\-:/]+/)
+    .map((w) => w.toLowerCase()).filter((w) => w && !NOISE.has(w));
+  return words.length ? words.join(" ") : String(raw);
+}
 function sel(s) {
   if (!s) return "";
-  if (s.id) return `id=${s.id}`;
-  if (s.desc) return `desc="${s.desc}"`;
-  if (s.text) return `${s.contains ? "~" : ""}"${s.text}"`;
-  return JSON.stringify(s);
+  if (s.text) return `"${s.text}"`;
+  if (s.desc) return `"${human(s.desc)}"`;
+  if (s.id) return `"${human(s.id)}"`;
+  return "the screen";
 }
+const named = (s) => !!(s && (s.text || s.desc || s.id));
+const secretName = (env) => env ? env.replace(/^UI_/, "") : "secret";
 function describe(e) {
   switch (e.type) {
-    case "launch": return ["🚀", `Launch ${e.package}${e.fresh ? " (fresh)" : e.restart ? " (restart)" : ""}`];
-    case "open_url": return ["🔗", `Open ${e.url}`];
-    case "tap": return ["👆", `${e.long ? "Long-press" : "Tap"} ${e.label ? `"${e.label}"` : ""}`, e.selector ? sel(e.selector) : `at ${e.xy}`];
+    case "launch": return ["🚀", e.fresh ? "Open the app with its data cleared" : e.restart ? "Restart the app" : "Open the app"];
+    case "open_url": return ["🔗", `Open link ${e.url}`];
+    case "tap": return ["👆", `${e.long ? "Long-press" : "Tap"} ${named(e.selector) ? sel(e.selector) : e.label ? `"${human(e.label)}"` : "a spot on the screen"}`];
     case "type": {
-      const v = e.secret ? `•••• ${e.env ? `(${e.env})` : "(secret)"}` : `"${e.text}"`;
-      return ["⌨️", `Type ${v}${e.selector ? ` into ${sel(e.selector)}` : ""}${e.enter ? " + enter" : ""}`];
+      if (e.by === "dashboard") return ["⌨️", `You typed the ${secretName(e.env)} from the dashboard (hidden)`];
+      const v = e.secret ? (e.env ? `the ${secretName(e.env)} (hidden)` : "a hidden value") : `"${e.text}"`;
+      return ["⌨️", `Type ${v}${e.selector ? ` into ${sel(e.selector)}` : ""}${e.enter ? " and press Enter" : ""}`];
     }
     case "key": return ["⏎", `Press ${e.key}`];
-    case "scroll": return ["↕️", `Scroll ${e.direction}${e.to ? ` to ${sel(e.to)}` : ""}${e.to ? (e.found ? " — found" : " — not found") : ""}`];
-    case "swipe": return ["👉", `Swipe ${e.from} → ${e.to}`];
-    case "wait": return [e.ok ? "⏳" : "⌛", `Wait for ${sel(e.selector)} ${e.gone ? "to disappear" : "to appear"} ${e.ok ? "✓" : "✗ timed out"}`,
-                         e.polls ? `${e.polls} screen check${e.polls > 1 ? "s" : ""}` : ""];
-    case "check": return [e.ok ? "✅" : "❌", `${e.kind && e.kind !== "ui" ? `[${e.kind}] ` : ""}${e.what}`, e.detail || ""];
-    case "shot": return ["📸", `Screenshot ${e.label || ""}`];
-    case "note": return [e.kind === "bug" ? "🐞" : "📝", `${e.kind}: ${e.text}`];
-    case "adb": return ["🛠", `adb ${(e.args || []).join(" ")}`, `exit ${e.exit}`];
-    case "if": return ["🔀", `If "${e.target}" is on screen → ${e.found ? "yes" : "no"}`];
+    case "scroll": return ["↕️", e.to ? `Scroll ${e.direction} looking for ${sel(e.to)}: ${e.found ? "found" : "not found"}` : `Scroll ${e.direction}`];
+    case "swipe": return ["👉", "Swipe"];
+    case "wait": {
+      const what = sel(e.selector);
+      if (e.ok) return ["⏳", `${what} ${e.gone ? "went away" : "appeared"}`];
+      if (e.found_instead) return ["⚠️", `Expected ${what}, but ${sel(e.found_instead)} showed instead`];
+      return ["⌛", `${what} ${e.gone ? "did not go away" : "did not appear"} within ${e.timeout}s`];
+    }
+    case "check": return [e.ok ? "✅" : "❌", `${e.kind && e.kind !== "ui" ? `[${e.kind}] ` : ""}${e.what}`, e.ok ? "" : e.detail || ""];
+    case "shot": return ["📸", "Screenshot"];
+    case "note": return [e.kind === "bug" ? "🐞" : "📝", `${e.kind === "bug" ? "Bug" : "Note"}: ${e.text}`];
+    case "adb": return ["🛠", "Device command", e.exit ? `failed (exit ${e.exit})` : ""];
+    case "if": return ["🔀", `Is "${e.target}" on screen? ${e.found ? "Yes" : "No"}`];
     case "wait_online": return [e.ok ? "📶" : "📵", e.ok ? "Device back online" : `Still offline after ${e.timeout}s`];
-    case "hold": return ["⏸", `Held by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : "; agent told to wait-resume"}`];
+    case "hold": return ["⏸", `Paused by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : ""}`];
     default: return ["•", e.type];
   }
 }
@@ -465,9 +481,9 @@ for (const c of CHIPS) { const b = el("button", null, c); b.onclick = () => { $(
 $("sec-btn").onclick = async () => {
   $("sec-err").textContent = "";
   try {
-    const j = await post("/api/secret", { name: $("sec-name").value, value: $("sec-value").value, note: $("sec-note").value });
+    const j = await post("/api/secret", { name: $("sec-name").value, value: $("sec-value").value, note: $("sec-note").value, type_now: $("sec-now").checked });
     $("sec-value").value = ""; $("sec-note").value = "";
-    $("sec-err").textContent = ""; $("sec-list").textContent = `Sent as ${j.name}`;
+    $("sec-err").textContent = ""; $("sec-list").textContent = j.typed ? `Typed as ${j.name}: check the screen` : `Sent as ${j.name}`;
     await tickState();
   } catch (err) { $("sec-err").textContent = err.message; }
 };

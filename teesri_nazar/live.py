@@ -20,6 +20,7 @@ EXIT_HELD = 3    # a device command was not run: the user sent a message
 EXIT_PAUSED = 5  # a device command was not run: the user still has the run paused
 PAUSE_WAIT = 60.0  # stays under the agent's 2-minute command timeout
 POLL = 0.5
+MESSAGE_WAIT = 1800.0  # one idle stretch of the agent; it starts another when this ends
 
 
 def inbox_file() -> Path:
@@ -80,6 +81,16 @@ def deliver(log) -> list[dict]:
         # Only what was printed: a message that lands meanwhile stays unread for the next step.
         _cursor_file().write_text(str(seen + len(msgs)))
     return msgs
+
+
+def wait_message(limit: float, running) -> bool:
+    """Block until the user sends a message, up to `limit` seconds or while `running()` holds."""
+    deadline = time.monotonic() + limit
+    while not unread():
+        if time.monotonic() >= deadline or not running():
+            return False
+        time.sleep(POLL)
+    return True
 
 
 # ---------------------------------------------------------------- pause

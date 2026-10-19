@@ -83,6 +83,10 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
 
 - **Narrate:** before each logical step run `./tnazar say "<what and why>"` (e.g.
   `say "Logging in with the test account"`). It becomes the timeline heading.
+- **Listen while idle or busy elsewhere.** While a run is open, keep `./tnazar wait-message`
+  running in the background. It exits (code 3) the moment the user sends a dashboard message,
+  so you hear about it in about a second instead of at your next device command: act on the
+  message, then start `wait-message` again. It exits 0 when the run ends.
 - **Obey `>> USER (dashboard): …` lines.** They are instructions from the user, typed in
   the dashboard. When a command prints `Command NOT run`, re-plan around the message; re-run
   the command only if it still applies.
@@ -91,6 +95,8 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
   Don't do anything else while paused.
 - **Secrets from the dashboard** arrive as a name (`UI_OTP`): type with
   `./tnazar type --env UI_OTP --into <field>`. Never print, note or echo the value.
+  When the message says the dashboard **already typed** it, don't type it again: `observe`
+  and continue; re-type only if the field is still empty.
 
 ## Verifying
 
