@@ -8,6 +8,7 @@ from pathlib import Path
 VERSION_HEADING = re.compile(r"^## (v\d+): (.+)$")
 LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 EMPHASIS = re.compile(r"\*([^*]+)\*")
+A_TAG = re.compile(r'(<a href="[^"]*">)')
 
 
 def inline(text):
@@ -20,7 +21,8 @@ def inline(text):
             part = html.escape(part, quote=False)
             part = LINK.sub(lambda m: '<a href="%s">%s</a>' % (m.group(2).replace('"', "&quot;"),
                                                               m.group(1)), part)
-            out.append(EMPHASIS.sub(r"<em>\1</em>", part))
+            out.append("".join(p if i % 2 else EMPHASIS.sub(r"<em>\1</em>", p)
+                               for i, p in enumerate(A_TAG.split(part))))
     return "".join(out)
 
 
@@ -60,6 +62,8 @@ def parse_changelog(text):
                              "lines": []})
         elif line.startswith("# "):
             continue
+        elif line.startswith("## "):
+            raise ValueError("CHANGELOG.md: %r is not a '## vN: Title' heading" % line)
         elif versions:
             versions[-1]["lines"].append(line)
     for v in versions:
@@ -71,6 +75,7 @@ def parse_changelog(text):
 
 HEADER = re.compile(r"\A<!--\n(.*?)\n-->\n", re.S)
 INCLUDE = re.compile(r"\{\{include:([\w.-]+)\}\}")
+DESCRIPTION_META = re.compile(r'<meta name="?description"?[^>]*>')
 H2 = re.compile(r'<h2 id="([^"]+)">(.*?)</h2>')
 SECTIONS = ("/docs/", "/changelog/", "/about/")
 
@@ -153,8 +158,13 @@ def build(src, changelog, out, base_url):
     a changelog index plus one page per version, and sitemap.xml. {{releases}} in a page
     becomes the three newest versions."""
     src, out, base_url = Path(src), Path(out), base_url.rstrip("/")
+    if out.exists() and any(out.iterdir()) and not (out / "sitemap.xml").is_file():
+        raise ValueError("%s is not empty and holds no previous build (no sitemap.xml); refusing to delete it" % out)
     if out.exists():
         shutil.rmtree(out)
+    out.mkdir(parents=True)
+    # Marks out as a build at once, so a build that fails half way can still be redone.
+    (out / "sitemap.xml").write_text("", encoding="utf-8")
     layout = (src / "_layout.html").read_text(encoding="utf-8")
     versions = parse_changelog(Path(changelog).read_text(encoding="utf-8"))
     releases = "".join('<li><a href="/changelog/%s/"><strong>%s</strong> %s</a></li>' % (v["slug"], v["slug"], v["title"])
@@ -170,13 +180,28 @@ def build(src, changelog, out, base_url):
             shutil.copyfile(f, dest)
             continue
         text = f.read_text(encoding="utf-8")
+        if text.lstrip().lower().startswith("<!doctype html>"):
+            shutil.copyfile(f, dest)
+            continue
         m = HEADER.match(text)
         if not m:
             raise ValueError("%s: missing the <!-- title/description --> header" % rel)
-        meta = dict(line.split(": ", 1) for line in m.group(1).splitlines())
+        meta = {}
+        for line in m.group(1).splitlines():
+            if ": " not in line:
+                raise ValueError("%s: header line %r is not 'key: value'" % (rel, line))
+            key, value = line.split(": ", 1)
+            meta[key] = value
         path = _url_path(rel)
-        dest.write_text(_page(layout, path, html.escape(meta["title"]), html.escape(meta["description"]), _content(src, text[m.end():]).replace("{{releases}}", releases), base_url),
-                        encoding="utf-8")
+        page = _page(layout, path, html.escape(meta["title"]), html.escape(meta["description"]),
+                     _content(src, text[m.end():]).replace("{{releases}}", releases), base_url)
+        if meta.get("robots"):
+            tag = DESCRIPTION_META.search(page)
+            if not tag:
+                raise ValueError("%s: robots needs a <meta name=\"description\"> tag in the layout" % rel)
+            page = '%s<meta name="robots" content="%s">%s' % (page[:tag.end()], html.escape(meta["robots"]),
+                                                              page[tag.end():])
+        dest.write_text(page, encoding="utf-8")
         if rel != "404.html":
             listed.append(path)
     for path, title, description, content in _changelog_pages(versions):

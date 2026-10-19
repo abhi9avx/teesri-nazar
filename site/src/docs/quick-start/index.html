@@ -48,6 +48,9 @@ cp testdata.example.yaml testdata.yaml</code></pre>
   <p>Every run is saved in <code>runs/&lt;name&gt;/</code>: the step log, screenshots and logs. <code>report.html</code> is the one to share. It lists each case as passed, failed or blocked, with what was seen against what was expected. See <a href="/docs/reports/">Reports</a>.</p>
   <p class="callout-note"><strong>Tip.</strong> Run <code>./tnazar ui</code> in a second terminal to watch the phone and steer the agent while it tests. See <a href="/docs/dashboard/">Live dashboard</a>.</p>
 
+  <h2 id="cost">What it costs</h2>
+  <p>Teesri Nazar is free and open source under the MIT license. You need Claude Code, which needs a Claude subscription or API usage. When Claude drives a run, its report shows the tokens used per case, so you can see what a test costs. A saved plan runs with <code>./tnazar run</code> and needs no model turn per step.</p>
+
   <nav class="docs-pager" aria-label="Previous and next page">
     <a class="prev" href="/docs/"><span>Previous</span>Overview</a>
     <a class="next" href="/docs/how-it-works/"><span>Next</span>How it works</a>

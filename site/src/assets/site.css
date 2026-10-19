@@ -1,3 +1,20 @@
+/* IBM Plex Sans, IBM Plex Mono and Rozha One, SIL Open Font License; self-hosted so no visitor request goes to Google. */
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/ibm-plex-mono-400-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/ibm-plex-mono-400-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: italic; font-weight: 400; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-400-italic-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: italic; font-weight: 400; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-400-italic-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-400-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-400-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 500; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-500-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 500; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-500-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-600-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-600-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-700-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url(/assets/fonts/ibm-plex-sans-700-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Rozha One'; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/rozha-one-400-devanagari.woff2) format('woff2'); unicode-range: U+0900-097F, U+1CD0-1CF4, U+1CF7-1CF9, U+200C-200D, U+20A8, U+20B9, U+20F0, U+25CC, U+A830-A839, U+A8E0-A8FF, U+11B00-11B0A; }
+@font-face { font-family: 'Rozha One'; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/rozha-one-400-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Rozha One'; font-style: normal; font-weight: 400; font-display: swap; src: url(/assets/fonts/rozha-one-400-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
 /* Teesri Nazar: "Saffron fire". True saffron, deepening to dusk in the hero like a Dussehra evening. */
 :root {
   --saffron: #F27A1A;
@@ -419,8 +436,11 @@ article.release.prose h1 { margin-top: 0.75rem; }
 .docs-main th, .docs-main td { text-align: left; vertical-align: top; padding: 0.7rem 0.9rem 0.7rem 0; border-bottom: 1px solid var(--line); }
 .docs-main th { font-weight: 600; color: var(--muted); font-size: 0.85rem; }
 .docs-main .table-wrap table { min-width: 30rem; }
-.docs pre { position: relative; background: var(--panel); color: var(--cream); border-radius: 12px; padding: 2.6rem 1.2rem 1rem; overflow-x: auto; font-size: 0.9rem; line-height: 1.65; }
+.docs pre { background: var(--panel); color: var(--cream); border-radius: 12px; padding: 2.6rem 1.2rem 1rem; overflow-x: auto; font-size: 0.9rem; line-height: 1.65; }
 .docs pre code { background: none; padding: 0; }
+.code-block { position: relative; }
+.docs-main .code-block { margin-top: 1rem; }
+.docs-main .code-block > pre { margin-top: 0; }
 .copy { position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid #3A3631; background: #22201D; color: #FFF4E0; font: 600 0.78rem/1 var(--sans); cursor: pointer; opacity: 0.8; }
 .copy:hover, .copy:focus-visible { opacity: 1; }
 
@@ -430,11 +450,11 @@ article.release.prose h1 { margin-top: 0.75rem; }
 .docs-card strong { font-size: 1.05rem; }
 .docs-card span { color: var(--muted); font-size: 0.93rem; }
 
-.docs-steps { list-style: none; counter-reset: step; padding: 0 !important; display: grid; gap: 1.75rem; }
+.docs-main .docs-steps { list-style: none; counter-reset: step; padding: 0; display: grid; gap: 1.75rem; }
 .docs-steps li { counter-increment: step; display: grid; gap: 0.6rem 1.5rem; position: relative; padding-left: 2.75rem; }
 .docs-steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.9rem; height: 1.9rem; border-radius: 50%; display: grid; place-items: center; background: var(--saffron); color: var(--ink); font-weight: 700; font-size: 0.95rem; }
-.docs-steps p { margin-top: 0.3rem !important; color: var(--muted); }
-.docs-steps pre { margin-top: 0 !important; }
+.docs-main .docs-steps p { margin-top: 0.3rem; color: var(--muted); }
+.docs-main .docs-steps :is(pre, .code-block) { margin-top: 0; }
 @media (min-width: 72rem) { .docs-steps li { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; } }
 
 .callout-note { padding: 0.9rem 1.1rem; border-radius: 10px; background: var(--side); border: 1px solid var(--line); box-shadow: inset 3px 0 var(--peacock); }
@@ -466,6 +486,9 @@ article.release.prose h1 { margin-top: 0.75rem; }
 .rp-tile b { display: block; font-size: 1.5rem; color: var(--fg); }
 .rp-tile.pass b { color: #3DBE8B; }
 .rp-tile.fail b { color: #FF6B5E; }
+/* The bright pair is under 3:1 on the light cream tiles. */
+:root:not([data-theme="dark"]) .rp-tile.pass b { color: #11734A; }
+:root:not([data-theme="dark"]) .rp-tile.fail b { color: #B8172F; }
 .rp-pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; color: #FFFFFF; }
 .rp-pill.pass { background: var(--peacock); }
 .rp-pill.fail { background: var(--vermilion); }
@@ -475,9 +498,9 @@ article.release.prose h1 { margin-top: 0.75rem; }
 
 /* About: the maker card */
 .maker { margin-top: 1.25rem; padding: 1.4rem 1.5rem; border: 1px solid var(--line); border-radius: 16px; background: var(--side); }
-.maker-name { font-family: var(--display); font-size: 1.8rem; line-height: 1.1; margin-top: 0 !important; }
-.maker-role { color: var(--muted); font-weight: 600; margin-top: 0.3rem !important; }
-.contact { list-style: none; padding: 0 !important; display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
-.contact li + li { margin-top: 0 !important; }
+.maker .maker-name { font-family: var(--display); font-size: 1.8rem; line-height: 1.1; margin-top: 0; }
+.maker .maker-role { color: var(--muted); font-weight: 600; margin-top: 0.3rem; }
+.maker .contact { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+.maker .contact li + li { margin-top: 0; }
 .contact a { display: inline-block; padding: 0.45rem 0.9rem; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; font-weight: 600; font-size: 0.93rem; }
 .contact a:hover { border-color: var(--saffron); }

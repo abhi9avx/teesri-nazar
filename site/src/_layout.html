@@ -6,12 +6,13 @@
 <title>{{title}}</title>
 <meta name="description" content="{{description}}">
 <link rel="canonical" href="{{canonical}}">
-<meta name="theme-color" content="#1A1208">
+<meta name="theme-color" content="#0A0A0A">
 <script>
   // Set the theme before first paint: dark unless the reader picked light.
   var dark = true;
   try { var saved = localStorage.getItem("theme"); if (saved) dark = saved === "dark"; } catch (e) { /* storage blocked: stay dark */ }
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  if (!dark) document.querySelector('meta[name="theme-color"]').content = "#F27A1A";
 </script>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Teesri Nazar">
@@ -24,9 +25,8 @@
 <meta property="og:image:alt" content="Teesri Nazar: the third eye on your Android app">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Rozha+One&display=swap">
+<link rel="preload" href="/assets/fonts/rozha-one-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/ibm-plex-sans-400-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/site.css">
 <script src="/assets/site.js" defer></script>
 </head>
@@ -45,10 +45,10 @@
       <li><a href="/about/">About</a></li>
       <li><a href="https://github.com/abhi9avx/teesri-nazar">GitHub</a></li>
     </ul>
-    <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="true">
       <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
       <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
-      <span class="theme-label">Dark</span>
+      <span class="theme-label">Dark mode</span>
     </button>
   </nav>
 </header>

@@ -59,6 +59,8 @@ function replay(stage) {
     timers.forEach(clearTimeout);
     timers = [];
     running = false;
+    // Paused, every line is visible again so the whole log stays readable.
+    stage.classList.remove("is-playing");
     toggle.textContent = "Play replay";
   }
 
@@ -91,8 +93,8 @@ function shot(figure) {
   const callout = figure.querySelector("#callout");
   const string = svg.querySelector("#bowstring");
   const restArrow = svg.querySelector(".arrow-rest use");
-  const [stringTop, , stringBottom] = string.getAttribute("points").split(" ");
-  const nockY = Number(string.getAttribute("points").split(" ")[1].split(",")[1]);
+  const [stringTop, nock, stringBottom] = string.getAttribute("points").split(" ");
+  const nockY = Number(nock.split(",")[1]);
   const drawn = Number(string.dataset.drawn);
   const rest = Number(string.dataset.rest);
   const arrowLength = Number(restArrow.getAttribute("transform").match(/translate\(([\d.]+)/)[1]) - drawn;
@@ -183,8 +185,10 @@ function shot(figure) {
         next += 1;
         holdUntil = now + 420; // a beat on each head, long enough to read what it found
       }
-      if (t < 1 || next < hits.length) requestAnimationFrame(frame);
+      if (t < 1 || (next < hits.length && p.x >= Number(hits[next].dataset.x))) requestAnimationFrame(frame);
       else {
+        // A head placed past the end of the path is never reached: strike it so the shot ends.
+        while (next < hits.length) strike(next++);
         // The arrow hangs past the last head for a beat, then fades as the verdict rises.
         clearCallout = setTimeout(() => {
           callout.className = "callout";
@@ -216,11 +220,9 @@ function shot(figure) {
 
 function themeToggle(button) {
   const root = document.documentElement;
-  const label = button.querySelector(".theme-label");
   const sync = () => {
     const dark = root.dataset.theme === "dark";
     button.setAttribute("aria-pressed", String(dark));
-    label.textContent = dark ? "Dark" : "Light";
     document.querySelector('meta[name="theme-color"]').content = dark ? "#0A0A0A" : "#F27A1A";
   };
   button.addEventListener("click", () => {
@@ -237,33 +239,33 @@ const hero = document.getElementById("shot");
 if (hero) shot(hero);
 themeToggle(document.getElementById("theme-toggle"));
 
-// Copy buttons on docs code blocks.
+// One reset timer per button, so rapid clicks do not flicker the label.
+function copyButton(button, text, failLabel) {
+  let reset = 0;
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(text());
+      button.textContent = "Copied";
+    } catch (e) {
+      button.textContent = failLabel;
+    }
+    clearTimeout(reset);
+    reset = setTimeout(() => { button.textContent = "Copy"; }, 1600);
+  });
+}
+
+// Copy buttons on docs code blocks, in a wrapper so they stay put while the code scrolls.
 document.querySelectorAll(".docs pre").forEach((pre) => {
+  const wrap = document.createElement("div");
+  wrap.className = "code-block";
   const button = document.createElement("button");
   button.type = "button";
   button.className = "copy";
   button.textContent = "Copy";
-  button.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText((pre.querySelector("code") || pre).textContent.trim());
-      button.textContent = "Copied";
-    } catch (e) {
-      button.textContent = "Select and copy";
-    }
-    setTimeout(() => { button.textContent = "Copy"; }, 1600);
-  });
-  pre.prepend(button);
+  copyButton(button, () => (pre.querySelector("code") || pre).textContent.trim(), "Select and copy");
+  pre.before(wrap);
+  wrap.append(pre, button);
 });
 
 // Copy-to-clipboard buttons (the email address).
-document.querySelectorAll("[data-copy]").forEach((button) => {
-  button.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(button.dataset.copy);
-      button.textContent = "Copied";
-    } catch (e) {
-      button.textContent = "Select it";
-    }
-    setTimeout(() => { button.textContent = "Copy"; }, 1600);
-  });
-});
+document.querySelectorAll("[data-copy]").forEach((button) => copyButton(button, () => button.dataset.copy, "Select it"));

@@ -23,7 +23,7 @@ description: How Teesri Nazar splits the work between Claude Code and the tnazar
   <ol class="loop-list">
     <li><strong>Look.</strong> Read the screen's element tree: ids, labels, text and positions. About 0.05 s through the UiAutomator2 server when the device has it, about 2 s with <code>uiautomator dump</code> otherwise.</li>
     <li><strong>Act.</strong> Tap, type or scroll on the right element.</li>
-    <li><strong>Check.</strong> Verify the expected result on screen, and in the DB or Figma when you give access.</li>
+    <li><strong>Check.</strong> Verify the expected result on screen. For a DB or Figma check, the agent runs the read-only query or compares the frame itself, then records the result with <code>check --result pass|fail --kind db|figma</code>.</li>
     <li><strong>Record.</strong> Save the step, a screenshot and the result.</li>
   </ol>
 

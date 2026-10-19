@@ -202,8 +202,8 @@ description: An open-source AI agent that tests your Android feature on a real p
   <ol class="tiles">
     <li class="tile tile-saffron"><h3>Plans</h3><p>Turns your feature into test cases, plus the edge cases you missed.</p></li>
     <li class="tile tile-vermilion"><h3>Taps</h3><p>Drives a real phone or emulator by ids, labels and text, not by guessing from screenshots.</p></li>
-    <li class="tile tile-peacock"><h3>Checks</h3><p>Verifies every expected result on screen, and in your DB or Figma.</p></li>
-    <li class="tile tile-ink"><h3>Reports</h3><p>A shareable pass/fail report: every case, every check, a screenshot for each, and the bugs found. <a href="/docs/reports/">See a report</a></p></li>
+    <li class="tile tile-peacock"><h3>Checks</h3><p>Verifies every expected result on screen. The agent can also run a read-only DB query or compare a Figma frame, and record the result.</p></li>
+    <li class="tile tile-ink"><h3>Reports</h3><p>A shareable pass/fail report: every case, every check, a screenshot for each, and the bugs found. <a href="/sample-report/report.html">See a sample report</a></p></li>
   </ol>
 </section>
 
@@ -212,19 +212,22 @@ description: An open-source AI agent that tests your Android feature on a real p
   <ul class="why-list">
     <li><h3>Learns your app</h3><p>Every run maps the screens. Next time, <code>goto</code> takes it straight there.</p></li>
     <li><h3>You steer it live</h3><p>Watch the phone, message the agent, pause it, hand over an OTP.</p></li>
-    <li><h3>Stays on your machine</h3><p>Open source, no telemetry, no SDK in your app.</p></li>
+    <li><h3>Runs on your computer</h3><p>tnazar, the dashboard and your reports stay local. No telemetry, no SDK in your app. Claude Code sends the screens it reads to Anthropic's model.</p></li>
+    <li><h3>Android only, for now</h3><p>No iOS yet. <a href="/docs/compare/">See how it compares to Appium, Espresso and Maestro</a>.</p></li>
   </ul>
 </section>
 
 <section class="start" aria-labelledby="start-title">
   <div class="start-copy">
     <h2 id="start-title">Try it on your Android phone or emulator</h2>
-    <p>You need adb, Python 3.9+ and Claude Code.</p>
+    <p>You need adb, Python 3.9+ and Claude Code. Teesri Nazar is free and MIT licensed; Claude Code needs a Claude subscription or API usage.</p>
     <a class="btn btn-ink" href="/docs/">Read the docs</a>
   </div>
-  <pre class="terminal" tabindex="0"><code><span class="t-prompt">$</span> git clone https://github.com/abhi9avx/teesri-nazar.git
-<span class="t-prompt">$</span> cd teesri-nazar &amp;&amp; claude
-<span class="t-say">› Check that Settings search finds Wi‑Fi.</span></code></pre>
+  <pre class="terminal" tabindex="0"><code><span class="t-prompt"># no phone? start an emulator
+</span>emulator -avd &lt;your_avd&gt; &amp;
+git clone https://github.com/abhi9avx/teesri-nazar.git
+cd teesri-nazar &amp;&amp; claude
+<span class="t-prompt">› </span><span class="t-say">Check that Settings search finds Wi‑Fi.</span></code></pre>
 </section>
 
 <section class="feedback" aria-labelledby="feedback-title">

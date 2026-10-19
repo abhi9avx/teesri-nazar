@@ -1,0 +1,50 @@
+<!--
+title: Compared to other tools | Teesri Nazar docs
+description: How Teesri Nazar compares to Appium, Espresso and Maestro for Android testing: who writes the test, app changes, selectors, replay, reports, platforms, and where each tool is stronger.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Compared to other tools</h1>
+  <p class="docs-lede">Appium, Espresso and Maestro run tests that someone wrote. Teesri Nazar has an AI agent do the testing, the way a manual tester would. They solve different problems and work well together.</p>
+
+  <h2 id="at-a-glance">At a glance</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"></th><th scope="col">Teesri Nazar</th><th scope="col">Appium</th><th scope="col">Espresso</th><th scope="col">Maestro</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Who writes the test</th><td>The agent plans and runs the cases from your description; you approve the plan</td><td>You, in code (Java, Python, JavaScript and more)</td><td>You, in Kotlin or Java</td><td>You, in YAML flows</td></tr>
+      <tr><th scope="row">Changes to the app</th><td>None</td><td>None</td><td>Test code lives in the app project and needs its source</td><td>None</td></tr>
+      <tr><th scope="row">Selectors</th><td>id, accessibility label, text, then position. No XPath</td><td>id, accessibility id, XPath and more</td><td>View matchers in code</td><td>Text, id or point</td></tr>
+      <tr><th scope="row">A new feature on day one</th><td>Tests it from a description, before any test code exists</td><td>After someone writes the test</td><td>After someone writes the test</td><td>After someone writes the flow</td></tr>
+      <tr><th scope="row">Running it again</th><td><code>tnazar replay</code> re-runs a recorded run; plan files re-run every case</td><td>Re-run the suite</td><td>Re-run the suite</td><td>Re-run the flows</td></tr>
+      <tr><th scope="row">Report</th><td>HTML and Markdown: every case, every check, a screenshot for each, bugs, crashes</td><td>Depends on your test runner</td><td>Gradle and Android test reports</td><td>Built-in, plus Maestro Cloud</td></tr>
+      <tr><th scope="row">Platforms</th><td>Android only</td><td>Android, iOS and more</td><td>Android only</td><td>Android, iOS and web</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="fits">Where Teesri Nazar fits</h2>
+  <ul>
+    <li><strong>New features before automation exists.</strong> The agent writes the cases, adds edge cases and runs them on a real phone or emulator the same day.</li>
+    <li><strong>Exploratory and release checks.</strong> It judges what it sees, not only what a script asserts, and notes bugs as it goes.</li>
+    <li><strong>Evidence to share.</strong> Every check has a screenshot, and crashes and ANRs fail the case automatically.</li>
+  </ul>
+
+  <h2 id="others">Where the others are stronger</h2>
+  <ul>
+    <li><strong>Mature ecosystems.</strong> Years of plugins, drivers, docs and community answers.</li>
+    <li><strong>iOS.</strong> Appium and Maestro test iOS. Teesri Nazar does not, yet.</li>
+    <li><strong>CI at scale.</strong> Device farms and cloud grids run them in parallel on many devices. Teesri Nazar drives one device at a time.</li>
+    <li><strong>Speed and repeatability.</strong> Espresso syncs with the app's UI thread and runs fast. A scripted test does the same thing every time.</li>
+    <li><strong>Cost.</strong> They need no AI model to run. An agent-driven run uses Claude tokens, shown per case in that run's report. A saved plan file runs without a model turn per step.</li>
+  </ul>
+
+  <h2 id="together">Using them together</h2>
+  <p>Use Teesri Nazar to test a new feature the week it lands and to find the cases worth keeping. Move the stable ones into your Appium, Espresso or Maestro suite for every build.</p>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/reports/"><span>Previous</span>Reports</a>
+    <a class="next" href="/docs/commands/"><span>Next</span>Commands</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Teesri Nazar · sample-report</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--muted:#5f5f66;--line:#e5e5ea;--card:#f7f7f9;--pass:#1a7f37;--fail:#cf222e;--block:#9a6700;--link:#0b57d0}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#ececf1;--muted:#b4b4bd;--line:#2a2a30;--card:#1a1a1e;--pass:#3fb950;--fail:#ff7b72;--block:#e3b341;--link:#8ab4f8}}
+a{color:var(--link)}a:visited{color:var(--link)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
+.muted{color:var(--muted)}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid currentColor}
+.pass{color:var(--pass)}.fail{color:var(--fail)}.blocked,.running{color:var(--block)}.skipped{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
+.shots{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;align-items:flex-start}
+.shot{margin:0;max-width:150px}.shot img{height:300px;max-width:150px;object-fit:contain;border:1px solid var(--line);border-radius:6px;display:block}
+.shot figcaption{font-size:12px;margin-top:4px;color:var(--muted);overflow-wrap:anywhere}
+.shot.failed img{border:3px solid var(--fail)}.shot.failed figcaption{color:var(--fail);font-weight:600}
+ul{margin:6px 0;padding-left:20px}code{font-size:13px}
+.tiles{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+.tile b{display:block;font-size:22px}
+</style></head><body><main>
+<h1>Teesri Nazar · sample-report</h1>
+<div class="muted">com.android.settings 16 (36) · sdk_gphone64_arm64 (emulator-5554) Android 16
+· 2026-10-19T19:24:52.832Z · 14s</div>
+<p><b>Request:</b> plan sample.plan</p><div class="tiles"><div class='tile pass'><b>3</b>pass</div><div class='tile fail'><b>0</b>fail</div><div class='tile blocked'><b>0</b>blocked</div><div class='tile skipped'><b>0</b>skipped</div></div>
+<p class="muted">checks 4/4 passed</p>
+<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th><th>Reason</th></tr><tr><td><a href='#c-TC-01'>TC-01</a></td><td>Network &amp; internet opens</td><td><span class='pill pass'>pass</span></td><td>2/2</td><td></td></tr><tr><td><a href='#c-TC-02'>TC-02</a></td><td>Search finds Wi-Fi settings</td><td><span class='pill pass'>pass</span></td><td>1/1</td><td></td></tr><tr><td><a href='#c-TC-03'>TC-03</a></td><td>Back from search returns to Settings</td><td><span class='pill pass'>pass</span></td><td>1/1</td><td></td></tr></table>
+<h2>Details</h2><div class='card' id='c-TC-01'><div><span class='pill pass'>pass</span> <b>TC-01</b> Network &amp; internet opens <span class='muted'>· 3 steps 4s</span></div><ul><li class='pass'>✅ [ui] &quot;Internet&quot; is visible</li><li class='pass'>✅ [ui] &quot;Search Settings&quot; is visible</li></ul><div class='shots'><figure class='shot'><a href='shots/005457-check-pass.png'><img loading='lazy' src='shots/005457-check-pass.png' alt='✅ &quot;Internet&quot; is visible'></a><figcaption title='&quot;Internet&quot; is visible'>✅ &quot;Internet&quot; is visible</figcaption></figure><figure class='shot'><a href='shots/005459-check-pass.png'><img loading='lazy' src='shots/005459-check-pass.png' alt='✅ &quot;Search Settings&quot; is visible'></a><figcaption title='&quot;Search Settings&quot; is visible'>✅ &quot;Search Settings&quot; is visible</figcaption></figure></div></div><div class='card' id='c-TC-02'><div><span class='pill pass'>pass</span> <b>TC-02</b> Search finds Wi-Fi settings <span class='muted'>· 3 steps 6s</span></div><ul><li class='pass'>✅ [ui] ~&quot;Wi-Fi&quot; is visible</li></ul><div class='shots'><figure class='shot'><a href='shots/005505-check-pass.png'><img loading='lazy' src='shots/005505-check-pass.png' alt='✅ ~&quot;Wi-Fi&quot; is visible'></a><figcaption title='~&quot;Wi-Fi&quot; is visible'>✅ ~&quot;Wi-Fi&quot; is visible</figcaption></figure></div></div><div class='card' id='c-TC-03'><div><span class='pill pass'>pass</span> <b>TC-03</b> Back from search returns to Settings <span class='muted'>· 2 steps 1s</span></div><ul><li class='pass'>✅ [ui] &quot;Search Settings&quot; is visible</li></ul><div class='shots'><figure class='shot'><a href='shots/005506-check-pass.png'><img loading='lazy' src='shots/005506-check-pass.png' alt='✅ &quot;Search Settings&quot; is visible'></a><figcaption title='&quot;Search Settings&quot; is visible'>✅ &quot;Search Settings&quot; is visible</figcaption></figure></div></div><h2>Navigation map</h2><p class='muted'>map: learned 1 step(s) and 0 name(s) for com.android.settings</p>
+</main></body></html>

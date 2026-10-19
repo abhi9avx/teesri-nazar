@@ -60,6 +60,14 @@ class ParseChangelogTest(unittest.TestCase):
         v = site_build.parse_changelog("## v9: T\n\nmeta\n\n[x](javascript:alert(1))\n")[0]
         self.assertEqual(v["html"], "<p>[x](javascript:alert(1))</p>")
 
+    def test_emphasis_is_not_applied_inside_a_link_url(self):
+        self.assertEqual(site_build.inline("[a](https://x.io/*b*) and *c*"),
+                         '<a href="https://x.io/*b*">a</a> and <em>c</em>')
+
+    def test_an_unrecognised_h2_heading_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "## Unreleased"):
+            site_build.parse_changelog("## v2: T\n\nmeta\n\n## Unreleased\n\n- x\n")
+
 
 LAYOUT = ("<title>{{title}}</title><meta name=description content=\"{{description}}\">"
           "<link rel=canonical href=\"{{canonical}}\"><main>{{content}}</main>")
@@ -146,6 +154,73 @@ class BuildTest(unittest.TestCase):
         base = "https://teesrinazar.github.io"
         self.assertEqual(locs, sorted([base + "/", base + "/docs/", base + "/docs/start/", base + "/about/", base + "/changelog/",
                                        base + "/changelog/v2/", base + "/changelog/v1/"]))
+
+
+class BuildErrorsTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.src, self.out = self.root / "src", self.root / "out"
+        self.src.mkdir()
+        (self.src / "_layout.html").write_text(LAYOUT)
+        self.changelog = self.root / "CHANGELOG.md"
+        self.changelog.write_text(CHANGELOG)
+
+    def build(self, page):
+        (self.src / "page.html").write_text(page)
+        site_build.build(self.src, self.changelog, self.out, "https://x.io")
+
+    def test_a_page_without_a_header_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "page.html: missing"):
+            self.build("<h1>No header</h1>\n")
+
+    def test_a_header_line_without_a_colon_names_the_file_and_line(self):
+        with self.assertRaisesRegex(ValueError, "page.html.*'title Oops'"):
+            self.build("<!--\ntitle Oops\ndescription: d\n-->\n<h1>x</h1>\n")
+
+    def test_a_missing_include_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "_nope.html"):
+            self.build("<!--\ntitle: t\ndescription: d\n-->\n{{include:_nope.html}}\n")
+
+    def test_robots_noindex_adds_the_meta_tag_after_the_description(self):
+        self.build("<!--\ntitle: t\ndescription: d\nrobots: noindex\n-->\n<h1>x</h1>\n")
+        self.assertIn('content="d"><meta name="robots" content="noindex"><link',
+                      (self.out / "page.html").read_text())
+
+    def test_pages_without_robots_get_no_robots_tag(self):
+        self.build("<!--\ntitle: t\ndescription: d\n-->\n<h1>x</h1>\n")
+        self.assertNotIn("robots", (self.out / "page.html").read_text())
+
+    def test_it_refuses_to_wipe_a_folder_that_is_not_a_previous_build(self):
+        self.out.mkdir()
+        (self.out / "precious.txt").write_text("keep")
+        with self.assertRaisesRegex(ValueError, str(self.out)):
+            self.build("<!--\ntitle: t\ndescription: d\n-->\n<h1>x</h1>\n")
+        self.assertTrue((self.out / "precious.txt").exists())
+
+    def test_it_rebuilds_over_a_previous_build_and_an_empty_folder(self):
+        self.out.mkdir()
+        self.build("<!--\ntitle: t\ndescription: d\n-->\n<h1>x</h1>\n")
+        (self.out / "stale.html").write_text("old")
+        self.build("<!--\ntitle: t\ndescription: d\n-->\n<h1>x</h1>\n")
+        self.assertFalse((self.out / "stale.html").exists())
+
+
+    def test_a_full_html_document_is_copied_as_is_and_left_out_of_the_sitemap(self):
+        doc = "\n<!DOCTYPE html><html><body>report</body></html>\n"
+        (self.src / "report").mkdir()
+        (self.src / "report" / "report.html").write_text(doc)
+        self.build("<!--\ntitle: t\ndescription: d\n-->\n<h1>x</h1>\n")
+        self.assertEqual((self.out / "report" / "report.html").read_text(), doc)
+        self.assertNotIn("report", (self.out / "sitemap.xml").read_text())
+
+    def test_a_failed_build_can_be_rebuilt(self):
+        (self.src / "a.css").write_text("body{}")
+        with self.assertRaises(ValueError):
+            self.build("<h1>No header</h1>\n")
+        self.build("<!--\ntitle: t\ndescription: d\n-->\n<h1>x</h1>\n")
+        self.assertTrue((self.out / "page.html").exists())
 
 
 if __name__ == "__main__":

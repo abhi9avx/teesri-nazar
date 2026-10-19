@@ -25,11 +25,11 @@ description: Every Teesri Nazar run ends in a pass/fail report: a summary, each 
         <tbody>
           <tr><td>TC-01</td><td>Network &amp; internet opens</td><td><span class="rp-pill pass">pass</span></td><td>2/2</td><td></td></tr>
           <tr><td>TC-02</td><td>Search finds Wi-Fi settings</td><td><span class="rp-pill pass">pass</span></td><td>1/1</td><td></td></tr>
-          <tr><td>TC-03</td><td>Back returns to Settings</td><td><span class="rp-pill fail">fail</span></td><td>0/1</td><td>Expected "Search Settings", saw the Internet page</td></tr>
+          <tr><td>TC-03</td><td>Back from search returns to Settings</td><td><span class="rp-pill fail">fail</span></td><td>0/1</td><td>Expected "Search Settings", saw the Internet page</td></tr>
         </tbody>
       </table>
     </div>
-    <figcaption>An illustration of the HTML report's top section.</figcaption>
+    <figcaption>An illustration of the report's top section, showing a failed case. <a href="/sample-report/report.html">Open a real sample report</a>.</figcaption>
   </figure>
 
   <h2 id="where">Where to find it</h2>
@@ -40,7 +40,7 @@ description: Every Teesri Nazar run ends in a pass/fail report: a summary, each 
       <tbody>
         <tr><td><code>report.html</code></td><td>The report to share. Opens in any browser; screenshots are linked next to their checks.</td></tr>
         <tr><td><code>report.md</code></td><td>The same report in Markdown, ready to paste into a PR, Jira or Confluence.</td></tr>
-        <tr><td>Screenshots</td><td>PNG evidence for every check, kept in the run folder.</td></tr>
+        <tr><td>Screenshots</td><td>PNG evidence for every check, kept in the run folder. A failed or blocked case also gets its logcat, and a crash or ANR its crash log, linked as evidence.</td></tr>
         <tr><td><code>events.jsonl</code></td><td>Every step as data. Replay reads this.</td></tr>
       </tbody>
     </table>
@@ -51,7 +51,7 @@ description: Every Teesri Nazar run ends in a pass/fail report: a summary, each 
     <li><strong>Header.</strong> The app and its version, the device and Android version, when it started and how long it took, and your original request.</li>
     <li><strong>Summary.</strong> Cases passed, failed, blocked and skipped, and how many checks passed.</li>
     <li><strong>Case table.</strong> Every case with its result, checks passed, and the reason it failed or was blocked. When available, the AI token cost of each case.</li>
-    <li><strong>Case details.</strong> Each check with what was expected and what was seen, notes, and screenshots. Failures come first, in red, so the problem is the first thing you see.</li>
+    <li><strong>Case details.</strong> Each check with what was expected and what was seen, notes, and screenshots. Within a case, the screenshots of failed checks come first, framed in red, so the problem is the first thing you see. Cases stay in run order.</li>
     <li><strong>Crashes and ANRs.</strong> Caught automatically and attached to the case they happened in, with the log.</li>
     <li><strong>Bugs found.</strong> Every bug the agent noted, with the case it came from.</li>
     <li><strong>Navigation map.</strong> The routes <code>goto</code> used during the run, and whether each one arrived.</li>
@@ -79,7 +79,7 @@ description: Every Teesri Nazar run ends in a pass/fail report: a summary, each 
 
   <nav class="docs-pager" aria-label="Previous and next page">
     <a class="prev" href="/docs/dashboard/"><span>Previous</span>Live dashboard</a>
-    <a class="next" href="/docs/commands/"><span>Next</span>Commands</a>
+    <a class="next" href="/docs/compare/"><span>Next</span>Compared to other tools</a>
   </nav>
 </article>
 <aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
