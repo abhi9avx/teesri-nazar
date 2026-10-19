@@ -292,7 +292,8 @@ def cmd_type(args) -> int:
         try:
             target = resolve(ctx, args.into, opts, timeout=args.wait)
         except NotFound as exc:
-            raise _missed(ctx, {"type": "type", "target": args.into, "text": None if secret else text,
+            # Unfound, the field may be a password field, so the value is never recorded.
+            raise _missed(ctx, {"type": "type", "target": args.into, "text": None,
                                 "secret": secret, "env": args.env}, exc)
         el = target["element"]
         secret = secret or bool(el and el.password)
@@ -502,13 +503,14 @@ def cmd_adb(args) -> int:
     ctx = Ctx.from_args(args.device)
     if not args.args:
         raise UserError("usage: tnazar adb <adb args...>")
+    # stdout passes straight through: `logcat` streams and `exec-out screencap` is binary.
+    sys.stdout.flush()
     proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args],
-                          capture_output=True, encoding="utf-8", errors="replace")
-    sys.stdout.write(proc.stdout or "")
+                          stderr=subprocess.PIPE, encoding="utf-8", errors="replace")
     sys.stderr.write(proc.stderr or "")
     event = {"type": "adb", "args": redact(args.args), "exit": proc.returncode}
     if proc.returncode:
-        why = next((ln.strip() for ln in (proc.stderr or proc.stdout or "").splitlines() if ln.strip()), "")
+        why = next((ln.strip() for ln in (proc.stderr or "").splitlines() if ln.strip()), "")
         event["error"] = redact([why])[0]
     ctx.log(event)
     # adb's own code could collide with tnazar's (3 held, 5 paused) and make a plan runner retry forever.
@@ -543,6 +545,8 @@ def cmd_wait_message(args) -> int:
         now = get_active()
         return now is not None and now[0].path == run.path
 
+    if live.agent_status()["state"] == "got_message":
+        live.set_agent_status("idle")  # listening again means the message was handled
     live.set_listener(os.getpid())
     while live.wait_message(args.timeout, same_run):
         # The agent's own command may have delivered it first: then keep listening.
@@ -787,12 +791,13 @@ def main(argv: list[str] | None = None) -> int:
         if active and (held := _hold(active[0])) is not None:
             return held
         try:
-            if active and args.cmd in MOVES_FOCUS:
+            # `adb logcat` only reads, and may stream for minutes: it must not block typing.
+            if active and args.cmd in MOVES_FOCUS and not (args.cmd == "adb" and args.args[:1] == ["logcat"]):
                 try:
                     with live.device_lock():
                         return args.fn(args) or 0
                 except live.DeviceBusy:
-                    raise UserError("the dashboard is still typing on the device; run the step again") from None
+                    raise UserError("the device is busy with another step; run this step again") from None
             return args.fn(args) or 0
         finally:
             # Shown, not consumed: the next device command is still held until the agent re-plans.
