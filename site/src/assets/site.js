@@ -216,9 +216,12 @@ function shot(figure) {
 
 function themeToggle(button) {
   const root = document.documentElement;
+  const label = button.querySelector(".theme-label");
   const sync = () => {
     const dark = root.dataset.theme === "dark";
     button.setAttribute("aria-pressed", String(dark));
+    label.textContent = dark ? "Dark" : "Light";
+    document.querySelector('meta[name="theme-color"]').content = dark ? "#0A0A0A" : "#F27A1A";
   };
   button.addEventListener("click", () => {
     root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
@@ -233,3 +236,21 @@ if (stage) replay(stage);
 const hero = document.getElementById("shot");
 if (hero) shot(hero);
 themeToggle(document.getElementById("theme-toggle"));
+
+// Copy buttons on docs code blocks.
+document.querySelectorAll(".docs pre").forEach((pre) => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "copy";
+  button.textContent = "Copy";
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText((pre.querySelector("code") || pre).textContent.trim());
+      button.textContent = "Copied";
+    } catch (e) {
+      button.textContent = "Select and copy";
+    }
+    setTimeout(() => { button.textContent = "Copy"; }, 1600);
+  });
+  pre.prepend(button);
+});

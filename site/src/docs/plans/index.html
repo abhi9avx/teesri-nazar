@@ -1,0 +1,78 @@
+<!--
+title: Plan files | Teesri Nazar docs
+description: Write a Teesri Nazar plan file once and run every test case in one command, with flows, retries, branches and exit codes for CI.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Plan files</h1>
+  <p class="docs-lede">A plan file is a test you want to run again. It holds the same commands a tester would type, and runs every case in one go with no AI turn per step.</p>
+
+  <h2 id="example">Example</h2>
+  <p>This plan ships with the repo as <code>examples/settings.plan</code> and works on any Android device.</p>
+  <pre><code>app com.android.settings
+name settings-example
+
+flow home
+  launch --restart
+  wait "Search Settings" --timeout 15
+end
+
+case TC-01 "Network &amp; internet opens"
+  run home
+  tap "Network &amp; internet"
+  check "Internet"
+  key back
+  check "Search Settings"
+
+case TC-02 "Search finds Wi-Fi settings"
+  run home
+  tap "Search Settings"
+  retry 2
+    type "wifi" --into id=open_search_view_edit_text --clear
+    wait "~Wi-Fi" --timeout 5
+  end
+  check "~Wi-Fi"</code></pre>
+  <pre><code>./tnazar run examples/settings.plan</code></pre>
+
+  <h2 id="syntax">Syntax</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Line</th><th scope="col">Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>app &lt;package&gt;</code></td><td>The app under test. Required.</td></tr>
+        <tr><td><code>name &lt;run-name&gt;</code></td><td>Run name. Defaults to the file name.</td></tr>
+        <tr><td><code>case TC-01 "title"</code></td><td>A test case. It runs until the next <code>case</code>, <code>flow</code> or the end.</td></tr>
+        <tr><td><code>flow &lt;name&gt;</code> … <code>end</code></td><td>A reusable block, used with <code>run &lt;name&gt;</code>.</td></tr>
+        <tr><td><code>retry N</code> … <code>end</code></td><td>Repeat until every step inside passes, up to N times.</td></tr>
+        <tr><td><code>if "Text"</code> … <code>else</code> … <code>end</code></td><td>Branch on what is on screen. Never fails the case.</td></tr>
+        <tr><td><code>check "Text"</code></td><td>An expected result. Every expected result should be a check.</td></tr>
+        <tr><td><code># comment</code></td><td>Ignored. Indentation is for people.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The whole file is checked before anything runs, so a typo never reaches the device. Secrets go in as <code>--env NAME</code>, never as values.</p>
+
+  <h2 id="exit-codes">Exit codes</h2>
+  <p>Every command, <code>run</code>, <code>flow</code> and <code>replay</code> use the same codes, so CI can act on them.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>0</code></td><td>OK. For <code>run</code> and <code>replay</code>, every case passed.</td></tr>
+        <tr><td><code>1</code></td><td>Failed: a check failed or an element was not found.</td></tr>
+        <tr><td><code>2</code></td><td>Error: a bad plan line or a setup problem. Nothing was tested.</td></tr>
+        <tr><td><code>3</code></td><td>Held: you sent a dashboard message. Continue with <code>--from &lt;case&gt;</code>.</td></tr>
+        <tr><td><code>4</code></td><td><code>wait A --or B</code> saw B instead of A.</td></tr>
+        <tr><td><code>5</code></td><td>Still paused from the dashboard after 60 s.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/how-it-works/"><span>Previous</span>How it works</a>
+    <a class="next" href="/docs/dashboard/"><span>Next</span>Live dashboard</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

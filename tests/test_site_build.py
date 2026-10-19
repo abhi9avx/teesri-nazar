@@ -81,6 +81,12 @@ class BuildTest(unittest.TestCase):
         (self.src / "about").mkdir()
         (self.src / "about" / "index.html").write_text(
             '<!--\ntitle: About "us"\ndescription: It means "the third eye" & more\n-->\n<h1>About</h1>\n')
+        (self.src / "_docs-nav.html").write_text(
+            '<nav><a class="docs-link" href="/docs/">Overview</a><a class="docs-link" href="/docs/start/">Start</a></nav>')
+        (self.src / "docs" / "start").mkdir()
+        (self.src / "docs" / "start" / "index.html").write_text(
+            "<!--\ntitle: Start\ndescription: Start here\n-->\n{{include:_docs-nav.html}}\n<h1>Start</h1>\n"
+            "{{toc}}\n<h2 id=\"need\">What you need</h2>\n<h2 id=\"run\">Run &amp; check</h2>\n")
         (self.src / "404.html").write_text("<!--\ntitle: Not found\ndescription: x\n-->\n<h1>404</h1>\n")
         (self.src / "site.css").write_text("body{}")
         changelog = root / "CHANGELOG.md"
@@ -107,6 +113,16 @@ class BuildTest(unittest.TestCase):
         v1 = self.read("changelog/v1/index.html")
         self.assertIn('content="Look, act, check, record."', v1)
 
+    def test_a_page_can_include_a_partial_and_its_own_link_is_marked_current(self):
+        start = self.read("docs/start/index.html")
+        self.assertIn('<a class="docs-link" href="/docs/start/" aria-current="page">Start</a>', start)
+        self.assertIn('<a class="docs-link" href="/docs/">Overview</a>', start)
+
+    def test_toc_lists_the_pages_h2_headings(self):
+        start = self.read("docs/start/index.html")
+        self.assertIn('<ul class="toc-list"><li><a href="#need">What you need</a></li>'
+                      '<li><a href="#run">Run &amp; check</a></li></ul>', start)
+
     def test_assets_are_copied_and_partials_are_not(self):
         self.assertEqual(self.read("site.css"), "body{}")
         self.assertFalse((self.out / "_layout.html").exists())
@@ -128,7 +144,7 @@ class BuildTest(unittest.TestCase):
         sitemap = self.read("sitemap.xml")
         locs = sorted(l.strip()[5:-6] for l in sitemap.splitlines() if "<loc>" in l)
         base = "https://teesrinazar.github.io"
-        self.assertEqual(locs, sorted([base + "/", base + "/docs/", base + "/about/", base + "/changelog/",
+        self.assertEqual(locs, sorted([base + "/", base + "/docs/", base + "/docs/start/", base + "/about/", base + "/changelog/",
                                        base + "/changelog/v2/", base + "/changelog/v1/"]))
 
 

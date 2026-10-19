@@ -1,112 +1,41 @@
 <!--
-title: Docs: set up and run Teesri Nazar | Teesri Nazar
-description: Set up Teesri Nazar, the open-source AI tester for Android apps, run your first test with Claude Code, and learn the tnazar commands, plan files and limits.
+title: Docs: Teesri Nazar, the AI tester for Android apps
+description: Learn how Teesri Nazar tests Android features with Claude Code on a real phone: quick start, how it works, plan files, commands and the tech stack.
 -->
-<div class="prose">
-  <h1>Docs</h1>
-  <p class="lede">Everything you need to run your first AI-driven test on an Android phone or emulator.</p>
-  <nav class="toc" aria-label="On this page">
-    <ul>
-      <li><a href="#quick-start">Quick start</a></li>
-      <li><a href="#how-a-test-runs">How a test runs</a></li>
-      <li><a href="#commands">Commands</a></li>
-      <li><a href="#plan-files">Plan files</a></li>
-      <li><a href="#dashboard">The live dashboard</a></li>
-      <li><a href="#limits">Limits</a></li>
-    </ul>
-  </nav>
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Teesri Nazar docs</h1>
+  <p class="docs-lede">Tell Claude Code which Android feature to test. Teesri Nazar plans the cases, runs them on a real phone or emulator and gives you a pass/fail report with a screenshot for every check.</p>
 
-  <h2 id="quick-start">Quick start</h2>
-  <p>You need:</p>
-  <ul>
-    <li><strong>adb</strong> (Android platform-tools) on your <code>PATH</code>, or <code>ANDROID_HOME</code> set.</li>
-    <li>A phone with USB debugging allowed, or a running emulator. <code>adb devices</code> should list it.</li>
-    <li><strong>Python 3.9</strong> or newer. Teesri Nazar uses the standard library only, so there is nothing to <code>pip install</code>.</li>
-    <li><strong>Claude Code</strong>, with <code>claude</code> on your <code>PATH</code>.</li>
-  </ul>
-  <pre tabindex="0"><code>git clone https://github.com/abhi9avx/teesri-nazar.git
-cd teesri-nazar
-cp .env.example .env                     # test PINs and OTPs, never logged
-cp testdata.example.yaml testdata.yaml   # test accounts, environment, DB, Figma links
-claude</code></pre>
-  <p>Then ask for what you want tested, in your own words:</p>
-  <pre tabindex="0"><code>Open Settings and check that search finds Wi-Fi.</code></pre>
-  <p>Claude plans the test cases, shows you the plan, runs them on the device and finishes with a report. Every run is saved in
-    <code>runs/&lt;name&gt;/</code>; <code>report.html</code> is the one to share.</p>
+  <div class="docs-cards">
+    <a class="docs-card" href="/docs/quick-start/"><strong>Quick start</strong><span>Install, connect a phone and run your first test.</span></a>
+    <a class="docs-card" href="/docs/how-it-works/"><strong>How it works</strong><span>The agent, the tool and the look, act, check, record loop.</span></a>
+    <a class="docs-card" href="/docs/plans/"><strong>Plan files</strong><span>Save a test once and run every case in one command.</span></a>
+    <a class="docs-card" href="/docs/commands/"><strong>Commands</strong><span>Every <code>tnazar</code> command, grouped by task.</span></a>
+    <a class="docs-card" href="/docs/dashboard/"><strong>Live dashboard</strong><span>Watch the phone and steer the agent while it runs.</span></a>
+    <a class="docs-card" href="/docs/tech-stack/"><strong>Tech stack</strong><span>What it is built on, and what it needs.</span></a>
+  </div>
 
-  <h2 id="how-a-test-runs">How a test runs</h2>
-  <ol>
-    <li><strong>Plan.</strong> Your input (free text, pasted test cases, a PRD, a Figma or Jira link) becomes numbered test cases with
-      expected results. The agent adds the edge cases you missed and says what it will not test.</li>
-    <li><strong>Explore.</strong> It looks at just the screens the cases touch, to write exact selectors.</li>
-    <li><strong>Run.</strong> Every expected result is a <code>check</code>. A whole plan file runs in one command, with no model turn per step.</li>
-    <li><strong>Report.</strong> Pass, fail or blocked for each case, what it saw against what was expected, and a screenshot for every check.</li>
-  </ol>
-  <p>The full design, from adb up to the report, is in
-    <a href="https://github.com/abhi9avx/teesri-nazar/blob/main/ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
-
-  <h2 id="commands">Commands</h2>
-  <p>Claude runs these for you. You can also drive the device yourself.</p>
-  <div class="table-wrap" tabindex="0" role="region" aria-label="Commands">
+  <h2 id="what-you-give">What you give, what you get</h2>
+  <div class="table-wrap">
     <table>
-      <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+      <thead><tr><th scope="col">You give</th><th scope="col">It does</th><th scope="col">You get</th></tr></thead>
       <tbody>
-        <tr><td><code>./tnazar start &lt;name&gt; --package &lt;app&gt;</code></td><td>Start a test run</td></tr>
-        <tr><td><code>./tnazar observe</code></td><td>Show what is on screen: elements with index, id, text and label</td></tr>
-        <tr><td><code>./tnazar tap "Pay now"</code></td><td>Tap by text, or by <code>id=</code>, <code>desc=</code> or <code>#index</code></td></tr>
-        <tr><td><code>./tnazar type --env APP_MPIN --into id=pin</code></td><td>Type a secret from <code>.env</code> without it ever being printed</td></tr>
-        <tr><td><code>./tnazar check "Payment successful"</code></td><td>Verify something is on screen (exact; <code>'~text'</code> for partial)</td></tr>
-        <tr><td><code>./tnazar case start TC-01 "title"</code></td><td>Group the next steps into a test case; <code>case end</code> closes it</td></tr>
-        <tr><td><code>./tnazar run plans/x.plan</code></td><td>Run every case of a plan file in one go</td></tr>
-        <tr><td><code>./tnazar goto "wi-fi"</code></td><td>Go to a screen by a route learned in earlier runs</td></tr>
-        <tr><td><code>./tnazar map</code></td><td>What was learned about the app: screens, names, usable steps</td></tr>
-        <tr><td><code>./tnazar replay &lt;name&gt;</code></td><td>Run a recorded test again, on the same or another device</td></tr>
-        <tr><td><code>./tnazar ui</code></td><td>Open the live dashboard</td></tr>
-        <tr><td><code>./tnazar stop</code></td><td>Finish the run and write the report</td></tr>
+        <tr><td>A feature: plain text, test cases, a PRD, Figma or Jira</td><td>Plans the cases and adds the edge cases you missed</td><td>A test plan to approve</td></tr>
+        <tr><td>A test account and environment</td><td>Runs every case on the device like a manual tester</td><td>A screenshot for every check</td></tr>
+        <tr><td>DB or Figma access (optional)</td><td>Checks the UI, the database and the design</td><td>Pass, fail or blocked for each case</td></tr>
+        <tr><td>Nothing more</td><td>Records every step</td><td>A run you can replay next release</td></tr>
       </tbody>
     </table>
   </div>
-  <p>Every command has <code>--help</code>.</p>
 
-  <h2 id="plan-files">Plan files</h2>
-  <p>A plan file holds test cases you want to run again. Shared steps are <code>flow</code>s, flaky steps go in <code>retry</code>, and
-    every expected result is a <code>check</code>. This one ships with the repo and works on any Android device:</p>
-  <pre tabindex="0"><code>app com.android.settings
-name settings-example
+  <h2 id="who-its-for">Who it is for</h2>
+  <p>QA engineers and SDETs who test Android features by hand every release, and developers who want a feature checked before it ships. Your app needs no SDK and no changes.</p>
 
-flow home
-  launch --restart
-  wait "Search Settings" --timeout 15
-end
-
-case TC-01 "Network &amp; internet opens"
-  run home
-  tap "Network &amp; internet"
-  check "Internet"
-  key back
-  check "Search Settings"
-
-case TC-02 "Search finds Wi-Fi settings"
-  run home
-  tap "Search Settings"
-  retry 2
-    type "wifi" --into id=open_search_view_edit_text --clear
-    wait "~Wi-Fi" --timeout 5
-  end
-  check "~Wi-Fi"</code></pre>
-  <p>Run it with <code>./tnazar run examples/settings.plan</code>. Exit code 0 means every case passed, 1 that one failed.</p>
-
-  <h2 id="dashboard">The live dashboard</h2>
-  <p><code>./tnazar ui</code> starts a small server on <code>127.0.0.1</code> and opens it in your browser. You see the phone screen,
-    a timeline of every step with how long it took, and a box to message the agent. You can pause the run, and hand over an OTP or
-    PIN that the dashboard types into the device itself. Nothing is hosted or uploaded.</p>
-
-  <h2 id="limits">Limits</h2>
-  <ul>
-    <li><strong>Android only</strong>, for now.</li>
-    <li><strong>Flutter, WebView and canvas</strong> screens show little or nothing in the accessibility tree, so they are hard to test.</li>
-    <li><strong>Jetpack Compose</strong> screens show no ids unless the app sets <code>testTagsAsResourceId</code>; taps fall back to labels and text.</li>
-    <li><strong>Secure screens</strong> (PIN or card entry) come out black in screenshots. The element tree still works.</li>
-    <li><strong>Typing is ASCII only</strong>, because adb types that way: no ₹, Hindi or emoji.</li>
-  </ul>
+  <nav class="docs-pager" aria-label="Next page">
+    <a class="next" href="/docs/quick-start/"><span>Next</span>Quick start</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
 </div>

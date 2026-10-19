@@ -70,6 +70,8 @@ def parse_changelog(text):
 
 
 HEADER = re.compile(r"\A<!--\n(.*?)\n-->\n", re.S)
+INCLUDE = re.compile(r"\{\{include:([\w.-]+)\}\}")
+H2 = re.compile(r'<h2 id="([^"]+)">(.*?)</h2>')
 SECTIONS = ("/docs/", "/changelog/", "/about/")
 
 
@@ -82,7 +84,20 @@ def _page(layout, path, title, description, content, base_url):
     for section in SECTIONS:
         if path.startswith(section):
             page = page.replace('<a href="%s">' % section, '<a href="%s" aria-current="page">' % section, 1)
-    return page
+    current = 'class="docs-link" href="%s"' % path
+    return page.replace(current, current + ' aria-current="page"')
+
+
+def _content(src, text):
+    """Fill {{include:_name.html}} from src, then {{toc}} from the page's own h2 headings."""
+    def include(m):
+        part = src / m.group(1)
+        if not part.is_file():
+            raise ValueError("{{include:%s}}: no such partial in %s" % (m.group(1), src))
+        return part.read_text(encoding="utf-8")
+    text = INCLUDE.sub(include, text)
+    items = "".join('<li><a href="#%s">%s</a></li>' % h for h in H2.findall(text))
+    return text.replace("{{toc}}", '<ul class="toc-list">%s</ul>' % items)
 
 
 def _url_path(rel):
@@ -160,7 +175,7 @@ def build(src, changelog, out, base_url):
             raise ValueError("%s: missing the <!-- title/description --> header" % rel)
         meta = dict(line.split(": ", 1) for line in m.group(1).splitlines())
         path = _url_path(rel)
-        dest.write_text(_page(layout, path, html.escape(meta["title"]), html.escape(meta["description"]), text[m.end():].replace("{{releases}}", releases), base_url),
+        dest.write_text(_page(layout, path, html.escape(meta["title"]), html.escape(meta["description"]), _content(src, text[m.end():]).replace("{{releases}}", releases), base_url),
                         encoding="utf-8")
         if rel != "404.html":
             listed.append(path)

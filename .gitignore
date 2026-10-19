@@ -1,6 +1,6 @@
 # Test runs, app maps and device state: hold app screens, labels and screenshots.
 runs/
-plans/
+/plans/
 .tnazar/
 maps/
 bench/

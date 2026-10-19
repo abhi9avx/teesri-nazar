@@ -6,12 +6,11 @@
 <title>{{title}}</title>
 <meta name="description" content="{{description}}">
 <link rel="canonical" href="{{canonical}}">
-<meta name="theme-color" content="#F27A1A" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1A1208" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#1A1208">
 <script>
-  // Set the theme before first paint: the reader's choice if they made one, else the OS setting.
-  var dark = matchMedia("(prefers-color-scheme: dark)").matches;
-  try { var saved = localStorage.getItem("theme"); if (saved) dark = saved === "dark"; } catch (e) { /* storage blocked: follow the OS */ }
+  // Set the theme before first paint: dark unless the reader picked light.
+  var dark = true;
+  try { var saved = localStorage.getItem("theme"); if (saved) dark = saved === "dark"; } catch (e) { /* storage blocked: stay dark */ }
   document.documentElement.dataset.theme = dark ? "dark" : "light";
 </script>
 <meta property="og:type" content="website">
@@ -46,9 +45,10 @@
       <li><a href="/about/">About</a></li>
       <li><a href="https://github.com/abhi9avx/teesri-nazar">GitHub</a></li>
     </ul>
-    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Dark mode" aria-pressed="false">
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false">
       <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
       <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
+      <span class="theme-label">Dark</span>
     </button>
   </nav>
 </header>
@@ -58,7 +58,7 @@
 <footer class="site-footer">
   <div class="footer-inner">
     <p class="footer-brand"><img src="/assets/eye.svg" alt="" width="16" height="20">Teesri Nazar is open source under the <a href="https://github.com/abhi9avx/teesri-nazar/blob/main/LICENSE">MIT license</a>.</p>
-    <p>Made by <a href="https://github.com/abhi9avx">Abhinav Kumar</a>. No analytics on this site.</p>
+    <p>Made by <a href="https://github.com/abhi9avx">Abhinav Kumar</a>.</p>
   </div>
 </footer>
 </body>

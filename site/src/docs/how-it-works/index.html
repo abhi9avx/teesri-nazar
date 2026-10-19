@@ -1,0 +1,60 @@
+<!--
+title: How it works | Teesri Nazar docs
+description: How Teesri Nazar splits the work between Claude Code and the tnazar tool, how it finds elements without XPath, and how a run becomes a report and a replay.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>How it works</h1>
+  <p class="docs-lede">Claude Code is the tester's judgement. <code>tnazar</code>, a small Python tool, gives it eyes and hands on the phone and writes down everything it does.</p>
+
+  <h2 id="split">Two parts</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Part</th><th scope="col">Job</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Claude Code</strong> (the agent)</td><td>Reads your request, plans the cases, decides each next step, and judges what it sees. Its playbook is <code>CLAUDE.md</code> in the repo.</td></tr>
+        <tr><td><strong>tnazar</strong> (the tool)</td><td>Reads the screen, taps and types through adb, checks results, and records every step with a screenshot. There is no AI inside it.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="loop">The loop for every step</h2>
+  <ol class="loop-list">
+    <li><strong>Look.</strong> Read the screen's element tree: ids, labels, text and positions. About 0.05 s through the UiAutomator2 server when the device has it, about 2 s with <code>uiautomator dump</code> otherwise.</li>
+    <li><strong>Act.</strong> Tap, type or scroll on the right element.</li>
+    <li><strong>Check.</strong> Verify the expected result on screen, and in the DB or Figma when you give access.</li>
+    <li><strong>Record.</strong> Save the step, a screenshot and the result.</li>
+  </ol>
+
+  <h2 id="finding">How it finds elements</h2>
+  <p>No XPath. A target is matched in this order, so tests survive layout and screen-size changes:</p>
+  <ol>
+    <li><strong>id</strong>: <code>tap id=btn_pay</code></li>
+    <li><strong>accessibility label</strong>: <code>tap desc="Navigate up"</code></li>
+    <li><strong>visible text</strong>: <code>tap "Pay now"</code>, or <code>'~Pay'</code> for a partial match</li>
+    <li><strong>position</strong>, only when nothing else exists: <code>tap 9%,6%</code></li>
+  </ol>
+
+  <h2 id="results">Pass, fail and blocked</h2>
+  <ul>
+    <li>A case <strong>passes</strong> when every check in it passed.</li>
+    <li>It <strong>fails</strong> when any check failed, or the app crashed or froze (ANR). Crashes are caught automatically.</li>
+    <li>It is <strong>blocked</strong> when it could not run, for example the environment was down. The reason is recorded.</li>
+  </ul>
+
+  <h2 id="learns">It learns your app</h2>
+  <p>Every run maps the screens it visits and the taps between them. Next time, <code>tnazar goto "wi-fi"</code> reaches a known screen in one command, checking each step. Money-moving steps such as pay, transfer and PIN screens are never replayed.</p>
+
+  <h2 id="replay">Replay</h2>
+  <p><code>tnazar replay &lt;run&gt;</code> runs a recorded test again, on the same or another device, and re-checks every UI result. DB and Figma checks from the original run show as notes.</p>
+
+  <p class="callout-note"><strong>Deep dive.</strong> The full design, from adb to the report, is in <a href="https://github.com/abhi9avx/teesri-nazar/blob/main/ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/quick-start/"><span>Previous</span>Quick start</a>
+    <a class="next" href="/docs/plans/"><span>Next</span>Plan files</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

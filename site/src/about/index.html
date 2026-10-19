@@ -1,6 +1,6 @@
 <!--
 title: About: why it is called the third eye | Teesri Nazar
-description: Teesri Nazar means "the third eye" in Hindi. Why an AI tester for Android apps carries that name, and the principles it is built on.
+description: Teesri Nazar means "the third eye" in Hindi. Why an AI tester for Android apps carries that name, who built it, and how to get in touch.
 -->
 <div class="prose">
   <h1>About</h1>
@@ -15,21 +15,33 @@ description: Teesri Nazar means "the third eye" in Hindi. Why an AI tester for A
   <h2>Why it exists</h2>
   <p>Mobile teams test new features in one of two ways. A person taps through the app by hand, which is slow, skips edge cases and
     leaves nothing to run next release. Or someone writes automation, which arrives after the feature ships and breaks when the screen
-    changes.</p>
-  <p>An AI agent can do what the manual tester does, judge what to check, and leave behind a report and a test that runs again.
-    Teesri Nazar is that agent for Android.</p>
+    changes. An AI agent can do what the manual tester does, judge what to check, and leave behind a report and a test that runs again.</p>
+
+  <h2>Who built it</h2>
+  <div class="maker">
+    <p class="maker-name">Abhinav Kumar</p>
+    <p class="maker-role">SDET II, Software Development Engineer in Test · Bangalore, India</p>
+    <p>Abhinav designed and built Teesri Nazar: the agent playbook, the <code>tnazar</code> tool, the live dashboard, the learned app
+      map and this website. He works on test automation, CI and AI-driven testing, and built this to stop tapping through the same
+      screens every release.</p>
+    <ul class="contact">
+      <li><a href="mailto:kumarabhinav1777@gmail.com">kumarabhinav1777@gmail.com</a></li>
+      <li><a href="https://github.com/abhi9avx">GitHub: abhi9avx</a></li>
+    </ul>
+  </div>
+
+  <h2>Get in touch</h2>
+  <ul>
+    <li><strong>Ideas and open questions:</strong> <a href="https://github.com/abhi9avx/teesri-nazar/issues/new?title=Idea%3A%20">suggest a feature</a>.</li>
+    <li><strong>Bugs:</strong> <a href="https://github.com/abhi9avx/teesri-nazar/issues/new?title=Bug%3A%20">report one on GitHub</a>.</li>
+    <li><strong>Using it at your company, or want to collaborate:</strong> <a href="mailto:kumarabhinav1777@gmail.com">email Abhinav</a>.</li>
+    <li><strong>Like it?</strong> <a href="https://github.com/abhi9avx/teesri-nazar">Star the repo</a>, it helps others find it.</li>
+  </ul>
 
   <h2>How it is built</h2>
   <ul>
-    <li><strong>Open source</strong>, under the MIT license. Read every line before you point it at your app.</li>
-    <li><strong>Runs on your machine.</strong> Your app’s screens stay on your computer. The dashboard listens on 127.0.0.1 only.</li>
-    <li><strong>No installs.</strong> Python’s standard library, adb and Claude Code. Your app needs no SDK and no changes.</li>
-    <li><strong>Secrets stay secret.</strong> PINs and OTPs are typed from <code>.env</code> or the dashboard and never printed, logged or saved.</li>
-    <li><strong>Tested itself.</strong> Unit tests on a fake device run on every push, on Python 3.9 and 3.13.</li>
+    <li><strong>Open source</strong> under the MIT license.</li>
+    <li><strong>Runs on your machine.</strong> Your app's screens stay on your computer.</li>
+    <li><strong>No installs.</strong> Python's standard library, adb and Claude Code. See the <a href="/docs/tech-stack/">tech stack</a>.</li>
   </ul>
-
-  <h2>Who makes it</h2>
-  <p>Teesri Nazar is made by <a href="https://github.com/abhi9avx">Abhinav Kumar</a>, a QA engineer who got tired of tapping through
-    the same screens every release. Questions, bugs and ideas are welcome on
-    <a href="https://github.com/abhi9avx/teesri-nazar/issues">GitHub</a>.</p>
 </div>

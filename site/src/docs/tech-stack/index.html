@@ -1,0 +1,53 @@
+<!--
+title: Tech stack | Teesri Nazar docs
+description: What Teesri Nazar is built on: Claude Code as the agent, a standard-library Python CLI, adb and UiAutomator2 on the device, optional Figma and Atlassian MCP, and GitHub Actions CI.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Tech stack</h1>
+  <p class="docs-lede">Small on purpose: an AI agent, a standard-library Python tool and adb. Your app needs no SDK and no changes.</p>
+
+  <h2 id="core">Core</h2>
+  <div class="stack-grid">
+    <div class="stack-item"><strong>Claude Code</strong><span>The agent. Plans the cases, decides each step, judges the results.</span></div>
+    <div class="stack-item"><strong>Python 3.9+</strong><span>The <code>tnazar</code> CLI. Standard library only, no installs.</span></div>
+    <div class="stack-item"><strong>adb</strong><span>Android Debug Bridge: taps, typing, screenshots and logs.</span></div>
+    <div class="stack-item"><strong>UIAutomator</strong><span>Reads the screen's accessibility tree. Uses the UiAutomator2 server when present for ~0.05 s reads.</span></div>
+  </div>
+
+  <h2 id="optional">Optional connections</h2>
+  <div class="stack-grid">
+    <div class="stack-item"><strong>Figma MCP</strong><span>Compare the build against the design frame.</span></div>
+    <div class="stack-item"><strong>Atlassian MCP</strong><span>Read test cases and specs from Jira or Confluence.</span></div>
+    <div class="stack-item"><strong>Your database</strong><span>Read-only checks against a test environment.</span></div>
+  </div>
+
+  <h2 id="outputs">Outputs</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">File</th><th scope="col">What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>report.html</code></td><td>The report to share: every case, result and screenshot</td></tr>
+      <tr><td><code>report.md</code></td><td>The same report in Markdown</td></tr>
+      <tr><td><code>events.jsonl</code></td><td>Every step as JSON, used by replay</td></tr>
+      <tr><td>Screenshots</td><td>PNG evidence for every check</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="quality">How the tool is tested</h2>
+  <ul>
+    <li>Unit tests run against a fake device, so no phone is needed.</li>
+    <li>GitHub Actions runs them on Python 3.9 and 3.13 for every push.</li>
+    <li>A smoke script checks the live dashboard on a real device or emulator.</li>
+  </ul>
+
+  <h2 id="site">This website</h2>
+  <p>Hand-written HTML and CSS, built by a standard-library Python script that turns <code>CHANGELOG.md</code> into the changelog pages. Hosted on GitHub Pages. No framework, no tracking.</p>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/commands/"><span>Previous</span>Commands</a>
+    <a class="next" href="/docs/limits/"><span>Next</span>Limits and fixes</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>
