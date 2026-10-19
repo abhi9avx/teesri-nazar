@@ -275,6 +275,17 @@ function describe(e) {
     case "adb": return ["🛠", `Device command: adb ${(e.args || []).join(" ")}`, e.exit ? `failed (exit ${e.exit})${e.error ? `: ${e.error}` : ""}` : ""];
     case "if": return ["🔀", `Is ${targetText(e.target)} on screen? ${e.found ? "Yes" : "No"}`];
     case "wait_online": return [e.ok ? "📶" : "📵", e.ok ? "Device back online" : `Still offline ${within(e.timeout, "after")}`.trim()];
+    case "nav": {
+      const where = `"${e.phrase}"`;
+      if (e.outcome === "arrived") return ["🧭", e.hops ? `Went to ${where} by a learned route` : `Already on ${where}`,
+                                          e.hops ? `${e.hops} step${e.hops === 1 ? "" : "s"}${e.took_ms != null ? ` in ${fmtDur(e.took_ms)}` : ""}` : ""];
+      if (e.outcome === "failed") return ["❌", `The learned route to ${where} broke at step ${(e.hops || 0) + 1}`,
+                                         `expected “${e.expected}”, but ${e.why}`];
+      if (e.outcome === "unknown") return ["🧭", `${where} is not in the map yet: finding the way`];
+      if (e.outcome === "conflict") return ["⚠️", `${where} means more than one screen in the map`];
+      if (e.outcome === "stopped") return ["⏸", `Stopped the route to ${where} for your message`];
+      return ["🧭", `No learned route to ${where} from this screen: finding the way`];
+    }
     case "hold": return ["⏸", `Paused by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : ""}`,
                          e.resumed ? "" : "the agent was told to wait until you resume"];
     default: return ["•", e.type];
@@ -303,6 +314,7 @@ function layout(events) {
   let group = null;
   for (const e of events) {
     if (e.type === "io") continue;  // older runs: output size per command, now shown per case
+    if (e.type === "seen") continue;  // a screen read for the navigation map: not a step
     if (e.type === "say") { group = { kind: "group", e, steps: [] }; blocks.push(group); continue; }
     if (["user_msg", "case_start", "case_end"].includes(e.type)) {
       group = null;

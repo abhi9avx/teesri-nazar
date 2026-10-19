@@ -113,6 +113,8 @@ Login with the test user and verify the home screen loads.
 | `./tnazar run plans/x.plan` | Run every case of a plan file in one go (no AI turn per step) |
 | `./tnazar flows` | List the saved routes (the app map: `flow`s in `plans/*.plan` for the run's app) |
 | `./tnazar flow open_settings` | Run one saved route on the active run, in one command |
+| `./tnazar goto "passbook"` | Go to a screen in one command by a route learned in earlier runs (each step verified; a miss prints the screen so exploring costs nothing extra) |
+| `./tnazar map` | What was learned about the run's app: screens, names, usable steps (`--edges`, `name`, `forget`, `audit`, `compact`); `TNAZAR_MAP=off` turns learning off |
 | `./tnazar ui` | Live dashboard: screen, timeline, messages to Claude |
 | `./tnazar say "Opening login"` | Narrate the next step (timeline heading) |
 | `./tnazar wait-message` | Block until you send a dashboard message (the agent runs it in the background) |

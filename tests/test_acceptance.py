@@ -39,6 +39,8 @@ ACCEPTANCE = {
               "test_a_message_delivered_while_the_flow_starts_still_stops_it"],
     "DA-12": ["test_runs_a_saved_route_in_one_command_and_logs_each_step",
               "test_an_unknown_flow_names_the_ones_there_are"],
+    "DA-13": ["test_a_goto_reads_as_one_line_and_a_broken_route_says_what_it_expected",
+              "test_screen_reads_for_the_map_are_not_timeline_rows"],
 }
 
 

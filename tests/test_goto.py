@@ -457,3 +457,34 @@ class ReplayTest(GotoBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(__import__("shutil").which("node"), "needs node to run the dashboard's describe()")
+class DashboardTest(unittest.TestCase):
+    """DA-13: a goto reads as one plain line; a broken route is a red row saying what it expected."""
+
+    def run_js(self, call: str):
+        import subprocess
+        from pathlib import Path
+        html = (Path(__file__).resolve().parent.parent / "teesri_nazar" / "ui.html").read_text()
+        a = html.index("const fmtDur")
+        script = (html[a:html.index("\n", a)] + "\n" + html[html.index("// Ids are written"):
+                  html.index("// ------------------------------------------------------------------ timeline")]
+                  + f"\nconsole.log(JSON.stringify({call}));")
+        return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+    def test_a_goto_reads_as_one_line_and_a_broken_route_says_what_it_expected(self):
+        rows = self.run_js("""[
+          {type: "nav", phrase: "passbook", outcome: "arrived", hops: 2, took_ms: 1400},
+          {type: "nav", phrase: "passbook", outcome: "failed", ok: false, hops: 1, expected: "Passbook",
+           why: "it went to “Offers”"},
+          {type: "nav", phrase: "loan statement", outcome: "unknown"}].map((e) => describe(e).slice(1))""")
+        self.assertEqual(rows[0], ['Went to "passbook" by a learned route', "2 steps in 1.4s"])
+        self.assertEqual(rows[1], ['The learned route to "passbook" broke at step 2',
+                                   "expected “Passbook”, but it went to “Offers”"])
+        self.assertEqual(rows[2][0], '"loan statement" is not in the map yet: finding the way')
+
+    def test_screen_reads_for_the_map_are_not_timeline_rows(self):
+        blocks = self.run_js("""layout([{type: "seen", sid: "abc"}, {type: "tap", selector: {text: "Savings"}}])
+                                .map((b) => b.e.type)""")
+        self.assertEqual(blocks, ["tap"])
