@@ -448,8 +448,7 @@ def _map_name(app, active, args) -> int:
         rec = navmap.run_screens(active[0]).get(sid)
         if rec:
             lines.append(dict(rec, k="screen"))
-        taps = [e for e in active[0].events() if e.get("type") == "tap" and e.get("ok") is not False]
-        via = navmap.scrub_selector(taps[-1].get("stable") or taps[-1].get("selector")) if taps else None
+        via = navmap.entry_tap(active[0].events(), sid)
     else:
         via = None
         m = _load(app, active)

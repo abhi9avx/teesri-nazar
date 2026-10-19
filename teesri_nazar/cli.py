@@ -167,7 +167,10 @@ def cmd_start(args) -> int:
         meta["animations_before"] = dev.animations_off(adb)
     run = Run.create(args.name, meta)
     set_active(run, serial)
-    dev.claim_device(adb, _owner(run))
+    try:
+        dev.claim_device(adb, _owner(run))
+    except AdbError as exc:  # a locked-down device: run as before, only unguarded
+        print(f"warning: could not mark the device as in use: {exc}", file=sys.stderr)
     live.mark_all_read()  # messages typed before this run are not instructions for it
     live.clear_agent_status()
     live.set_paused(False)
@@ -198,7 +201,7 @@ def _check_device_owner(adb: Adb, serial: str, take_over: bool) -> str:
     """One driver per device across every home and machine (two teams, a script beside an agent):
     refuse while another live run holds it; take over one that is gone, and say so."""
     other = dev.device_owner(adb)
-    if not other or other["home"] == str(home().resolve()):
+    if not other or (other["home"] == str(home().resolve()) and other["host"] == socket.gethostname()):
         return ""
     who = f"run {other['run']} from {other['home']} on {other['host']}"
     if not take_over and _still_running(other, serial):
@@ -216,6 +219,8 @@ def _still_running(other: dict, serial: str) -> bool:
     active = Path(other["home"]) / ".tnazar" / "active.json"
     try:
         data = json.loads(active.read_text())
+    except PermissionError:
+        return True  # another user's run on this machine: assume it is live; --take-over decides
     except (OSError, ValueError):
         return False
     return Path(data.get("run", "")).name == other["run"] and data.get("device") == serial

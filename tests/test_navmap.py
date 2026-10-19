@@ -378,6 +378,22 @@ class StoreTest(unittest.TestCase):
         # On some article already: which one is unknown, so never "already there".
         self.assertNotEqual(m.route("ART", m.resolve("asba"), via=m.via("asba")), [])
 
+    def test_the_tap_a_name_remembers_is_the_one_that_opened_the_screen(self):
+        log = Log().tap("FAQS", text="Savings account").wait("ART").add(type="key", key="back").seen("FAQS") \
+            .add(type="nav", phrase="asba", outcome="unknown", sid="FAQS", episode=True) \
+            .tap("FAQS", text="What is ASBA").wait("ART") \
+            .tap("ART", text="Helpful") \
+            .add(type="check", kind="ui", sid="ART", ok=True, selector={"text": "What is ASBA"})
+        names = [o for o in navmap.learn(log.events, run="r1", version="1", screens={}) if o["k"] == "name"]
+        self.assertEqual(names[0]["via"], {"text": "What is ASBA"})
+
+    def test_a_titled_screen_is_never_folded_into_an_untitled_one(self):
+        untitled = dict(scr("X"), title="")
+        titled = dict(scr("X"), id="Y", title="t")
+        navmap.Store(APP).append([dict(untitled, k="screen"), dict(titled, k="screen")], None)
+        m = navmap.NavMap.load(APP)
+        self.assertEqual(set(m.screens), {"X", "Y"})
+
     def test_a_normal_screen_keeps_every_way_in(self):
         log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \
             .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB") \

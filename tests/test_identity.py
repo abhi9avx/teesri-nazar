@@ -110,6 +110,14 @@ class UntitledMenuTest(unittest.TestCase):
         self.assertTrue(ident.same(ident_of(self.page(menu)), ident_of(with_title)))
         self.assertTrue(ident.match(ident_of(with_title), {ident_of(self.page(menu)).id: ident_of(self.page(menu))}))
 
+    def test_a_read_without_its_title_is_unknown_when_two_titled_pages_share_its_menu(self):
+        menu = ["Block card", "Set PIN", "Limits", "Manage"]
+        def titled(t):
+            return ident_of(self.page(menu, [node(text=t, clickable=False, bounds=(200, 100, 600, 190))]))
+        debit, credit = titled("Debit card"), titled("Credit card")
+        untitled = ident_of(self.page(menu))
+        self.assertIsNone(ident.match(untitled, {debit.id: debit, credit.id: credit}))
+
     def test_rows_with_amounts_are_not_menu(self):
         a = ident_of(self.page(["Help & support", "Pricing", "Rent ₹12,000"]))
         b = ident_of(self.page(["Help & support", "Pricing", "Fuel ₹900"]))

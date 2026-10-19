@@ -154,3 +154,24 @@ class DeviceOwnerTest(PlanRunBase):
         self.start()
         code, out, err = tnazar("start", "again", "--package", PACKAGE)
         self.assertEqual(code, 0, out + err)
+
+
+class DeviceOwnerHostTest(PlanRunBase):
+    def test_the_same_home_path_on_another_machine_is_another_owner(self):
+        import time
+        from teesri_nazar import device
+        device.claim_device(self.adb, {"host": "ci-runner-7", "home": os.path.realpath(self.home),
+                                       "run": "theirs", "t": int(time.time())})
+        code, out, err = tnazar("start", "mine", "--package", PACKAGE)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("is in use by run theirs", err)
+
+    def test_an_owner_whose_state_cannot_be_read_is_treated_as_running(self):
+        self.start()
+        other = os.path.join(self.home, "other-user")
+        os.makedirs(other)
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}), \
+                mock.patch("pathlib.Path.read_text", side_effect=PermissionError("not yours")):
+            from teesri_nazar import cli
+            self.assertTrue(cli._still_running({"host": cli.socket.gethostname(), "home": self.home,
+                                                "run": "demo", "t": "0"}, "fake-1"))

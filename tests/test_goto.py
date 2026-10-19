@@ -559,3 +559,10 @@ class ReportTest(GotoBase):
         self.assertIn("| pasbook | not in the map |", md)
         self.assertIn("map: learned", md)
         self.assertIn("Navigation map", (run.path / "report.html").read_text())
+
+    def test_a_bar_in_a_phrase_does_not_break_the_tables(self):
+        run = self.start()
+        self.t("goto", "a|b", code=2)
+        self.stop()
+        self.assertIn("| a\\|b | not in the map |", (run.path / "report.md").read_text())
+        self.assertIn("<td>a|b</td><td>not in the map</td>", (run.path / "report.html").read_text())

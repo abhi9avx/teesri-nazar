@@ -209,7 +209,7 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
                         "ok": False, "t": t})
     out = _once_per_run(out)
     named = set()
-    for o in _episodes(events, run):
+    for o in _episodes(events, run, secrets):
         if (o["phrase"], o["screen"]) not in named:
             named.add((o["phrase"], o["screen"]))
             out.append(o)
@@ -240,7 +240,7 @@ def _check_label(e: dict) -> str:
     return " ".join(str(sel.get(k) or "") for k in ("text", "desc", "id"))
 
 
-def _episodes(events: list[dict], run: str) -> list[dict]:
+def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
     """After `goto <phrase>` missed, which screen did the agent go looking for? A passing check
     that says every word of the phrase ends the search there. Otherwise the check saying most of
     it, the latest of equals; a check that says none of it counts only while the agent stays (a
@@ -254,10 +254,15 @@ def _episodes(events: list[dict], run: str) -> list[dict]:
             names.append(dict(name_line(ep["phrase"], sid, explicit=False, run=run, via=via), t=_ts(t)))
         ep = None
 
-    last_tap = None
+    last_tap, here, entered = None, None, {}  # entered: screen -> the tap that opened it
 
     for n, e in enumerate(events):
         typ = e.get("type")
+        sid = e.get("sid")
+        settled = sid and (typ in ("tap", "type", "scroll", "seen")
+                           or (typ in ("wait", "check") and e.get("ok", True) and not e.get("found_instead")))
+        if settled and sid != here:
+            entered[sid], here = last_tap, sid
         if typ == "nav":
             close()
             if e.get("episode") and e.get("phrase"):
@@ -266,7 +271,7 @@ def _episodes(events: list[dict], run: str) -> list[dict]:
         elif typ in ("case_start", "case_end") or (typ == "launch" and (e.get("fresh") or e.get("restart"))):
             close()
         if typ == "tap" and e.get("ok") is not False:
-            last_tap = scrub_selector(e.get("stable") or e.get("selector"))
+            last_tap = scrub_selector(e.get("stable") or e.get("selector"), secrets)
         if typ in ("nav", "case_start", "case_end") or ep is None:
             continue
         if typ in ("tap", "type", "key", "swipe", "scroll", "adb", "launch", "open_url"):
@@ -280,7 +285,7 @@ def _episodes(events: list[dict], run: str) -> list[dict]:
             said = _words(_check_label(e))
             score = len(ep["words"] & said) / max(len(ep["words"]), 1)
             if ep["best"] is None or score >= ep["best"][0]:
-                ep["best"] = (score, n, e["sid"], e.get("t", ""), last_tap)
+                ep["best"] = (score, n, e["sid"], e.get("t", ""), entered.get(e["sid"]))
             if score >= 1:
                 close()
     close()
@@ -499,7 +504,7 @@ class NavMap:
             return
         it = ident.Ident(sid, "screen", frozenset(d.get("tokens") or ()), d.get("title") or "", bool(d.get("secure")),
                          frozenset(d.get("inner") or ()), d.get("tab") or "", frozenset(d.get("menu") or ()))
-        same = ident.match(it, self.screens)
+        same = ident.match(it, self.screens, one_sided=False)  # never fold a titled page into an untitled one
         if same:
             self.alias[sid] = same
             if it.secure:
@@ -668,6 +673,20 @@ def run_screens(run) -> dict:
             except (ValueError, KeyError, TypeError):
                 continue
     return out
+
+
+def entry_tap(events: list[dict], sid: str) -> dict | None:
+    """The tap that last opened screen `sid` in these events (scrubbed), for `map name here`."""
+    last_tap, here, found = None, None, None
+    for e in events:
+        s = e.get("sid")
+        if s and s != here:
+            if s == sid:
+                found = last_tap
+            here = s
+        if e.get("type") == "tap" and e.get("ok") is not False:
+            last_tap = scrub_selector(e.get("stable") or e.get("selector"), secrets())
+    return found
 
 
 def failed_in(events: list[dict]) -> set:

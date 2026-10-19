@@ -124,17 +124,27 @@ def _score(a: Ident, b: Ident) -> float:
     return frame
 
 
-def match(ident: Ident, stored: dict) -> str | None:
-    """The stored screen this read shows: its id, or None for a screen not seen before."""
+def match(ident: Ident, stored: dict, one_sided: bool = True) -> str | None:
+    """The stored screen this read shows: its id, or None for a screen not seen before.
+
+    A read and a screen of which only one has a title match on their menu alone; that is
+    refused when more than one stored screen fits (a credit card and a debit card page share a
+    menu, and only the missing title told them apart), and with `one_sided=False`."""
     if not ident.id:
         return None
     if ident.id in stored:
         return ident.id
-    best, score = None, SAME
+    fits = []
     for sid, other in stored.items():
         s = _score(other, ident)
-        if s > score or (s == score and best is None):
-            best, score = sid, s
+        if s >= SAME:
+            fits.append((s, sid, bool(other.title) != bool(ident.title)))
+    if not fits:
+        return None
+    fits.sort(key=lambda f: -f[0])
+    score, best, lopsided = fits[0]
+    if lopsided and (not one_sided or len(fits) > 1):
+        return None
     return best
 
 
