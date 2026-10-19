@@ -158,3 +158,20 @@ case could not be executed (environment down, missing data), `skipped` when out 
   on this device", another process (e.g. a `tnazar run` plan) is driving it: ask the user
   before `./tnazar stop`-ing it.
 - Replaying a finished run: `./tnazar replay <run> [--fresh] [--visual]`.
+
+## Changing tnazar itself: when is it done
+
+Say "done" or "fixed" only after all four, in this order, in one pass:
+
+1. **Acceptance first.** For dashboard behaviour, add or update the line in ARCHITECTURE.md
+   *Dashboard acceptance list* and map it to its tests in `tests/test_acceptance.py`. Put
+   page logic in pure functions in `ui.html` (`describe`, `layout`, `agentLine`) so node
+   tests can run it.
+2. **Tests** pass on Python 3.9 (CI): `/usr/bin/python3 -m unittest discover -s tests`.
+3. **One AI review** (`ai-code-review` against the base branch). Fix HIGH and MED findings;
+   list LOW ones for the user instead of starting another round.
+4. **Seen working**: `python3 scripts/smoke_dashboard.py --device <serial>` passes on a
+   device or emulator, and anything the script does not cover was checked in the live
+   dashboard. Report what you saw, not what the code should do.
+
+Commit freely; push or open a PR only when the user says so after their review.

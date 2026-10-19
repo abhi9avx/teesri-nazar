@@ -269,6 +269,7 @@ testdata.example.yaml   ← accounts, env, DB, Figma: copy to testdata.yaml (git
 runs/                   ← one folder per run: events, screenshots, logs, report (gitignored)
 tests/                  ← unit tests:  python3 -m unittest discover -s tests
                            (fakedevice.py stands in for adb, so tests and CI need no phone)
+scripts/smoke_dashboard.py ← live dashboard check on a real device or emulator (Settings app)
 .github/workflows/      ← CI: runs the tests on Python 3.9 and 3.13 for every push
 ```
 

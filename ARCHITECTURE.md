@@ -809,6 +809,28 @@ its reason.
 
 ---
 
+### Dashboard acceptance list
+
+What the dashboard must do, one checkable line each. Every line has tests
+(`tests/test_acceptance.py` maps each ID to them and fails if a line has none, or names a
+test that no longer exists), and `scripts/smoke_dashboard.py` checks the ones marked *live*
+on a real device.
+
+| ID | The dashboard must… | Live |
+|---|---|---|
+| DA-01 | deliver your message to a listening agent within about a second (`wait-message` exits 3) | live |
+| DA-02 | never let an info note ("already typed") wake the agent or stop its step | live |
+| DA-03 | type a secret into the focused field as soon as the agent's step in progress ends | live |
+| DA-04 | type two secrets sent together one after the other, never mixed | live |
+| DA-05 | keep every part of a secret off disk, out of the HTTP reply and away from the agent | |
+| DA-06 | show a step that could not run as a red row with its reason | live |
+| DA-07 | keep the status line true: Got → Thinking → Working → Listening / Not listening, never stuck, time only on timed lines | live |
+| DA-08 | never draw your message below a step that came after it | live |
+| DA-09 | write timeline lines in plain words: ids as words, your words as written, partial matches named, no false "timed out" | live |
+| DA-10 | keep a paused run paused: an info note does not turn a pause into a message | |
+| DA-11 | stop a plan or flow before its next step for a message the agent got, even through the listener | |
+| DA-12 | run a saved route in one command, and name the existing ones when asked for a missing one | live |
+
 ### 15.1 Running a whole plan
 
 *Files: `teesri_nazar/plan.py`, `teesri_nazar/runner.py`*
