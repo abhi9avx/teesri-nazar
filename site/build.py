@@ -85,6 +85,7 @@ def _page(layout, path, title, description, content, base_url):
     page = (layout.replace("{{title}}", title)
                   .replace("{{description}}", description)
                   .replace("{{canonical}}", base_url + path)
+                  .replace("{{base}}", base_url)
                   .replace("{{content}}", content))
     for section in SECTIONS:
         if path.startswith(section):
@@ -192,6 +193,9 @@ def build(src, changelog, out, base_url):
                 raise ValueError("%s: header line %r is not 'key: value'" % (rel, line))
             key, value = line.split(": ", 1)
             meta[key] = value
+        missing = [k for k in ("title", "description") if k not in meta]
+        if missing:
+            raise ValueError("%s: header has no %s" % (rel, " or ".join(missing)))
         path = _url_path(rel)
         page = _page(layout, path, html.escape(meta["title"]), html.escape(meta["description"]),
                      _content(src, text[m.end():]).replace("{{releases}}", releases), base_url)

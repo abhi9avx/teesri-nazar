@@ -261,6 +261,7 @@ document.querySelectorAll(".docs pre").forEach((pre) => {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "copy";
+  button.setAttribute("aria-live", "polite");
   button.textContent = "Copy";
   copyButton(button, () => (pre.querySelector("code") || pre).textContent.trim(), "Select and copy");
   pre.before(wrap);

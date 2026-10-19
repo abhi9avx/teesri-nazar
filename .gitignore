@@ -5,6 +5,7 @@ runs/
 maps/
 bench/
 shots/
+!site/src/sample-report/shots/
 dumps/
 events.jsonl
 screens.jsonl

@@ -223,5 +223,41 @@ class BuildErrorsTest(unittest.TestCase):
         self.assertTrue((self.out / "page.html").exists())
 
 
+class RealSiteTest(unittest.TestCase):
+    def test_every_image_the_sample_report_shows_is_tracked_by_git(self):
+        import re, subprocess
+        report = ROOT / "site" / "src" / "sample-report" / "report.html"
+        shots = set(re.findall(r"src='([^']+)'", report.read_text()))
+        self.assertTrue(shots)
+        tracked = subprocess.run(["git", "ls-files", "site/src/sample-report"], cwd=ROOT,
+                                 capture_output=True, text=True, check=True).stdout.split()
+        for shot in shots:
+            self.assertIn("site/src/sample-report/" + shot, tracked)
+
+
+class BaseUrlTest(unittest.TestCase):
+    def test_layout_urls_follow_the_base_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src"
+            src.mkdir()
+            (src / "_layout.html").write_text('<meta property="og:image" content="{{base}}/assets/og.png">{{content}}')
+            (src / "index.html").write_text("<!--\ntitle: T\ndescription: D\n-->\nx")
+            changelog = Path(tmp) / "CHANGELOG.md"
+            changelog.write_text("## v1: One\n\nmeta\n")
+            site_build.build(src, changelog, Path(tmp) / "out", "http://localhost:9")
+            self.assertIn('content="http://localhost:9/assets/og.png"', (Path(tmp) / "out" / "index.html").read_text())
+
+    def test_a_header_without_a_title_names_the_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src"
+            src.mkdir()
+            (src / "_layout.html").write_text("{{content}}")
+            (src / "index.html").write_text("<!--\ndescription: D\n-->\nx")
+            changelog = Path(tmp) / "CHANGELOG.md"
+            changelog.write_text("## v1: One\n\nmeta\n")
+            with self.assertRaisesRegex(ValueError, "index.html"):
+                site_build.build(src, changelog, Path(tmp) / "out", "http://x")
+
+
 if __name__ == "__main__":
     unittest.main()

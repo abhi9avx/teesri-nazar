@@ -9,17 +9,19 @@
 <meta name="theme-color" content="#0A0A0A">
 <script>
   // Set the theme before first paint: dark unless the reader picked light.
-  var dark = true;
-  try { var saved = localStorage.getItem("theme"); if (saved) dark = saved === "dark"; } catch (e) { /* storage blocked: stay dark */ }
-  document.documentElement.dataset.theme = dark ? "dark" : "light";
-  if (!dark) document.querySelector('meta[name="theme-color"]').content = "#F27A1A";
+  (function () {
+    var dark = true;
+    try { var saved = localStorage.getItem("theme"); if (saved) dark = saved === "dark"; } catch (e) { /* storage blocked: stay dark */ }
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    if (!dark) document.querySelector('meta[name="theme-color"]').content = "#F27A1A";
+  })();
 </script>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Teesri Nazar">
 <meta property="og:title" content="{{title}}">
 <meta property="og:description" content="{{description}}">
 <meta property="og:url" content="{{canonical}}">
-<meta property="og:image" content="https://teesrinazar.github.io/assets/og.png">
+<meta property="og:image" content="{{base}}/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Teesri Nazar: the third eye on your Android app">
