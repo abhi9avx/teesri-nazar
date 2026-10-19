@@ -648,3 +648,11 @@ class FailedStepRowTest(CliTestCase):
         [typed] = [e for e in run.events() if e["type"] == "type"]
         self.assertEqual((typed["ok"], typed["text"]), (False, None))
         self.assertNotIn("s3cret-value", json.dumps(run.events()))
+
+    def test_a_plain_value_typed_into_a_missing_field_is_not_recorded(self):
+        # Unfound, the field may be a password field: its flag is only known once found.
+        run = self.start()
+        code, _, _ = tnazar("type", "7531", "--into", "id=pin", "--wait", "0.3")
+        self.assertEqual(code, cli.EXIT_FAIL)
+        [typed] = [e for e in run.events() if e["type"] == "type"]
+        self.assertIsNone(typed["text"])

@@ -95,13 +95,25 @@ class AdbFailureReasonTest(CliTestCase):
     def test_a_failed_adb_command_records_why_without_secrets(self):
         import subprocess
         run = self.start()
-        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="error: closed\nmore detail\n")
-        with mock.patch.object(cli.subprocess, "run", return_value=failed):
+        failed = subprocess.CompletedProcess([], 1, stderr="error: closed 7531\nmore detail\n")
+        with mock.patch.object(cli.subprocess, "run", return_value=failed), \
+                mock.patch.object(cli.live, "secret_values", return_value=["7531"]):
             code, _, err = tnazar("adb", "shell", "false")
         self.assertEqual(code, cli.EXIT_FAIL)
         self.assertIn("error: closed", err)
         [e] = [e for e in run.events() if e["type"] == "adb"]
-        self.assertEqual(e["error"], "error: closed")
+        self.assertTrue(e["error"].startswith("error: closed"))
+        self.assertNotIn("7531", e["error"])
+
+    def test_adb_output_streams_through_untouched(self):
+        import subprocess
+        self.start()
+        done = subprocess.CompletedProcess([], 0, stderr="")
+        with mock.patch.object(cli.subprocess, "run", return_value=done) as run_adb:
+            tnazar("adb", "logcat")
+        kwargs = run_adb.call_args.kwargs
+        self.assertNotIn("capture_output", kwargs)
+        self.assertNotIn("stdout", kwargs)
 
 
 class RegistryAndConstantsTest(unittest.TestCase):

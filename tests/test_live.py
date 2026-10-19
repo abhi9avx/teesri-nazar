@@ -161,6 +161,24 @@ class DeviceLockTest(CliTestCase):
         self.assertGreaterEqual(time.monotonic() - began, 0.35)
         self.assertEqual(len(self.adb.taps), 1)
 
+    def test_a_busy_device_does_not_blame_the_dashboard(self):
+        self.start()
+        hold_device(self, 0.6)
+        with mock.patch.object(live, "DEVICE_WAIT", 0.2):
+            code, _, err = tnazar("tap", "Login")
+        self.assertEqual(code, cli.EXIT_ERROR)
+        self.assertIn("device is busy", err)
+        self.assertNotIn("dashboard", err)
+
+    def test_streaming_logcat_does_not_hold_the_device(self):
+        import subprocess as sp
+        self.start()
+        hold_device(self, 0.6)
+        done = sp.CompletedProcess([], 0, stderr="")
+        with mock.patch.object(live, "DEVICE_WAIT", 0.2), mock.patch.object(cli.subprocess, "run", return_value=done):
+            code, _, _ = tnazar("adb", "logcat", "-d")
+        self.assertEqual(code, 0)
+
     def test_a_lock_held_by_a_process_that_died_is_free_at_once(self):
         self.start()
         code = ("import fcntl, os, sys; f = open(sys.argv[1], 'a'); fcntl.flock(f, fcntl.LOCK_EX); "
@@ -199,6 +217,30 @@ class AgentStatusTest(CliTestCase):
         self.assertEqual(seen, [True])
         st = live.agent_status()
         self.assertEqual((st["state"], st["text"]), ("got_message", "open help"))
+
+    def test_listening_again_after_a_message_shows_listening(self):
+        self.start()
+        live.post("open help")
+        tnazar("wait-message", "--timeout", "5")
+        self.assertEqual(live.agent_status()["state"], "got_message")
+        timer = threading.Timer(0.3, live.post, ["log out"])
+        seen = []
+        timer2 = threading.Timer(0.15, lambda: seen.append(live.agent_status()["state"]))
+        timer.start(); timer2.start()
+        self.addCleanup(timer.join); self.addCleanup(timer2.join)
+        tnazar("wait-message", "--timeout", "5")
+        self.assertEqual(seen, ["idle"])
+
+    def test_listening_after_a_say_keeps_showing_the_work(self):
+        self.start()
+        self.ok("say", "Opening settings")
+        timer = threading.Timer(0.3, live.post, ["log out"])
+        seen = []
+        timer2 = threading.Timer(0.15, lambda: seen.append(live.agent_status()["state"]))
+        timer.start(); timer2.start()
+        self.addCleanup(timer.join); self.addCleanup(timer2.join)
+        tnazar("wait-message", "--timeout", "5")
+        self.assertEqual(seen, ["working"])
 
     def test_a_listener_that_died_is_not_listening(self):
         self.start()

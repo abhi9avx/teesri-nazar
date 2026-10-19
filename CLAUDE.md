@@ -175,3 +175,6 @@ Say "done" or "fixed" only after all four, in this order, in one pass:
    dashboard. Report what you saw, not what the code should do.
 
 Commit freely; push or open a PR only when the user says so after their review.
+The four steps cover the exact commit you share: a commit made after them (even a review fix)
+needs them again before a push or PR. The PR description lists the review result, the test
+count and the smoke result.

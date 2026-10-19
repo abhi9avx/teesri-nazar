@@ -737,7 +737,8 @@ checkpoint**; between steps, the background `wait-message` is the channel that w
   `say … && tap …` still stops at the tap. Messages sent before `start` are dropped.
 - **Pause.** While `.tnazar/paused` exists a device command waits up to 60 s (under the
   agent's 2-minute command timeout); if still paused it exits 5 and tells Claude to run
-  `./tnazar wait-resume` (exit 3 if a message arrived during the pause). The wait is logged as a `hold` event.
+  `./tnazar wait-resume` (repeat until it prints `resumed`). If a message arrived during the
+  pause, the command exits 3 instead of 5 when its wait ends; `wait-resume` only waits for resume. The wait is logged as a `hold` event.
 - **Fast screen reads.** `uiautomator dump` starts a new process per read (~2 s, unbounded
   while the app is busy). When the device has the UiAutomator2 server, `start` launches it
   (`uia2.py`) and every read is an HTTP call to it (~0.05 s, waiting at most 300 ms for the
