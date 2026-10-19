@@ -266,6 +266,7 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
             if e.get("to") and e.get("found"):
                 hint = {"direction": e.get("direction"), "to": e.get("to")}
         elif typ == "nav" and e.get("outcome") == "failed" and e.get("edge"):
+            pending = VOID  # goto's own tap failed: a later move is not that tap's doing
             ed = e["edge"]
             out.append(edge_line(ed["from"], ed["to"], ed.get("kind", "tap"), ed.get("sel"), "", None, run,
                                  version, False, t))

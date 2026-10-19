@@ -512,6 +512,20 @@ class StoreTest(unittest.TestCase):
         m = navmap.NavMap.load(APP, version="1.0")
         self.assertEqual([h.frm for h in m.route("STMT", m.resolve("passbook"), via=m.via("passbook"))], ["STMT"])
 
+    def test_a_goto_step_that_failed_is_never_also_credited_when_the_screen_later_moves(self):
+        """The step must reach two failures in a row and retire, not fail then "succeed"."""
+        def run(day):
+            log = Log(day=day).seen("HOME").add(type="tap", sid="HOME", selector={"text": "Savings"},
+                                                label="Savings", via="goto") \
+                .add(type="nav", phrase="savings", outcome="failed",
+                     edge={"from": "HOME", "to": "SAV", "kind": "tap", "sel": {"text": "Savings"}}) \
+                .seen("SAV")  # the app moved on its own
+            return log
+        self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r0")
+        self.save(run("2020-02-01"), "r1")
+        self.save(run("2020-02-02"), "r2")
+        self.assertIsNone(navmap.NavMap.load(APP, version="1.0").route("HOME", {"SAV"}))
+
     def test_an_edge_that_failed_in_this_run_is_not_retried(self):
         self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r1")
         m = navmap.NavMap.load(APP, version="1.0", failed={("HOME", "SAV", "tap", '{"text": "Savings"}')})
