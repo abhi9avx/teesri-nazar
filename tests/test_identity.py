@@ -104,6 +104,12 @@ class UntitledMenuTest(unittest.TestCase):
         b = ident_of(self.page(["Wi-Fi", "Bluetooth", "Hotspot"]))
         self.assertFalse(ident.same(a, b))
 
+    def test_a_title_seen_on_one_visit_only_does_not_split_the_page(self):
+        menu = ["Help & support", "Profile details", "App settings", "Pricing"]
+        with_title = self.page(menu, [node(text="FAQs", clickable=False, bounds=(200, 100, 600, 190))])
+        self.assertTrue(ident.same(ident_of(self.page(menu)), ident_of(with_title)))
+        self.assertTrue(ident.match(ident_of(with_title), {ident_of(self.page(menu)).id: ident_of(self.page(menu))}))
+
     def test_rows_with_amounts_are_not_menu(self):
         a = ident_of(self.page(["Help & support", "Pricing", "Rent ₹12,000"]))
         b = ident_of(self.page(["Help & support", "Pricing", "Fuel ₹900"]))

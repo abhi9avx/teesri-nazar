@@ -105,15 +105,16 @@ def same(a: Ident, b: Ident) -> bool:
 
 
 def _score(a: Ident, b: Ident) -> float:
-    """How alike two reads with the same title and tab are; 0 when they cannot be one screen.
-    A page that is all list has a tiny frame shared by every page of the app's layout: then its
-    list ids must overlap too, counted against the smaller list (one still loading is the same
-    page, one with other rows is not)."""
-    if a.title != b.title or a.tab != b.tab:
+    """How alike two reads are; 0 when they cannot be one screen. Two different titles or tabs
+    never match. A page that is all list has a tiny frame shared by every page of the app's
+    layout: then its list ids must overlap too, counted against the smaller list (one still
+    loading is the same page, one with other rows is not)."""
+    if (a.title and b.title and a.title != b.title) or a.tab != b.tab:
         return 0.0
     frame = len(a.tokens & b.tokens) / len(a.tokens | b.tokens) if a.tokens | b.tokens else 1.0
-    if not a.title:
-        # Nothing anchors an untitled page but its menu: the same frame and mostly the same menu.
+    if not (a.title and b.title):
+        # Untitled, or a top label read on one visit only (it comes and goes on Compose screens):
+        # only the menu anchors the page. The same frame and mostly the same menu.
         if not a.menu or not b.menu or len(a.menu & b.menu) / len(a.menu | b.menu) < SAME:
             return 0.0
         return frame
