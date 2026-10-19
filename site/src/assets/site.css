@@ -67,7 +67,7 @@ p { margin: 0; }
 .brand-name { font-family: var(--display); font-size: 1.5rem; line-height: 1; }
 /* The mark's ink outline would vanish on the dark band: invert it to cream, keeping the saffron iris. */
 :root[data-theme="dark"] :is(.brand, .footer-brand) img { filter: invert(1) hue-rotate(180deg); }
-.brand-hi { font-family: var(--display); font-size: 1.05rem; line-height: 1; opacity: 0.75; }
+.brand-hi { font-family: var(--display); font-size: 1.05rem; line-height: 1; }
 .site-header ul { display: flex; gap: clamp(1rem, 0.5rem + 1.5vw, 2rem); list-style: none; margin: 0; padding: 0; }
 .site-header nav a { color: inherit; text-decoration: none; font-weight: 600; padding-block: 0.3rem; }
 .site-header nav a:hover, .site-header nav a[aria-current="page"] { box-shadow: inset 0 -2px currentColor; }
@@ -108,8 +108,18 @@ p { margin: 0; }
 }
 
 .shot-path { fill: none; }
+/* After the verdict Ram lowers the bow: the archer fades out and the standing, smiling Ram fades in. */
+.shot.is-live :is(.ram, .ram-standing) { transition: opacity 0.9s ease; }
+.ram-standing { opacity: 0; }
+.shot.is-done .ram { opacity: 0; }
+.shot.is-done .ram-standing { opacity: 1; }
 .bowstring { fill: none; stroke: #F6DDA4; stroke-width: 1.8; stroke-linejoin: round; }
-.trail { fill: none; stroke: #FFF4E0; stroke-width: 3; stroke-linecap: round; opacity: 0.6; }
+.trail { fill: none; stroke: #FFF4E0; stroke-width: 3; stroke-linecap: round; opacity: 0; transition: opacity 0.7s ease; }
+.shot.is-firing .trail { opacity: 0.6; transition: none; }
+.arrow-flying { transition: opacity 0.7s ease 0.2s; }
+.shot.is-firing .arrow-flying { transition: none; }
+/* Once every head is down the arrow is gone: only the cut heads and the verdict remain. */
+.shot.is-done .arrow-flying { opacity: 0 !important; }
 .arrow-shaft { stroke: #F7D27A; stroke-width: 4; stroke-linecap: round; }
 .arrow-head, .arrow-feather { fill: #F7D27A; stroke: #1A1208; stroke-width: 1.5; stroke-linejoin: round; }
 .arrow { filter: drop-shadow(0 0 6px rgb(255 214 120 / 0.95)); }
@@ -129,7 +139,6 @@ p { margin: 0; }
 .shot:not(.is-done) .hit:not(.is-hit) :is(.badge, .cut, .head-down) { opacity: 0; }
 .shot.is-done .hit :is(.badge, .cut), .hit.is-hit :is(.badge, .cut) { opacity: 1; }
 .shot.is-done .head-down, .hit.is-hit .head-down { opacity: 1; }
-.shot:not(.is-done):not(.is-firing) .trail { opacity: 0; }
 .shot.is-done .arrow-rest, .shot.is-firing .arrow-rest { opacity: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .third-eye-glow { animation: glow 2.4s ease-in-out infinite; }
@@ -150,6 +159,56 @@ p { margin: 0; }
 @keyframes slash { from { stroke-dasharray: 0 80; } to { stroke-dasharray: 80 0; } }
 @keyframes recoil { 30% { translate: -8px 0; } }
 @keyframes shudder { 25% { translate: 3px 0; } 50% { translate: -3px 0; } 75% { translate: 2px 0; } }
+
+/* The verdict: rises into the empty middle once the last head is down */
+.complete { position: relative; z-index: 2; text-align: center; margin-top: 1rem; opacity: 0; scale: 0.92; }
+.shot.is-live .complete { transition: opacity 0.5s ease, scale 0.6s cubic-bezier(.2, 1.4, .4, 1); }
+.shot.is-done .complete { opacity: 1; scale: 1; }
+@media (min-width: 64rem) { .complete { position: absolute; left: 50%; top: 72%; translate: -50% -50%; margin: 0; } }
+.complete-title { font-family: var(--display); font-size: clamp(1.8rem, 1rem + 2vw, 2.9rem); line-height: 1.05; }
+.hooray { display: block; font-size: 0.62em; margin-bottom: 0.15em; }
+.complete-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 0.9rem; }
+.complete-stats span { padding: 0.35rem 0.85rem; border-radius: 999px; font-weight: 700; font-size: 0.95rem; background: var(--cream); color: var(--ink); }
+.complete-stats .ok { background: var(--peacock); color: #FFFFFF; }
+.complete-stats .bad { background: var(--vermilion); color: #FFFFFF; }
+.petals { position: absolute; left: 50%; top: 40%; width: 0; height: 0; pointer-events: none; }
+.petals i { position: absolute; width: 10px; height: 16px; margin: -8px 0 0 -5px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: var(--c, #FFB627); opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .shot.is-celebrating .petals i { animation: petal 1.6s cubic-bezier(.15, .7, .3, 1) both; }
+}
+@keyframes petal { 0% { translate: 0 0; rotate: 0deg; opacity: 1; } 70% { opacity: 1; } 100% { translate: var(--dx) var(--dy); rotate: var(--r); opacity: 0; } }
+.petals i:nth-child(1) { --dx: -34px; --dy: 144px; --r: -183deg; --c: #FFB627; animation-delay: 105ms; }
+.petals i:nth-child(2) { --dx: -93px; --dy: 117px; --r: 39deg; --c: #F27A1A; animation-delay: 27ms; }
+.petals i:nth-child(3) { --dx: -118px; --dy: 106px; --r: -174deg; --c: #C42A1E; animation-delay: 70ms; }
+.petals i:nth-child(4) { --dx: -193px; --dy: 69px; --r: -106deg; --c: #FFF4E0; animation-delay: 80ms; }
+.petals i:nth-child(5) { --dx: -213px; --dy: 23px; --r: -17deg; --c: #FFD25E; animation-delay: 6ms; }
+.petals i:nth-child(6) { --dx: -98px; --dy: 6px; --r: -72deg; --c: #FFB627; animation-delay: 53ms; }
+.petals i:nth-child(7) { --dx: -99px; --dy: -26px; --r: 197deg; --c: #F27A1A; animation-delay: 87ms; }
+.petals i:nth-child(8) { --dx: -97px; --dy: -70px; --r: -30deg; --c: #C42A1E; animation-delay: 12ms; }
+.petals i:nth-child(9) { --dx: -18px; --dy: -70px; --r: -115deg; --c: #FFF4E0; animation-delay: 63ms; }
+.petals i:nth-child(10) { --dx: 34px; --dy: -90px; --r: 79deg; --c: #FFD25E; animation-delay: 118ms; }
+.petals i:nth-child(11) { --dx: 66px; --dy: -50px; --r: 137deg; --c: #FFB627; animation-delay: 99ms; }
+.petals i:nth-child(12) { --dx: 118px; --dy: -60px; --r: -45deg; --c: #F27A1A; animation-delay: 93ms; }
+.petals i:nth-child(13) { --dx: 161px; --dy: -36px; --r: 42deg; --c: #C42A1E; animation-delay: 53ms; }
+.petals i:nth-child(14) { --dx: 145px; --dy: 36px; --r: -5deg; --c: #FFF4E0; animation-delay: 5ms; }
+.petals i:nth-child(15) { --dx: 110px; --dy: 79px; --r: 184deg; --c: #FFD25E; animation-delay: 112ms; }
+.petals i:nth-child(16) { --dx: 115px; --dy: 108px; --r: 34deg; --c: #FFB627; animation-delay: 74ms; }
+.petals i:nth-child(17) { --dx: 63px; --dy: 103px; --r: -82deg; --c: #F27A1A; animation-delay: 60ms; }
+.petals i:nth-child(18) { --dx: 31px; --dy: 140px; --r: -62deg; --c: #C42A1E; animation-delay: 82ms; }
+
+/* Fireworks (pataka) for the verdict: each burst rockets up, then throws sparks outward */
+.fireworks { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+@media (max-width: 63.99rem) { .fireworks { top: auto; height: 55%; } }
+.fw { position: absolute; left: var(--x); top: var(--y); width: 0; height: 0; }
+.fw i { position: absolute; left: 0; top: 0; rotate: var(--a); }
+.fw i::after { content: ""; position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px 3px var(--c); opacity: 0; }
+.fw::before { content: ""; position: absolute; left: -1.5px; top: 0; width: 3px; height: 26px; border-radius: 3px; background: linear-gradient(var(--c), transparent); opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .shot.is-celebrating .fw::before { animation: rocket 0.5s ease-out var(--delay) both; }
+  .shot.is-celebrating .fw i::after { animation: spark 1.3s cubic-bezier(.1, .75, .3, 1) calc(var(--delay) + 0.45s) both; }
+}
+@keyframes rocket { 0% { translate: 0 220px; opacity: 1; } 90% { opacity: 1; } 100% { translate: 0 0; opacity: 0; } }
+@keyframes spark { 0% { translate: 0 0; opacity: 1; scale: 1; } 75% { opacity: 1; } 100% { translate: 0 -120px; opacity: 0; scale: 0.4; } }
 
 /* Embers rising behind the scene: the one ambient motion on the page. */
 .embers { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
@@ -186,8 +245,6 @@ p { margin: 0; }
 .shot.is-done .check-bug, .checks .check-bug.is-hit { background: var(--vermilion); border-color: var(--vermilion); color: #FFFFFF; }
 .shot:not(.is-done) .checks li:not(.is-hit) { opacity: 0.55; }
 .shot-foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0.5rem 1.25rem; margin-top: 1rem; }
-.shot-summary { font-weight: 600; min-height: 1.6em; }
-.shot:not(.is-done) .shot-summary { visibility: hidden; }
 .hero .link-button { text-decoration-color: currentColor; }
 
 /* Sections */

@@ -105,13 +105,14 @@ function shot(figure) {
   trail.style.strokeDasharray = length;
 
   let inFlight = false;
+  const verdict = figure.querySelector("#verdict");
+  const verdictText = verdict.textContent;
   let clearCallout = 0;
-  const summary = figure.querySelector(".shot-summary");
-  const summaryText = summary.textContent;
 
   function arm() {
     clearTimeout(clearCallout);
-    summary.textContent = "";
+    verdict.textContent = "";
+    figure.classList.remove("is-celebrating");
     figure.classList.remove("is-done");
     hits.concat(checks).forEach((el) => el.classList.remove("is-hit"));
     trail.style.strokeDashoffset = length;
@@ -184,12 +185,16 @@ function shot(figure) {
       }
       if (t < 1 || next < hits.length) requestAnimationFrame(frame);
       else {
-        figure.classList.remove("is-firing", "is-struck");
-        figure.classList.add("is-done");
-        clearCallout = setTimeout(() => { callout.className = "callout"; }, 1600);
-        summary.textContent = summaryText;
-        button.removeAttribute("aria-disabled");
-        inFlight = false;
+        // The arrow hangs past the last head for a beat, then fades as the verdict rises.
+        clearCallout = setTimeout(() => {
+          callout.className = "callout";
+          figure.classList.remove("is-firing", "is-struck");
+          figure.classList.add("is-done");
+          figure.classList.add("is-celebrating");
+          verdict.textContent = verdictText;
+          button.removeAttribute("aria-disabled");
+          inFlight = false;
+        }, 700);
       }
     }
     requestAnimationFrame(frame);
@@ -204,6 +209,8 @@ function shot(figure) {
     fire();
   }, { threshold: 0.4 });
   arm();
+  // Transitions start only after arming, so the page does not fade from the finished pose on load.
+  requestAnimationFrame(() => figure.classList.add("is-live"));
   io.observe(svg);
 }
 
