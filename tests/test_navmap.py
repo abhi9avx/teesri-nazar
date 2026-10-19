@@ -40,8 +40,8 @@ class Log:
     def wait(self, sid, ok=True):
         return self.add(type="wait", sid=sid, ok=ok, selector={"text": "x"})
 
-    def check(self, sid, ok=True, **kw):
-        return self.add(type="check", kind="ui", sid=sid, ok=ok, selector={"text": "x"}, **kw)
+    def check(self, sid, ok=True, text="x", **kw):
+        return self.add(type="check", kind="ui", sid=sid, ok=ok, selector={"text": text}, **kw)
 
 
 def scr(sid, title="t"):
@@ -159,7 +159,7 @@ class ReviewFixesTest(unittest.TestCase):
     def test_a_name_repeated_in_one_run_is_one_line(self):
         log = Log()
         for _ in range(3):
-            log.add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("PB")
+            log.add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("PB", text="Passbook")
         self.assertEqual(sum(1 for o in learn(log) if o["k"] == "name"), 1)
 
     def test_a_goto_answered_by_a_flow_ends_the_search(self):
@@ -177,7 +177,7 @@ class EpisodeTest(unittest.TestCase):
 
     def test_the_last_passing_check_of_the_episode_names_the_screen(self):
         log = self.miss(Log(), "loan statement", "HOME").tap("HOME", text="Loans").check("LOANS") \
-            .tap("LOANS", text="Statement").check("STMT")
+            .tap("LOANS", text="Statement").check("STMT", text="Loan statement")
         self.assertEqual(self.names(learn(log)), [("loan statement", "STMT")])
 
     def test_no_check_no_name(self):
@@ -213,10 +213,19 @@ class EpisodeTest(unittest.TestCase):
             .add(type="key", key="back").seen("HOME")
         self.assertEqual(self.names(learn(log)), [])
 
-    def test_an_unrelated_last_check_still_teaches_a_synonym(self):
+    def test_a_check_that_says_none_of_the_phrase_never_names(self):
+        """Found by the benchmark: "faqs" was given to the Contact us tab. Synonyms are taught with
+        `map name` instead."""
         log = self.miss(Log(), "my money", "HOME").tap("HOME", text="Savings") \
             .add(type="check", kind="ui", sid="SAV", ok=True, selector={"text": "Savings"})
-        self.assertEqual(self.names(learn(log)), [("money", "SAV")])
+        self.assertEqual(self.names(learn(log)), [])
+
+    def test_a_goto_for_part_of_the_request_keeps_the_bigger_search_open(self):
+        log = self.miss(Log(), "contact us page in faqs", "HOME") \
+            .add(type="nav", phrase="faqs", outcome="unknown", sid="HOME", episode=True) \
+            .tap("HOME", text="FAQs").wait("FAQ").tap("FAQ", text="Contact us") \
+            .add(type="check", kind="ui", sid="CONTACT", ok=True, selector={"desc": "Contact us"})
+        self.assertEqual(self.names(learn(log)), [("contact us page in faqs", "CONTACT")])
 
     def test_episode_closes_after_too_many_actions(self):
         log = self.miss(Log(), "passbook", "HOME")
@@ -245,7 +254,7 @@ class StoreTest(unittest.TestCase):
 
     def test_learned_route_and_name_work_next_time(self):
         log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \
-            .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB")
+            .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB", text="Passbook")
         self.save(log, "r1")
         hops = self.route("HOME", "Open my Passbook")
         self.assertEqual([(h.frm, h.to) for h in hops], [("HOME", "SAV"), ("SAV", "PB")])
@@ -454,7 +463,7 @@ class StoreTest(unittest.TestCase):
 
     def test_a_normal_screen_keeps_every_way_in(self):
         log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \
-            .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB") \
+            .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB", text="Passbook") \
             .seen("PROF").tap("PROF", text="Statements").wait("STMT").tap("STMT", text="Open passbook").wait("PB")
         self.save(log, "r1")
         m = navmap.NavMap.load(APP, version="1.0")
@@ -466,8 +475,8 @@ class StoreTest(unittest.TestCase):
         self.assertIsNone(m.route("HOME", {"SAV"}))
 
     def test_explicit_name_overrides_learned_ones_and_conflicts_are_reported(self):
-        a = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("PB")
-        b = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("STMT")
+        a = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("PB", text="Passbook")
+        b = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("STMT", text="Passbook")
         self.save(a, "r1")
         self.save(b, "r2")
         m = navmap.NavMap.load(APP, version="1.0")
@@ -476,19 +485,19 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(navmap.NavMap.load(APP, version="1.0").resolve("passbook"), {"PB"})
 
     def test_forget_beats_evidence_from_before_it_even_from_the_running_run(self):
-        log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("PB")
+        log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("PB", text="Passbook")
         extra = navmap.learn(log.events, run="r1", version="1.0", screens={"PB": scr("PB")})
         navmap.Store(APP).append([navmap.forget_line("name", "passbook")], None)
         self.assertEqual(navmap.NavMap.load(APP, version="1.0", extra=extra).resolve("passbook"), set())
 
     def test_forget_removes_a_name_and_later_evidence_relearns_it(self):
         self.save(Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True)
-                  .check("PB"), "r1")
+                  .check("PB", text="Passbook"), "r1")
         navmap.Store(APP).append([navmap.forget_line("name", "passbook")], None)
         self.assertEqual(navmap.NavMap.load(APP, version="1.0").resolve("passbook"), set())
         later = Log(day="2099-01-01")  # a run after the forget
         self.save(later.add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True)
-                  .check("PB"), "r2")
+                  .check("PB", text="Passbook"), "r2")
         self.assertEqual(navmap.NavMap.load(APP, version="1.0").resolve("passbook"), {"PB"})
 
     def test_screens_seen_again_under_a_new_id_are_the_same_screen(self):

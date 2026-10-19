@@ -295,8 +295,8 @@ def _check_label(e: dict) -> str:
 def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
     """After `goto <phrase>` missed, which screen did the agent go looking for? A passing check
     that says every word of the phrase ends the search there. Otherwise the check saying most of
-    it, the latest of equals; a check that says none of it counts only while the agent stays (a
-    Back after it means that was not the place)."""
+    it, the latest of equals. A check that says none of it never names a screen (synonyms are
+    taught with `map name`), and a goto for part of the phrase does not end the search."""
     names, ep = [], None
 
     def close():
@@ -314,6 +314,8 @@ def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
         if seen and seen != here:
             entered[seen], here = last_tap, seen
         if typ == "nav":
+            if ep and e.get("phrase") and _words(e["phrase"]) and _words(e["phrase"]) < ep["words"]:
+                continue  # a goto for part of the request ("faqs" on the way to "contact us in faqs")
             close()
             try:
                 ok_phrase = bool(e.get("episode") and e.get("phrase") and check_phrase(e["phrase"]))
@@ -338,7 +340,7 @@ def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
                 and not e.get("gone") and e.get("sid") and e["sid"] != ep["start"]:
             said = _words(_check_label(e))
             score = len(ep["words"] & said) / max(len(ep["words"]), 1)
-            if ep["best"] is None or score >= ep["best"][0]:
+            if score > 0 and (ep["best"] is None or score >= ep["best"][0]):
                 ep["best"] = (score, n, e["sid"], e.get("t", ""), entered.get(e["sid"]))
             if score >= 1:
                 close()

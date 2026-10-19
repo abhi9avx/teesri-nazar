@@ -199,14 +199,14 @@ class WrongNamesTest(GotoBase):
         self.explore_passbook()
         self.stop()
         self.start()
-        self.t("goto", "passbook2", code=2)
+        self.t("goto", "statements page", code=2)
         self.t("tap", "Profile")
         self.t("check", "Statements")
         self.stop()
         # Both runs learned a name; teach "passbook" to Statements too, by hand-editing a learned line.
         mapfile = os.path.join(self.home, "maps", PACKAGE, "map.jsonl")
         lines = [json.loads(x) for x in open(mapfile)]
-        stmt = [d for d in lines if d.get("k") == "name" and d["phrase"] == "passbook2"][0]["screen"]
+        stmt = [d for d in lines if d.get("k") == "name" and d["phrase"] == "statements page"][0]["screen"]
         with open(mapfile, "a") as f:
             f.write(json.dumps({"k": "name", "phrase": "passbook", "screen": stmt, "src": "learned"}) + "\n")
         self.start()
