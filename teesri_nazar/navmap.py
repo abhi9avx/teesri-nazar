@@ -35,6 +35,7 @@ from .errors import UserError
 
 SCHEMA = 4  # 2: screens carry their menu; 3: tab strips are not menu; 4: nearly empty pages are not screens. An older map is moved aside and relearned
 MAX_GAP = 60.0          # seconds between an action and the read that shows where it went
+RESPOND = 3.0           # a read of the same screen this soon after a tap: the app may not have moved yet
 EPISODE_ACTIONS = 25    # a phrase search ends after this many actions without a new goto
 MAX_SELECTOR = 24
 LOCK_WAIT = 10.0  # a run stopping while `map compact` rewrites waits rather than loses its learning
@@ -213,15 +214,19 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
 
     def settle(sid, t):
         nonlocal last, pending, hint
+        if pending not in (None, VOID) and sid == last and _ts(t) - pending["at"] < RESPOND:
+            return  # looked right after the tap, before the screen changed: the tap still counts
         if pending not in (None, VOID) and last and sid != last and _ts(t) - pending["at"] <= MAX_GAP:
             emit_edge(last, sid, pending, t)
         if sid != last:
             hint = None
         last, pending = sid, None
 
-    def act(a):
+    def act(a, unmoved=False):
+        """`unmoved`: this action's own read still showed the screen of the pending one, so that
+        one did nothing (a toggle) and this one takes its place."""
         nonlocal pending
-        pending = VOID if pending is not None else a
+        pending = a if pending is None or (unmoved and pending is not VOID) else VOID
 
     for e in events:
         typ, t = e.get("type"), e.get("t", "")
@@ -232,7 +237,7 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
                 continue
             sel = e.get("stable") or e.get("selector")
             act({"kind": "tap" if sel else "xy", "sel": sel, "label": e.get("label"), "at": _ts(t),
-                 "scroll": hint})
+                 "scroll": hint}, unmoved=bool(seen) and seen == last)
             hint = None
         elif typ == "type":
             pending = VOID
@@ -344,16 +349,21 @@ def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
         elif typ == "check" and e.get("ok") and e.get("kind", "ui") == "ui" and e.get("selector") \
                 and not e.get("gone") and e.get("sid"):
             said = _words(_check_label(e))
-            for ep in reversed(list(open_)):  # the innermost search first
+            # The biggest open request first: a check that says all of it is its screen, and every
+            # search inside it ends there too (keeping only what it had found before).
+            for ep in list(open_):
                 if e["sid"] == ep["start"]:
                     continue
                 score = len(ep["words"] & said) / max(len(ep["words"]), 1)
+                if score >= 1:
+                    ep["best"] = (score, n, e["sid"], e.get("t", ""), entered.get(e["sid"]))
+                    inner = open_[open_.index(ep):]
+                    close(ep)
+                    for x in inner[1:][::-1]:
+                        close(x)
+                    break
                 if score > 0 and (ep["best"] is None or score >= ep["best"][0]):
                     ep["best"] = (score, n, e["sid"], e.get("t", ""), entered.get(e["sid"]))
-                if score >= 1:
-                    for inner in [x for x in open_ if open_.index(x) >= open_.index(ep)][::-1]:
-                        close(inner)
-                    break
     close_all()
     return names
 

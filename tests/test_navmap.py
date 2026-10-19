@@ -70,6 +70,19 @@ class LearnEdgesTest(unittest.TestCase):
         log = Log().tap("HOME", text="Dark mode").wait("HOME").tap("HOME", text="Savings").wait("SAV")
         self.assertEqual(edges(learn(log)), [("HOME", "SAV", "tap")])
 
+    def test_a_look_right_after_the_tap_before_the_screen_changed_keeps_the_tap(self):
+        """Found by the benchmark: observe 0.3 s after tapping Apps still showed Home."""
+        log = Log().tap("HOME", text="Apps")
+        log.t -= 0.7
+        log.seen("HOME").seen("APPS")
+        self.assertEqual(edges(learn(log)), [("HOME", "APPS", "tap")])
+
+    def test_a_tap_that_still_shows_the_same_screen_seconds_later_learns_nothing(self):
+        log = Log().tap("HOME", text="Dark mode")
+        log.t += 4
+        log.seen("HOME").add(type="key", key="back").seen("PREV")
+        self.assertEqual([x for x in edges(learn(log)) if x[2] == "tap"], [])
+
     def test_two_actions_before_the_next_read_learn_nothing(self):
         log = Log().tap("HOME", text="Savings").add(type="tap", selector=None, xy=[1, 2], label="1,2").wait("PB")
         self.assertEqual(edges(learn(log)), [])
@@ -226,6 +239,13 @@ class EpisodeTest(unittest.TestCase):
             .tap("HOME", text="Settings").add(type="check", kind="ui", sid="SET", ok=True,
                                               selector={"text": "Settings"})
         self.assertEqual(self.names(learn(log)), [("settings", "SET")])
+
+    def test_a_check_that_says_the_whole_bigger_request_goes_to_the_bigger_request(self):
+        log = self.miss(Log(), "card settings", "HOME") \
+            .add(type="nav", phrase="settings", outcome="unknown", sid="HOME", episode=True) \
+            .tap("HOME", text="Card").add(type="check", kind="ui", sid="CARDSET", ok=True,
+                                          selector={"text": "Card settings"})
+        self.assertEqual(self.names(learn(log)), [("card settings", "CARDSET")])
 
     def test_a_goto_for_part_of_the_request_keeps_the_bigger_search_open(self):
         log = self.miss(Log(), "contact us page in faqs", "HOME") \
