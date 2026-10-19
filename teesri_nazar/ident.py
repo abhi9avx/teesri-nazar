@@ -79,7 +79,7 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
             label = _label(e.text or e.desc, secrets) if e.clickable else ""
             # A static menu entry; rows with amounts or dates are left out, and so are the tabs of a
             # sideways strip: pages that share a tab strip are told apart by what is under it.
-            if label and "#" not in label and not any(_sideways(h) for h in holders):
+            if label and "#" not in label and not any(_sideways(h, els) for h in holders):
                 menu.add(label)
             continue
         if e.selected and e.clickable:  # a tab; marquee text is "selected" too
@@ -235,9 +235,17 @@ def _inside(e: Element, box: Element) -> bool:
     return l <= el and t <= et and er <= r and eb <= b and e.bounds != box.bounds
 
 
-def _sideways(box: Element) -> bool:
-    l, t, r, b = box.bounds
-    return "Horizontal" in box.cls or (r - l) > 2 * (b - t)
+def _sideways(box: Element, els: list[Element]) -> bool:
+    """A tab strip or carousel: its buttons sit side by side in one row (a list's rows stack)."""
+    if "Horizontal" in box.cls:
+        return True
+    items = [e for e in els if e is not box and _inside(e, box) and e.clickable and (e.text or e.desc)]
+    if len(items) < 2:
+        return False
+    tops = [e.bounds[1] for e in items]
+    lefts = {e.bounds[0] for e in items}
+    shortest = min(e.bounds[3] - e.bounds[1] for e in items)
+    return max(tops) - min(tops) < shortest and len(lefts) == len(items)
 
 
 def _area(e: Element) -> int:

@@ -151,6 +151,15 @@ class UntitledMenuTest(unittest.TestCase):
         self.assertFalse(ident.same(ident_of(faq), ident_of(contact)))
         self.assertIsNone(ident.match(ident_of(contact), {ident_of(faq).id: ident_of(faq)}))
 
+    def test_a_short_wide_vertical_list_keeps_its_menu(self):
+        """A 3-row list in a dialog is wider than tall, but its rows stack: they are a menu."""
+        box = node(cls="androidx.recyclerview.widget.RecyclerView", clickable=False, scrollable=True,
+                   bounds=(0, 1500, 1080, 1950))
+        rows_ = [node(desc=t, bounds=(0, 1500 + 150 * i, 1080, 1640 + 150 * i))
+                 for i, t in enumerate(["Savings", "Current", "Salary"])]
+        icons = [node(cls="android.widget.ImageView", bounds=(40, 100, 150, 190))]
+        self.assertEqual(len(ident_of([box, *rows_, *icons]).menu), 3)
+
     def test_rows_with_amounts_are_not_menu(self):
         a = ident_of(self.page(["Help & support", "Pricing", "Rent ₹12,000"]))
         b = ident_of(self.page(["Help & support", "Pricing", "Fuel ₹900"]))
