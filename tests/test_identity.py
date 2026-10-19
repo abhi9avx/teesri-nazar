@@ -173,6 +173,30 @@ class SettingsShapeTest(unittest.TestCase):
             node(id="switchWidget", cls="android.widget.Switch", bounds=(900, 1100, 1000, 1200))]
         self.assertTrue(ident.same(ident_of(loading), ident_of(loaded)))
 
+    def test_two_pages_with_the_same_title_but_different_rows_stay_apart(self):
+        def page(ids):
+            content = node(id="content", cls="android.widget.ScrollView", clickable=False, scrollable=True,
+                           bounds=(0, 0, 1080, 2400))
+            bar = node(id="collapsing_toolbar", desc="Settings", cls="android.widget.FrameLayout", clickable=False,
+                       bounds=(0, 60, 1080, 220))
+            rows_ = [node(id=i, text=i, bounds=(0, 300 + 200 * n, 1080, 480 + 200 * n)) for n, i in enumerate(ids)]
+            return [content, bar, *rows_]
+        a = ident_of(page(["security", "notifications"]))
+        b = ident_of(page(["change_mpin", "biometric"]))
+        self.assertFalse(ident.same(a, b))
+        self.assertTrue(ident.same(a, ident_of(page(["security", "notifications", "privacy"]))))
+
+    def test_a_scrolling_marquee_is_not_a_selected_tab(self):
+        marquee = node(id="ticker", text="Hi Asha", clickable=False, bounds=(0, 300, 1080, 360))
+        marquee["selected"] = True
+        other = dict(marquee, text="Hi Ravi")
+        self.assertTrue(ident.same(ident_of(home() + [marquee]), ident_of(home() + [other])))
+
+    def test_history_pages_are_not_money_screens_but_confirm_and_pin_are(self):
+        for t, guarded in (("Payment history", False), ("Transfer history", False), ("Pay later", False),
+                           ("Confirm payment", True), ("Enter MPIN", True)):
+            self.assertEqual(ident_of([TOOLBAR, title(t), node(id="go", text="Go")]).secure, guarded, t)
+
     def test_untitled_screens_never_merge_by_similarity(self):
         a = ident.Ident("aaaaaaaa", "screen", frozenset("abcde"), "", False)
         b = ident.Ident("bbbbbbbb", "screen", frozenset("abcdX"), "", False)

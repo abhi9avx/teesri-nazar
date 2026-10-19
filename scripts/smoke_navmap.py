@@ -79,14 +79,14 @@ class Smoke:
         off = {**self.env, "TNAZAR_MAP": "off"}
         out = self.start(env=off)
         self.check("map: off" in out, "map off: start says so")
-        observe_off = self.tn("observe", env=off)[1]
         explore_off, t_off = self.explore(env=off)
         self.tn("stop", env=off)
         self.check(not os.path.exists(self.maps), "map off: nothing learned")
 
         out = self.start()
         self.check(f"map: learning routes into {self.maps}" in out, "map on: start says where it learns")
-        observe_on = self.tn("observe")[1]
+        # Back to back on one screen: Settings' own numbers (storage, battery) change between runs.
+        observe_on, observe_off = self.tn("observe")[1], self.tn("observe", env=off)[1]
         self.check(observe_on == observe_off, "observe prints exactly the same with the map on and off")
         code, out, t_miss = self.tn("goto", "internet")
         self.check(code == 2 and "not in the map yet" in out and "screen: " in out,

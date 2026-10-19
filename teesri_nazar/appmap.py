@@ -265,7 +265,9 @@ def goto(args) -> int:
                     return _hop_failed(ctx, m, nav, phrase, i, hop, cur, "its button is not on the screen")
                 x, y = el.center
                 dev.tap(ctx.adb, x, y)
-                ctx.log({"type": "tap", "selector": hop.sel, "xy": [x, y], "label": hop.label or str(hop.sel),
+                sel = hop.sel or {}
+                ctx.log({"type": "tap", "selector": hop.sel, "xy": [x, y],
+                         "label": hop.label or sel.get("text") or sel.get("desc") or sel.get("id") or "",
                          "long": False, "screen": list(ctx.adb.screen_size()), "sid": ctx.stamp(cur), "via": "goto"})
         except live.DeviceBusy:
             raise UserError("the device is busy with another step; run goto again") from None

@@ -36,12 +36,13 @@ SCHEMA = 1
 MAX_GAP = 60.0          # seconds between an action and the read that shows where it went
 EPISODE_ACTIONS = 25    # a phrase search ends after this many actions without a new goto
 MAX_SELECTOR = 24
-LOCK_WAIT = 2.0
+LOCK_WAIT = 10.0  # a run stopping while `map compact` rewrites waits rather than loses its learning
 UNSAFE_WORDS = ("pay", "send", "transfer", "confirm", "buy", "purchase", "withdraw", "invest", "delete",
                 "remove", "submit", "checkout", "place order", "add money", "log out", "logout", "sign out",
                 "uninstall", "reset", "erase")
 _FILLER = ("open", "go to", "goto", "show me", "show", "check", "view", "navigate to", "take me to", "my", "the", "me")
 _PII = re.compile(r"\d|@|₹|\$|€|£|\brs\.?\b", re.IGNORECASE)
+_MONEY = re.compile(r"@|₹|\$|€|£|\brs\.?\s?\d", re.IGNORECASE)
 # Taps that go back to wherever the user came from: where they lead depends on history.
 _BACKWARD = {"navigate up", "back", "go back", "close", "dismiss", "cancel", "done"}
 _WORD = re.compile(r"[a-z]+")
@@ -94,8 +95,8 @@ def secrets() -> set:
 def _backward(sel: dict | None, label: str) -> bool:
     sel = sel or {}
     words = {normalise(str(v)) for v in (label, sel.get("text"), sel.get("desc")) if v}
-    rid = (sel.get("id") or "").casefold()
-    return bool(words & _BACKWARD) or rid in ("btn_back", "back", "close", "btn_close", "up", "navigate_up")
+    parts = set((sel.get("id") or "").casefold().replace("-", "_").split("_"))
+    return bool(words & _BACKWARD) or bool(parts & {"back", "close", "up", "dismiss", "cancel"})
 
 
 def _clean(value: str | None, secrets=()) -> bool:
@@ -134,9 +135,10 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
         texts = [label] + [raw.get(k) for k in ("text", "desc") if raw and raw.get(k)]
         if kind == "tap" and _backward(raw, label):
             kind = "back"
-        # A label that cannot be stored ("Place order ₹1,299", a name) is the very thing that
-        # says whether the step is safe: without it, the step is knowledge only, even by its id.
-        if kind == "tap" and any(not _clean(x, secrets) for x in texts):
+        # The label says whether a step moves money ("Place order ₹1,299"): judged on the raw text,
+        # before it is dropped. Amounts, emails and secrets make it knowledge only even by its id.
+        if kind == "tap" and (unsafe_label(*texts) or any(_MONEY.search(x) or any(v and v in x for v in secrets)
+                                                          for x in texts)):
             kind = "xy"
         sel = _scrub_selector(raw, secrets) if kind == "tap" else None
         if kind == "tap" and not sel:
@@ -659,6 +661,8 @@ def compact(app: str, version: str = "") -> int:
     things. What `NavMap.load` makes of it is unchanged. Holds the lock throughout, so a run
     learned meanwhile waits instead of being lost."""
     store = Store(app)
+    if store.foreign_schema():
+        raise ValueError(f"{store.path} was written by another tnazar version; left as it is")
     with store.lock():
         m = NavMap.load(app, version)
         lines: list[dict] = []

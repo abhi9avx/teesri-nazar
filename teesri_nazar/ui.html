@@ -283,6 +283,7 @@ function describe(e) {
                                          `expected “${e.expected}”, but ${e.why}`];
       if (e.outcome === "unknown") return ["🧭", `${where} is not in the map yet: finding the way`];
       if (e.outcome === "conflict") return ["⚠️", `${where} means more than one screen in the map`];
+      if (e.outcome === "flow") return ["🧭", `Going to ${where} by the saved flow "${e.flow}"`];
       if (e.outcome === "stopped") return ["⏸", `Stopped the route to ${where} for your message`];
       return ["🧭", `No learned route to ${where} from this screen: finding the way`];
     }

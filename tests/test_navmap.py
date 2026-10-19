@@ -140,6 +140,17 @@ class ReviewFixesTest(unittest.TestCase):
             log = Log().add(type="tap", sid="SAV", selector=sel, label="x").wait("HOME")
             self.assertEqual(edges(learn(log)), [("SAV", "HOME", "back")], sel)
 
+    def test_back_buttons_named_by_id_are_back_steps(self):
+        for rid in ("iv_back", "img_close", "toolbar_back_button"):
+            log = Log().add(type="tap", sid="SAV", selector={"id": rid}, label=rid).wait("HOME")
+            self.assertEqual(edges(learn(log)), [("SAV", "HOME", "back")], rid)
+
+    def test_an_id_button_with_digits_in_its_label_still_runs_without_storing_the_label(self):
+        log = Log().add(type="tap", sid="HOME", selector={"text": "Form 16"}, stable={"id": "btn_form"},
+                        label="Form 16").wait("FORM")
+        e = [o for o in learn(log) if o["k"] == "edge"][0]
+        self.assertEqual((e["kind"], e["sel"], e["label"]), ("tap", {"id": "btn_form"}, ""))
+
     def test_long_labels_are_not_stored(self):
         log = Log().tap("HOME", text="Asha Ramachandran Krishnan").wait("PROF")
         e = [o for o in learn(log) if o["k"] == "edge"][0]

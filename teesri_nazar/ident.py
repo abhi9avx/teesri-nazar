@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from .screen import Element, Screen, _norm
 
 SAME = 0.6  # with equal titles: one changed button on a small screen keeps it the same screen
+SMALL_FRAME = 4  # a frame this small (a page that is all list) cannot tell two same-titled pages apart
 MAX_LABEL = 24
 TITLE_TOP = 0.15  # a title with no toolbar or title id: the topmost label in this band of the screen
 _DIGITS = re.compile(r"\d+")
@@ -63,7 +64,7 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
             if e.rid:
                 inner.add(f"in:{e.short_cls}:{e.short_id}")
             continue
-        if e.selected:
+        if e.selected and e.clickable:  # a tab; marquee text is "selected" too
             tabs.add(e.short_id or _label(e.text or e.desc, secrets))
         if e.scrollable:
             tokens.add(f"scroll:{e.short_cls}:{e.short_id}")
@@ -79,7 +80,7 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
                 quiet.append(token)
             else:
                 tokens.add(token)
-    if not tokens and not inner:
+    if not tokens:
         tokens.update(quiet)
     title = _title(els, scrolls, screen, secrets)
     frame = frozenset(_h(t) for t in tokens)
@@ -95,13 +96,21 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
 def same(a: Ident, b: Ident) -> bool:
     if a.id and a.id == b.id:
         return True
-    return bool(a.title) and a.title == b.title and a.tab == b.tab and _overlap(a.tokens, b.tokens) >= SAME
+    return _score(a, b) >= SAME
 
 
-def _overlap(a: frozenset, b: frozenset) -> float:
-    if not a and not b:
-        return 1.0  # a page that is all list: the title alone says which one
-    return len(a & b) / len(a | b)
+def _score(a: Ident, b: Ident) -> float:
+    """How alike two reads with the same title and tab are; 0 when they cannot be one screen.
+    A page that is all list has a tiny frame shared by every page of the app's layout: then its
+    list ids must overlap too, counted against the smaller list (one still loading is the same
+    page, one with other rows is not)."""
+    if not a.title or a.title != b.title or a.tab != b.tab:
+        return 0.0
+    frame = len(a.tokens & b.tokens) / len(a.tokens | b.tokens) if a.tokens | b.tokens else 1.0
+    if len(a.tokens | b.tokens) < SMALL_FRAME and a.inner and b.inner:
+        if len(a.inner & b.inner) / min(len(a.inner), len(b.inner)) < 0.5:
+            return 0.0
+    return frame
 
 
 def match(ident: Ident, stored: dict) -> str | None:
@@ -114,9 +123,7 @@ def match(ident: Ident, stored: dict) -> str | None:
         return None
     best, score = None, SAME
     for sid, other in stored.items():
-        if other.title != ident.title or other.tab != ident.tab:
-            continue
-        s = _overlap(other.tokens, ident.tokens)
+        s = _score(other, ident)
         if s > score or (s == score and best is None):
             best, score = sid, s
     return best
@@ -133,7 +140,8 @@ def _label(raw: str, secrets, limit: int = MAX_LABEL) -> str:
     return label if len(label) <= limit else ""
 
 
-_UNSAFE_TITLE = re.compile(r"\b(pay|payment|transfer|send money|confirm|checkout|withdraw|enter (m)?pin)\b")
+# The screen where money moves or a PIN is asked; "Payment history" or "Pay later" are places to go.
+_UNSAFE_TITLE = re.compile(r"\b(confirm|review and pay|checkout|enter (m|upi )?pin|authori[sz]e|verify payment)\b")
 
 
 def _unsafe_title(title: str) -> bool:
