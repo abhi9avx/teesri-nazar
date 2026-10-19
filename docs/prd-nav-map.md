@@ -131,8 +131,10 @@ same screen look new; scroll-end detection and report grouping depend on that, s
   - `opaque` — dominated by one WebView / Flutter / canvas view. Never stored; **transparent** for
     recording (does not end or clear a pending action).
   - `loading` — a progress indicator and nothing else interactive. Transparent, never stored.
-  - `overlay` — a small top window (dialog, bottom sheet, keyboard) over the app. Stored as a screen
-    of its own, never auto-dismissed.
+  - `foreign` — no element of the app's own package (a system permission dialog, the launcher,
+    another app). Transparent, never stored, never dismissed. Keyboard nodes (another package) are
+    ignored when identifying the app screen under them; an in-app dialog or bottom sheet is an ordinary
+    screen of its own.
 - Tokens are stored **hashed**; plain text is kept only for tap selectors and the title.
 
 ### A2. Navigation habits (tester prompt, no code)
@@ -424,3 +426,60 @@ days** for v1 (v0.1 scope was ≈ 21–26).
 | E5 | No dismissing of permission/system dialogs |
 | E6 | Max 60 s between an action and its arrival read |
 | E7 | Unknown phrase, unknown start, no route and conflict all use exit 2 (no new exit code) |
+
+---
+
+## 13. Edge cases (analysed before building; each has a test)
+
+### Names (what the user says)
+
+| # | Case | Behaviour |
+|---|---|---|
+| N1 | "open passbook" asked 3×, 30×, in one run or many | one name row per (phrase, screen); counts once per run; every repeat is a `goto` hit, no new rows |
+| N2 | "Open my Passbook" / "go to passbook" / "PASSBOOK" / "the passbook" | normalised to `passbook`: the same name |
+| N3 | misspelt: "pasbook", "sorbook" | a miss never guesses. `goto` prints `did you mean: passbook?` (close known names, stdlib `difflib`) and the screen; it never runs a fuzzy match. The prompt tells the agent to correct the spelling against `tnazar map` before calling `goto` |
+| N4 | misspelling still explored and checked on the right screen | bound as an extra name of the right screen: harmless |
+| N5 | wrong binding: the agent checks the wrong screen for "passbook" | it binds there. Correct with `map name <right screen> passbook` (an explicit name overrides every learned binding of that phrase) or `map forget passbook`. A later learned binding of the same phrase to a different screen is a **conflict**: `goto` exits 2 listing both, never picks one |
+| N6 | the phrase is also a flow name (`open_settings` ↔ "settings") | the hand-written flow runs |
+| N7 | the phrase normalises to nothing ("open", "go to") | exit 2 "say which screen" |
+| N8 | a phrase that is a screen id | the screen id wins (ids are 8 hex characters) |
+| N9 | multi-step phrase ("statement of my active loan") | exact phrase only; bound to the final screen after one exploration |
+| N10 | episode with no passing check, or only `--gone` / `--result` checks, or checks only on the start screen | nothing bound |
+
+### Screens
+
+| # | Case | Behaviour |
+|---|---|---|
+| E1 | same screen visited many times, scrolled, balance changed | one canonical screen (rows and digits excluded) |
+| E2 | same layout, different titles (two settings pages) | different screens |
+| E3 | two screens with no ids or titles that look alike | may merge (residual risk); every hop still waits for a *changed* identity, and the benchmark's wrong-screen metric guards it |
+| E4 | keyboard open vs closed | the same screen (keyboard nodes are another package) |
+| E5 | loading spinner, WebView/Flutter canvas, system dialog | transparent: never stored, never end an edge |
+| E6 | locale or dark-mode change | labels differ → new screens; routes re-learn |
+| E7 | different test accounts show different screens | different screens; a route that does not fit fails at the hop, never passes wrongly |
+
+### Routes
+
+| # | Case | Behaviour |
+|---|---|---|
+| R1 | two or more ways into a screen | fewest hops from the screen the user is on |
+| R2 | start screen unknown / transparent | exit 2 with the screen listing; no blind `back` |
+| R3 | already on the target | exit 0, no taps |
+| R4 | the hop's button is below the fold | the edge remembers the `scroll --to` that found it; `goto` scrolls the same way (bounded) before tapping |
+| R5 | toggle / no-op tap | same screen → no edge |
+| R6 | money-moving or MPIN target | stored, never run |
+| R7 | back / up / typed / pixel-only actions | knowledge only, never run |
+| R8 | new build renames a button | hop fails, exit 1 naming it; not retried this run; retired after 2 consecutive failures on that version; the explored replacement is used next time |
+| R9 | session expired: login screen appears mid-route | another known screen stable for 2 reads → fail fast, exit 1 |
+| R10 | dashboard message or pause mid-route | stops between hops, exit 3 / 5 |
+| R11 | run without `--package` | nothing learned; `goto` exits 2 explaining why |
+
+### Storage
+
+| # | Case | Behaviour |
+|---|---|---|
+| S1 | map off | identical output, reads and adb calls; nothing written |
+| S2 | corrupt line, unknown schema, unwritable directory, no file locking | warning once; the command's result and exit code unchanged |
+| S3 | two runs on two devices learning the same app at once | appends under a lock; nothing lost or torn |
+| S4 | a run stopped twice / learned at `stop` and again at the next `start` | learned once (a per-run marker) |
+| S5 | `.dev` and `.test` builds | separate maps |
