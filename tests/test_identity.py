@@ -140,6 +140,17 @@ class UntitledMenuTest(unittest.TestCase):
         self.assertFalse(ident.compatible(article, profile))
         self.assertIsNone(ident.match(profile, {article.id: article}))
 
+    def test_pages_sharing_a_tab_strip_are_told_apart_by_their_content(self):
+        """Found on a device: an FAQ list and its Contact tab share a sideways tab strip."""
+        strip = node(cls="android.widget.HorizontalScrollView", clickable=False, scrollable=True,
+                     bounds=(0, 250, 1080, 400))
+        tabs = [node(desc=t, bounds=(i * 216, 260, i * 216 + 200, 390))
+                for i, t in enumerate(["Savings account", "Fixed deposits", "atoms", "UPI", "Contact us"])]
+        faq = self.page(["What is ASBA", "Interest rate", "Open account", "Close account"], [strip, *tabs])
+        contact = self.page(["Chat with us", "help desk", "Write to us"], [strip, *tabs])
+        self.assertFalse(ident.same(ident_of(faq), ident_of(contact)))
+        self.assertIsNone(ident.match(ident_of(contact), {ident_of(faq).id: ident_of(faq)}))
+
     def test_rows_with_amounts_are_not_menu(self):
         a = ident_of(self.page(["Help & support", "Pricing", "Rent ₹12,000"]))
         b = ident_of(self.page(["Help & support", "Pricing", "Fuel ₹900"]))

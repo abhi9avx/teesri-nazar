@@ -72,12 +72,15 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
         if not (e.text or e.desc or e.clickable or e.scrollable or e.password or e.checkable
                 or (e.rid and "EditText" in e.cls)):
             continue
-        if any(_inside(e, s) for s in scrolls if s is not e):
+        holders = [s for s in scrolls if s is not e and _inside(e, s)]
+        if holders:
             if e.rid:
                 inner.add(f"in:{e.short_cls}:{e.short_id}")
             label = _label(e.text or e.desc, secrets) if e.clickable else ""
-            if label and "#" not in label:
-                menu.add(label)  # a static menu entry; rows with amounts or dates are left out
+            # A static menu entry; rows with amounts or dates are left out, and so are the tabs of a
+            # sideways strip: pages that share a tab strip are told apart by what is under it.
+            if label and "#" not in label and not any(_sideways(h) for h in holders):
+                menu.add(label)
             continue
         if e.selected and e.clickable:  # a tab; marquee text is "selected" too
             tabs.add(e.short_id or _label(e.text or e.desc, secrets))
@@ -125,9 +128,8 @@ def _score(a: Ident, b: Ident) -> float:
     frame = len(a.tokens & b.tokens) / len(a.tokens | b.tokens) if a.tokens | b.tokens else 1.0
     if not (a.title and b.title):
         # Untitled, or a top label read on one visit only (it comes and goes on Compose screens):
-        # only the menu anchors the page. The same frame and mostly the same menu, counted against
-        # the shorter one (a long list shows other entries when scrolled).
-        if _menu_overlap(a, b) < SAME:
+        # only the menu anchors the page. The same frame and mostly the same menu.
+        if not a.menu or not b.menu or len(a.menu & b.menu) / len(a.menu | b.menu) < SAME:
             return 0.0
         return frame
     if len(a.tokens | b.tokens) < SMALL_FRAME and a.inner and b.inner:
@@ -137,9 +139,9 @@ def _score(a: Ident, b: Ident) -> float:
 
 
 def _menu_overlap(a: Ident, b: Ident) -> float:
-    """Jaccard; for two menus of at least 3 entries and similar length, against the shorter one
-    (a long list shows other entries when scrolled). A small menu inside a bigger one (an article's
-    one button that the profile page also has) is another page."""
+    """For goto's arrival check only (deciding two reads are one screen uses plain Jaccard): for two
+    menus of at least 3 entries and similar length, against the shorter one (a long list shows other
+    entries when scrolled); otherwise Jaccard. A small menu inside a bigger one is another page."""
     small, big = sorted((len(a.menu), len(b.menu)))
     if not small:
         return 0.0
@@ -231,6 +233,11 @@ def _inside(e: Element, box: Element) -> bool:
     l, t, r, b = box.bounds
     el, et, er, eb = e.bounds
     return l <= el and t <= et and er <= r and eb <= b and e.bounds != box.bounds
+
+
+def _sideways(box: Element) -> bool:
+    l, t, r, b = box.bounds
+    return "Horizontal" in box.cls or (r - l) > 2 * (b - t)
 
 
 def _area(e: Element) -> int:
