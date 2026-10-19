@@ -336,6 +336,12 @@ p { margin: 0; }
 .feedback-card strong { font-family: var(--display); font-weight: 400; font-size: 1.5rem; }
 .feedback-card span { color: var(--muted); }
 
+/* Email: the address is always visible, with copy and open options, since a mailto link does nothing without a mail app */
+.email-box { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.9rem; }
+.email-addr { font-weight: 600; user-select: all; overflow-wrap: anywhere; margin-right: 0.25rem; }
+.btn-mini { display: inline-flex; align-items: center; padding: 0.35rem 0.8rem; border-radius: 999px; border: 1px solid var(--line); background: var(--chip); color: var(--fg); font: 600 0.85rem/1.2 var(--sans); text-decoration: none; cursor: pointer; }
+.btn-mini:hover { border-color: var(--saffron); }
+
 /* Shipped */
 .shipped > a { display: inline-block; margin-top: 1.5rem; font-weight: 600; }
 .releases { list-style: none; margin: 1.5rem 0 0; padding: 0; border-top: 1px solid var(--line); }

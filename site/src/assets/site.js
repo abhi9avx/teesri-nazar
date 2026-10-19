@@ -254,3 +254,16 @@ document.querySelectorAll(".docs pre").forEach((pre) => {
   });
   pre.prepend(button);
 });
+
+// Copy-to-clipboard buttons (the email address).
+document.querySelectorAll("[data-copy]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      button.textContent = "Copied";
+    } catch (e) {
+      button.textContent = "Select it";
+    }
+    setTimeout(() => { button.textContent = "Copy"; }, 1600);
+  });
+});
