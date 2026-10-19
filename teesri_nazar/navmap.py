@@ -74,7 +74,7 @@ def normalise(raw: str) -> str:
     return s
 
 
-_PII_PHRASE = re.compile(r"\d{4,}|@|₹|\$|€|£|\brs\.?\s?\d", re.IGNORECASE)
+_PII_PHRASE = re.compile(r"\d{6,}|@|₹|\$|€|£|\brs\.?\s?\d", re.IGNORECASE)  # years and form numbers are fine
 
 
 def check_phrase(raw: str) -> str:
@@ -139,7 +139,7 @@ VOID = "void"
 
 def settled_sid(e: dict) -> str | None:
     """The screen an event's own read showed, when that read counts: what a tap or typed field
-    acted on, what a passing wait or check found, where a scroll ended, an observe."""
+    acted on, what a passing wait or check found, where a scroll ended, an observe (`seen`)."""
     sid, typ = e.get("sid"), e.get("type")
     if not sid:
         return None
@@ -160,8 +160,10 @@ def edge_line(frm: str, to: str, kind: str, sel: dict | None, label: str, scroll
 
 def _run_canon(screens: dict):
     """Within one run, a screen read again after its feed changed is the same screen: map each
-    raw id to the first one read like it (stored records, in the order they were first seen)."""
-    canon, kept = {}, {}
+    raw id to the first one read like it (stored records, in the order they were first seen).
+    Returns the mapping and the screens that must never be a target: one read of them showed a
+    PIN field, so all of them carry it."""
+    canon, kept, guarded = {}, {}, set()
     for sid, rec in screens.items():
         try:
             same = ident.match(ident.Ident.from_record(dict(rec, id=sid)), kept, one_sided=False)
@@ -170,12 +172,14 @@ def _run_canon(screens: dict):
         canon[sid] = same or sid
         if not same:
             kept[sid] = ident.Ident.from_record(dict(rec, id=sid))
-    return lambda sid: canon.get(sid, sid) if sid else sid
+        if rec.get("secure"):
+            guarded.add(canon[sid])
+    return (lambda sid: canon.get(sid, sid) if sid else sid), guarded
 
 
 def learn(events: list[dict], run: str, version: str, screens: dict, secrets=()) -> list[dict]:
     """Map observations from one run's events (pure). `screens`: sid -> screen record."""
-    c = _run_canon(screens)
+    c, guarded = _run_canon(screens)
     events = [dict(e, sid=c(e["sid"])) if e.get("sid") else e for e in events]
     out: list[dict] = []
     used: set[str] = set()
@@ -262,7 +266,8 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
     for o in out:
         if o["k"] == "name":
             used.add(o["screen"])
-    shots = [dict(screens[s], k="screen") for s in sorted(used) if s in screens]
+    shots = [dict(screens[s], k="screen", secure=bool(screens[s].get("secure")) or s in guarded)
+             for s in sorted(used) if s in screens]
     return shots + out
 
 
@@ -610,7 +615,10 @@ class NavMap:
         froms: dict = {}
         for e in self.edges.values():
             if e.to == sid and e.kind != "back":
-                froms.setdefault(e.frm, set()).add(sel_key(e.sel) or id(e))
+                sel = e.sel or {}
+                # Counted by what the button says: one button learned by its text and by its id is one.
+                froms.setdefault(e.frm, set()).add(normalise(e.label or sel.get("text") or sel.get("desc") or "")
+                                                   or sel_key(e.sel) or id(e))
         return any(len(v) > 1 for v in froms.values())
 
     def known_names(self) -> list[str]:
@@ -723,12 +731,15 @@ def run_screens(run) -> dict:
     return out
 
 
-def entry_tap(events: list[dict], sid: str) -> dict | None:
-    """The tap that last opened screen `sid` in these events (scrubbed), for `map name here`."""
+def entry_tap(events: list[dict], sid: str, screens: dict | None = None) -> dict | None:
+    """The tap that last opened screen `sid` in these events (scrubbed), for `map name here`;
+    `screens` (the run's records) lets a read after a feed change count as the same screen."""
+    c, _ = _run_canon(screens or {})
+    sid = c(sid)
     hidden = secret_values()
     last_tap, here, found = None, None, None
     for e in events:
-        seen = settled_sid(e)
+        seen = c(settled_sid(e))
         if seen and seen != here:
             if seen == sid:
                 found = last_tap

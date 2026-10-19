@@ -125,14 +125,37 @@ def _score(a: Ident, b: Ident) -> float:
     frame = len(a.tokens & b.tokens) / len(a.tokens | b.tokens) if a.tokens | b.tokens else 1.0
     if not (a.title and b.title):
         # Untitled, or a top label read on one visit only (it comes and goes on Compose screens):
-        # only the menu anchors the page. The same frame and mostly the same menu.
-        if not a.menu or not b.menu or len(a.menu & b.menu) / len(a.menu | b.menu) < SAME:
+        # only the menu anchors the page. The same frame and mostly the same menu, counted against
+        # the shorter one (a long list shows other entries when scrolled).
+        if _menu_overlap(a, b) < SAME:
             return 0.0
         return frame
     if len(a.tokens | b.tokens) < SMALL_FRAME and a.inner and b.inner:
         if len(a.inner & b.inner) / min(len(a.inner), len(b.inner)) < 0.5:
             return 0.0
     return frame
+
+
+def _menu_overlap(a: Ident, b: Ident) -> float:
+    if not a.menu or not b.menu:
+        return 0.0
+    return len(a.menu & b.menu) / min(len(a.menu), len(b.menu))
+
+
+def compatible(expected: Ident, read: Ident) -> bool:
+    """Could `read` be a visit to `expected`? Looser than `same`, for checking a goto step's
+    arrival when the map holds the page twice (once with a title, once without): no conflicting
+    title or tab, the same frame, and most of the shorter menu."""
+    if read.id == expected.id:
+        return True
+    if (expected.title and read.title and expected.title != read.title) or expected.tab != read.tab:
+        return False
+    union = expected.tokens | read.tokens
+    if union and len(expected.tokens & read.tokens) / len(union) < SAME:
+        return False
+    if expected.title and expected.title == read.title:
+        return True
+    return _menu_overlap(expected, read) >= SAME
 
 
 def match(ident: Ident, stored: dict, one_sided: bool = True) -> str | None:
@@ -171,8 +194,9 @@ def _label(raw: str, secrets, limit: int = MAX_LABEL) -> str:
 
 
 # The screen where money moves or a PIN is asked; "Payment history" or "Pay later" are places to go.
-_UNSAFE_TITLE = re.compile(r"\b(confirm|review and pay|checkout|enter (m|upi )?pin|authori[sz]e|verify payment)\b"
-                           r"|^(pay|pay now|send|send money|transfer|transfer money|withdraw|withdraw money)$")
+# A bare "Pay" or "Transfer" title is usually a hub menu, not where money moves: the step that
+# moves money is caught by its own label ("Pay ₹500", "Confirm"); more words: TNAZAR_UNSAFE_WORDS.
+_UNSAFE_TITLE = re.compile(r"\b(confirm|review and pay|checkout|enter (m|upi )?pin|authori[sz]e|verify payment)\b")
 
 
 def _unsafe_title(title: str) -> bool:

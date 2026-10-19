@@ -331,7 +331,12 @@ def _arrive(ctx, m, app, hop, timeout):
         if screen is not None:
             it = ident.identify(screen, app=app, secrets=navmap.secret_values())
             sid = m.where(it) if it.id else None
-            if sid == hop.to:
+            expected, source = m.screens.get(hop.to), m.screens.get(hop.frm)
+            # The page may be held twice in the map (read with and without its title): a read that
+            # fits the target and not the screen it left counts as arriving.
+            if sid == hop.to or (it.id and expected is not None and sid != hop.frm
+                                 and ident.compatible(expected, it)
+                                 and not (source is not None and ident.compatible(source, it))):
                 return True, screen, it, ""
             if it.id and sid != hop.frm:
                 now = time.monotonic()
@@ -452,7 +457,7 @@ def _map_name(app, active, args) -> int:
         rec = navmap.run_screens(active[0]).get(sid)
         if rec:
             lines.append(dict(rec, k="screen"))
-        via = navmap.entry_tap(active[0].events(), sid)
+        via = navmap.entry_tap(active[0].events(), sid, navmap.run_screens(active[0]))
     else:
         via = None
         m = _load(app, active)

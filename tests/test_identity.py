@@ -118,6 +118,20 @@ class UntitledMenuTest(unittest.TestCase):
         untitled = ident_of(self.page(menu))
         self.assertIsNone(ident.match(untitled, {debit.id: debit, credit.id: credit}))
 
+    def test_a_long_list_seen_scrolled_differently_is_still_compatible(self):
+        full = ["Chat with us", "help desk", "grievance desk", "nodal desk", "Write to us", "Visit us"]
+        a = ident_of(self.page(full[:5]))
+        b = ident_of(self.page(full[1:], [node(text="FAQs", clickable=False, bounds=(200, 100, 600, 190))]))
+        self.assertTrue(ident.compatible(a, b))
+
+    def test_a_different_menu_or_a_different_title_is_not_compatible(self):
+        a = ident_of(self.page(["Savings account", "Fixed deposits", "atoms"]))
+        b = ident_of(self.page(["Chat with us", "help desk", "Write to us"]))
+        self.assertFalse(ident.compatible(a, b))
+        t1 = ident_of(self.page(["A", "B"], [node(text="Debit card", clickable=False, bounds=(200, 100, 600, 190))]))
+        t2 = ident_of(self.page(["A", "B"], [node(text="Credit card", clickable=False, bounds=(200, 100, 600, 190))]))
+        self.assertFalse(ident.compatible(t1, t2))
+
     def test_rows_with_amounts_are_not_menu(self):
         a = ident_of(self.page(["Help & support", "Pricing", "Rent ₹12,000"]))
         b = ident_of(self.page(["Help & support", "Pricing", "Fuel ₹900"]))
@@ -237,8 +251,7 @@ class SettingsShapeTest(unittest.TestCase):
 
     def test_history_pages_are_not_money_screens_but_confirm_and_pin_are(self):
         for t, guarded in (("Payment history", False), ("Transfer history", False), ("Pay later", False),
-                           ("Confirm payment", True), ("Enter MPIN", True), ("Send money", True),
-                           ("Transfer", True), ("Withdraw", True), ("Pay", True)):
+                           ("Confirm payment", True), ("Enter MPIN", True), ("Pay", False), ("Transfer", False)):
             self.assertEqual(ident_of([TOOLBAR, title(t), node(id="go", text="Go")]).secure, guarded, t)
 
     def test_untitled_screens_never_merge_by_similarity(self):

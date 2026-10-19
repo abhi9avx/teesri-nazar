@@ -233,7 +233,10 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
-        dev.release_device(adb, owner)
+        try:
+            dev.release_device(adb, owner)
+        except AdbError as exc:  # never at the cost of restoring the device or writing the report
+            print(f"warning: could not clear the device's in-use mark: {exc}", file=sys.stderr)
         uia2.stop(adb)
         if meta["animations_before"] is not None:
             dev.animations_restore(adb, meta["animations_before"])

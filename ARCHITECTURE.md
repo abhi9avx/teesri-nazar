@@ -955,11 +955,12 @@ or amount is never stored):
    start screen → exit 2, no `back` presses. A phrase bound to two screens → exit 2.
 4. Fewest steps from the current screen over usable steps: a selector, not money-moving
    (pay, transfer, confirm, delete, log out … in its label, recomputed on every load; or into a
-   password screen or one titled pay / transfer / confirm / enter PIN, decided when the screen
-   is read), not failed in this run, not retired (its last two results on this app version
+   password screen or one titled confirm / checkout / enter PIN, decided when the screen is
+   read), not failed in this run, not retired (its last two results on this app version
    failed). `--dry-run` prints the route.
 5. Each step taps on the screen just read, then polls until the screen *is* the step's
-   target. The screen it started from means "still on the way"; another screen holding for
+   target, or fits it without fitting the screen it left (a page the map holds twice, with
+   and without its title). The screen it started from means "still on the way"; another screen holding for
    1.5 s means the step went wrong. A wrong step stops with exit 1, prints the screen, and is
    not tried again in this run; the way the agent then finds is learned and preferred.
 6. On arrival it prints the screen like `observe` (and refreshes `last-screen.xml`), so the

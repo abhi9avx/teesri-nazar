@@ -419,6 +419,28 @@ class StoreTest(unittest.TestCase):
             with self.assertRaises(navmap.UserError):
                 navmap.check_phrase(phrase)
 
+    def test_one_button_learned_by_text_and_by_id_is_not_a_template(self):
+        self.save(Log().add(type="tap", sid="HOME", selector={"text": "Settings"}, label="Settings").wait("PROF"), "r1")
+        self.save(Log().add(type="tap", sid="HOME", selector={"text": "Settings"}, stable={"id": "btn_settings"},
+                            label="Settings").wait("PROF"), "r2")
+        navmap.Store(APP).append([navmap.name_line("settings", "PROF", explicit=True)], None)
+        m = navmap.NavMap.load(APP, version="1.0")
+        self.assertFalse(m.template("PROF"))
+        self.assertTrue(m.route("HOME", m.resolve("settings"), via=m.via("settings")))
+        self.assertEqual(m.route("PROF", m.resolve("settings"), via=m.via("settings")), [])
+
+    def test_folding_a_screen_within_a_run_keeps_its_pin_field(self):
+        add2 = dict(scr("ADD"), id="ADD2", inner=["pin"], secure=True)
+        log = Log().tap("HOME", text="Add payee").wait("ADD").tap("ADD", text="Continue").wait("ADD2")
+        obs = navmap.learn(log.events, run="r1", version="1",
+                           screens={"HOME": scr("HOME"), "ADD": scr("ADD"), "ADD2": add2})
+        navmap.Store(APP).append(obs, "r1")
+        self.assertIsNone(navmap.NavMap.load(APP, version="1").route("HOME", {"ADD"}))
+
+    def test_years_are_fine_in_a_phrase(self):
+        for phrase in ("2024 statement", "fy 2023", "form 16"):
+            self.assertTrue(navmap.check_phrase(phrase))
+
     def test_a_normal_screen_keeps_every_way_in(self):
         log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \
             .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB") \
