@@ -1,0 +1,50 @@
+# Copy of .github/workflows/deploy.yml in teesrinazar/teesrinazar.github.io.
+# The site's source lives in abhi9avx/teesri-nazar (site/ and CHANGELOG.md). That repo is public,
+# so this workflow pulls it without a token, builds it and publishes it to GitHub Pages every 6 hours.
+# GitHub disables a schedule after 60 days without commits, and this repo gets none: the last step
+# re-enables the workflow with the job's own token.
+name: deploy
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: abhi9avx/teesri-nazar
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - run: python -m unittest tests.test_site_build -v
+      - run: python site/build.py --out _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Keep the schedule enabled
+        if: always()
+        run: gh api -X PUT repos/${{ github.repository }}/actions/workflows/deploy.yml/enable
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,39 @@
+<!--
+title: Limits and fixes | Teesri Nazar docs
+description: What Teesri Nazar cannot test yet, and quick fixes for common problems like slow screen reads, no device and busy ports.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Limits and fixes</h1>
+  <p class="docs-lede">What it cannot test yet, and what to do when something goes wrong.</p>
+
+  <h2 id="limits">Limits</h2>
+  <ul>
+    <li><strong>Android only</strong>, for now.</li>
+    <li><strong>Flutter, WebView and canvas</strong> screens show little in the accessibility tree, so they are hard to test.</li>
+    <li><strong>Jetpack Compose</strong> shows no ids unless the app sets <code>testTagsAsResourceId</code>. Taps fall back to labels and text.</li>
+    <li><strong>Secure screens</strong> (PIN or card entry) come out black in screenshots. The element tree still works.</li>
+    <li><strong>Typing is ASCII only</strong>: no ₹, Hindi or emoji, because adb types that way.</li>
+    <li><strong>Screenshots show what the screen shows.</strong> A secret in a plain text field is visible in them. Use password fields.</li>
+  </ul>
+
+  <h2 id="fixes">Fixes</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">You see</th><th scope="col">Do this</th></tr></thead>
+    <tbody>
+      <tr><td>No device found</td><td>Run <code>adb devices</code>. Allow USB debugging on the phone, or start an emulator.</td></tr>
+      <tr><td><code>screen reads: uiautomator dump</code></td><td>Works, about 2 s per read. Install the UiAutomator2 server APKs it prints for ~0.05 s reads.</td></tr>
+      <tr><td>A run is in progress on this device</td><td>Another process is driving it. Wait, or <code>./tnazar stop</code> it.</td></tr>
+      <tr><td><code>cannot listen on 127.0.0.1:8765</code></td><td>The dashboard port is busy. Use <code>./tnazar ui --port 9000</code>.</td></tr>
+      <tr><td>A dashboard message stays waiting</td><td>The agent is not listening. Ask it to continue in Claude Code.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Still stuck? <a href="https://github.com/abhi9avx/teesri-nazar/issues">Open an issue on GitHub</a>.</p>
+
+  <nav class="docs-pager" aria-label="Previous page">
+    <a class="prev" href="/docs/tech-stack/"><span>Previous</span>Tech stack</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

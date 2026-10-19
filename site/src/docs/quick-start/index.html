@@ -1,0 +1,60 @@
+<!--
+title: Quick start | Teesri Nazar docs
+description: Install Teesri Nazar, connect an Android phone or emulator and run your first AI-driven test with Claude Code in four steps.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Quick start</h1>
+  <p class="docs-lede">Run your first AI-driven test on an Android phone or emulator in four steps.</p>
+
+  <h2 id="requirements">Requirements</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">You need</th><th scope="col">Check it with</th></tr></thead>
+      <tbody>
+        <tr><td><strong>adb</strong> (Android platform-tools) on your <code>PATH</code>, or <code>ANDROID_HOME</code> set</td><td><code>adb version</code></td></tr>
+        <tr><td>A phone with USB debugging allowed, or a running emulator</td><td><code>adb devices</code> lists it</td></tr>
+        <tr><td><strong>Python 3.9</strong> or newer. Standard library only, nothing to install</td><td><code>python3 --version</code></td></tr>
+        <tr><td><strong>Claude Code</strong></td><td><code>claude --version</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="steps">Steps</h2>
+  <ol class="docs-steps">
+    <li>
+      <div><h3>Get the code</h3><p>Clone the repository and open the folder.</p></div>
+      <pre><code>git clone https://github.com/abhi9avx/teesri-nazar.git
+cd teesri-nazar</code></pre>
+    </li>
+    <li>
+      <div><h3>Add your test data</h3><p>Secrets such as test PINs and OTPs go in <code>.env</code>; accounts, environment, DB and Figma links in <code>testdata.yaml</code>. Both are gitignored.</p></div>
+      <pre><code>cp .env.example .env
+cp testdata.example.yaml testdata.yaml</code></pre>
+    </li>
+    <li>
+      <div><h3>Connect a device</h3><p>Plug in a phone with USB debugging on, or start an emulator. It must show as <code>device</code>.</p></div>
+      <pre><code>adb devices</code></pre>
+    </li>
+    <li>
+      <div><h3>Ask for a test</h3><p>Start Claude Code in the folder and describe the feature in your own words. It shows you the plan before it touches the phone.</p></div>
+      <pre><code>claude
+› Open Settings and check that search finds Wi-Fi.</code></pre>
+    </li>
+  </ol>
+
+  <h2 id="what-you-get">What you get</h2>
+  <p>Every run is saved in <code>runs/&lt;name&gt;/</code>: the step log, screenshots and logs. <code>report.html</code> is the one to share. It lists each case as passed, failed or blocked, with what was seen against what was expected. See <a href="/docs/reports/">Reports</a>.</p>
+  <p class="callout-note"><strong>Tip.</strong> Run <code>./tnazar ui</code> in a second terminal to watch the phone and steer the agent while it tests. See <a href="/docs/dashboard/">Live dashboard</a>.</p>
+
+  <h2 id="cost">What it costs</h2>
+  <p>Teesri Nazar is free and open source under the MIT license. You need Claude Code, which needs a Claude subscription or API usage. When Claude drives a run, its report shows the tokens used per case, so you can see what a test costs. A saved plan runs with <code>./tnazar run</code> and needs no model turn per step.</p>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/"><span>Previous</span>Overview</a>
+    <a class="next" href="/docs/how-it-works/"><span>Next</span>How it works</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

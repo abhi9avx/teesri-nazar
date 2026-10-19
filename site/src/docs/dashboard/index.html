@@ -1,0 +1,48 @@
+<!--
+title: Live dashboard | Teesri Nazar docs
+description: Watch a Teesri Nazar test run live on your own machine and steer the agent: send messages, pause, and hand over an OTP without it reaching the chat.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Live dashboard</h1>
+  <p class="docs-lede">A page on your own machine that shows a run as it happens and lets you steer the agent. Nothing is hosted or uploaded.</p>
+
+  <h2 id="start">Start it</h2>
+  <pre><code>./tnazar ui                 # opens http://127.0.0.1:8765
+./tnazar ui --port 9000     # if 8765 is busy</code></pre>
+  <p>Start it in its own terminal, then ask Claude to test as usual. The page follows the active run by itself. Stop it with <code>Ctrl-C</code>.</p>
+
+  <h2 id="panes">What you see</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Pane</th><th scope="col">Shows</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Timeline</strong></td><td>Every step with its time, checks as pass or fail, and each case's result and token cost. Slow steps over 5 s are highlighted.</td></tr>
+        <tr><td><strong>Control</strong></td><td>A message box, Pause and Resume, and a hidden field for an OTP or PIN.</td></tr>
+        <tr><td><strong>Screen</strong></td><td>The phone screen, refreshed about every 1.5 s.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="steer">Steer the agent</h2>
+  <ul>
+    <li><strong>Message.</strong> The agent hears it within about a second and changes course before its next step.</li>
+    <li><strong>Pause.</strong> The next device step waits until you press Resume.</li>
+    <li><strong>OTP or PIN.</strong> The dashboard types it into the focused field itself. The value never reaches the chat, a log or the disk.</li>
+  </ul>
+
+  <h2 id="safety">Safety</h2>
+  <ul>
+    <li>Listens on <code>127.0.0.1</code> only and rejects other host names.</li>
+    <li>Every change needs a token created for that session.</li>
+    <li>Secrets live in memory only and are cleared when a new run starts.</li>
+  </ul>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/plans/"><span>Previous</span>Plan files</a>
+    <a class="next" href="/docs/reports/"><span>Next</span>Reports</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

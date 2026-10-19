@@ -1,0 +1,82 @@
+<!--
+title: Commands | Teesri Nazar docs
+description: Every tnazar command, grouped by task: runs, reading the screen, acting, checking, navigation, plans, replay and the live dashboard.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Commands</h1>
+  <p class="docs-lede">Claude runs these for you. You can also drive the device yourself. Every command has <code>--help</code>, and <code>--device &lt;serial&gt;</code> picks a device when more than one is connected.</p>
+
+  <h2 id="runs">Runs</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>start &lt;name&gt; --package &lt;app&gt;</code></td><td>Start a test run: recording, evidence and report</td></tr>
+      <tr><td><code>stop</code></td><td>Finish the run and write the report</td></tr>
+      <tr><td><code>status</code></td><td>Show the active run</td></tr>
+      <tr><td><code>case start TC-01 "title"</code> / <code>case end</code></td><td>Group the steps between them into a test case</td></tr>
+      <tr><td><code>runs</code> / <code>report</code></td><td>List recent runs, or rewrite a run's <a href="/docs/reports/">report</a></td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="screen">Read the screen and act</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>observe</code></td><td>List what is on screen: index, id, text, label, position</td></tr>
+      <tr><td><code>tap "Pay now"</code></td><td>Tap by text, <code>id=</code>, <code>desc=</code>, <code>#index</code> or <code>9%,6%</code></td></tr>
+      <tr><td><code>type "text" --into id=field</code></td><td>Type into a field. <code>--env NAME</code> types a secret from <code>.env</code></td></tr>
+      <tr><td><code>key back</code></td><td>Press back, home, enter, tab and other keys</td></tr>
+      <tr><td><code>scroll down --to "Text"</code></td><td>Scroll until an element shows</td></tr>
+      <tr><td><code>launch</code> / <code>open-url</code></td><td>Launch the app, or open a deep link</td></tr>
+      <tr><td><code>devices</code> / <code>packages</code></td><td>List connected devices, or installed apps</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="check">Check and record</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>check "Payment successful"</code></td><td>Verify it is on screen. Exact match; <code>'~text'</code> for partial</td></tr>
+      <tr><td><code>wait "Home" --or "Error"</code></td><td>Wait for a screen; stop early if the error shows instead</td></tr>
+      <tr><td><code>shot</code> / <code>note</code></td><td>Save a screenshot, or record an observation or bug</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="navigate">Navigate fast</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>goto "wi-fi"</code></td><td>Reach a screen by a route learned in earlier runs</td></tr>
+      <tr><td><code>map</code></td><td>Show what was learned: screens, names, routes</td></tr>
+      <tr><td><code>flow &lt;name&gt;</code> / <code>flows</code></td><td>Run a saved route, or list them</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="plans">Plans and replay</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>run plans/x.plan</code></td><td>Run every case of a <a href="/docs/plans/">plan file</a></td></tr>
+      <tr><td><code>replay &lt;run&gt;</code></td><td>Run a recorded test again and re-check every result</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="dashboard">Dashboard</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>ui</code></td><td>Open the <a href="/docs/dashboard/">live dashboard</a></td></tr>
+      <tr><td><code>say "Logging in"</code></td><td>Narrate the next step on the dashboard timeline</td></tr>
+      <tr><td><code>wait-message</code> / <code>wait-resume</code></td><td>Listen for a dashboard message, or wait for Resume</td></tr>
+    </tbody>
+  </table></div>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/compare/"><span>Previous</span>Compared to other tools</a>
+    <a class="next" href="/docs/tech-stack/"><span>Next</span>Tech stack</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

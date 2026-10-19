@@ -1,10 +1,11 @@
 # Test runs, app maps and device state: hold app screens, labels and screenshots.
 runs/
-plans/
+/plans/
 .tnazar/
 maps/
 bench/
 shots/
+!site/src/sample-report/shots/
 dumps/
 events.jsonl
 screens.jsonl
@@ -34,3 +35,7 @@ bench-*.json
 __pycache__/
 *.egg-info/
 .DS_Store
+
+# Built website (site/build.py output).
+site/_site/
+site/hero-motion.mp4

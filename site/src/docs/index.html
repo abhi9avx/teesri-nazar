@@ -1,0 +1,43 @@
+<!--
+title: Docs: Teesri Nazar, the AI tester for Android apps
+description: Learn how Teesri Nazar tests Android features with Claude Code on a real phone: quick start, how it works, plan files, commands and the tech stack.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Teesri Nazar docs</h1>
+  <p class="docs-lede">Tell Claude Code which Android feature to test. Teesri Nazar plans the cases, runs them on a real phone or emulator and gives you a pass/fail report with a screenshot for every check.</p>
+
+  <div class="docs-cards">
+    <a class="docs-card" href="/docs/quick-start/"><strong>Quick start</strong><span>Install, connect a phone and run your first test.</span></a>
+    <a class="docs-card" href="/docs/how-it-works/"><strong>How it works</strong><span>The agent, the tool and the look, act, check, record loop.</span></a>
+    <a class="docs-card" href="/docs/plans/"><strong>Plan files</strong><span>Save a test once and run every case in one command.</span></a>
+    <a class="docs-card" href="/docs/commands/"><strong>Commands</strong><span>Every <code>tnazar</code> command, grouped by task.</span></a>
+    <a class="docs-card" href="/docs/reports/"><strong>Reports</strong><span>The pass/fail report every run ends with, and what is in it.</span></a>
+    <a class="docs-card" href="/docs/dashboard/"><strong>Live dashboard</strong><span>Watch the phone and steer the agent while it runs.</span></a>
+    <a class="docs-card" href="/docs/compare/"><strong>Compared to other tools</strong><span>Appium, Espresso and Maestro: what differs, and where they are stronger.</span></a>
+    <a class="docs-card" href="/docs/tech-stack/"><strong>Tech stack</strong><span>What it is built on, and what it needs.</span></a>
+  </div>
+
+  <h2 id="what-you-give">What you give, what you get</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">You give</th><th scope="col">It does</th><th scope="col">You get</th></tr></thead>
+      <tbody>
+        <tr><td>A feature: plain text, test cases, a PRD, Figma or Jira</td><td>Plans the cases and adds the edge cases you missed</td><td>A test plan to approve</td></tr>
+        <tr><td>A test account and environment</td><td>Runs every case on the device like a manual tester</td><td>A screenshot for every check</td></tr>
+        <tr><td>DB or Figma access (optional)</td><td>Checks the UI; runs the read-only query or compares the Figma frame itself and records the result</td><td>Pass, fail or blocked for each case</td></tr>
+        <tr><td>Nothing more</td><td>Records every step</td><td>A run you can replay next release</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="who-its-for">Who it is for</h2>
+  <p>QA engineers and SDETs who test Android features by hand every release, and developers who want a feature checked before it ships. Your app needs no SDK and no changes.</p>
+
+  <nav class="docs-pager" aria-label="Next page">
+    <a class="next" href="/docs/quick-start/"><span>Next</span>Quick start</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

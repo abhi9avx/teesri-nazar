@@ -1,0 +1,271 @@
+<!--
+title: Teesri Nazar: the AI tester for Android apps
+description: An open-source AI agent that tests your Android feature on a real phone and hands you pass or fail, with a screenshot for every check.
+-->
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-inner shot is-done" id="shot">
+    <div class="poster">
+      <div class="hero-copy">
+        <h1 id="hero-title">Stop tapping through every release by&nbsp;hand.</h1>
+        <p class="lede">Teesri Nazar is an AI agent that tests your Android feature on a real phone and hands you pass or fail, with proof.</p>
+        <div class="actions">
+          <a class="btn btn-ink" href="/docs/quick-start/">Quick start</a>
+          <a class="btn btn-line" href="https://github.com/abhi9avx/teesri-nazar">View on GitHub</a>
+        </div>
+      </div>
+      <div class="fireworks" aria-hidden="true"><span class="fw" style="--x: 28%; --y: 56%; --c: #FFE08A; --delay: 0ms"><i style="--a: 0deg"></i><i style="--a: 18deg"></i><i style="--a: 36deg"></i><i style="--a: 54deg"></i><i style="--a: 72deg"></i><i style="--a: 90deg"></i><i style="--a: 108deg"></i><i style="--a: 126deg"></i><i style="--a: 144deg"></i><i style="--a: 162deg"></i><i style="--a: 180deg"></i><i style="--a: 198deg"></i><i style="--a: 216deg"></i><i style="--a: 234deg"></i><i style="--a: 252deg"></i><i style="--a: 270deg"></i><i style="--a: 288deg"></i><i style="--a: 306deg"></i><i style="--a: 324deg"></i><i style="--a: 342deg"></i></span><span class="fw" style="--x: 72%; --y: 50%; --c: #FFF4E0; --delay: 260ms"><i style="--a: 0deg"></i><i style="--a: 18deg"></i><i style="--a: 36deg"></i><i style="--a: 54deg"></i><i style="--a: 72deg"></i><i style="--a: 90deg"></i><i style="--a: 108deg"></i><i style="--a: 126deg"></i><i style="--a: 144deg"></i><i style="--a: 162deg"></i><i style="--a: 180deg"></i><i style="--a: 198deg"></i><i style="--a: 216deg"></i><i style="--a: 234deg"></i><i style="--a: 252deg"></i><i style="--a: 270deg"></i><i style="--a: 288deg"></i><i style="--a: 306deg"></i><i style="--a: 324deg"></i><i style="--a: 342deg"></i></span><span class="fw" style="--x: 50%; --y: 40%; --c: #FFB627; --delay: 520ms"><i style="--a: 0deg"></i><i style="--a: 18deg"></i><i style="--a: 36deg"></i><i style="--a: 54deg"></i><i style="--a: 72deg"></i><i style="--a: 90deg"></i><i style="--a: 108deg"></i><i style="--a: 126deg"></i><i style="--a: 144deg"></i><i style="--a: 162deg"></i><i style="--a: 180deg"></i><i style="--a: 198deg"></i><i style="--a: 216deg"></i><i style="--a: 234deg"></i><i style="--a: 252deg"></i><i style="--a: 270deg"></i><i style="--a: 288deg"></i><i style="--a: 306deg"></i><i style="--a: 324deg"></i><i style="--a: 342deg"></i></span><span class="fw" style="--x: 38%; --y: 30%; --c: #FF8A5B; --delay: 820ms"><i style="--a: 0deg"></i><i style="--a: 18deg"></i><i style="--a: 36deg"></i><i style="--a: 54deg"></i><i style="--a: 72deg"></i><i style="--a: 90deg"></i><i style="--a: 108deg"></i><i style="--a: 126deg"></i><i style="--a: 144deg"></i><i style="--a: 162deg"></i><i style="--a: 180deg"></i><i style="--a: 198deg"></i><i style="--a: 216deg"></i><i style="--a: 234deg"></i><i style="--a: 252deg"></i><i style="--a: 270deg"></i><i style="--a: 288deg"></i><i style="--a: 306deg"></i><i style="--a: 324deg"></i><i style="--a: 342deg"></i></span><span class="fw" style="--x: 63%; --y: 26%; --c: #FFE08A; --delay: 1080ms"><i style="--a: 0deg"></i><i style="--a: 18deg"></i><i style="--a: 36deg"></i><i style="--a: 54deg"></i><i style="--a: 72deg"></i><i style="--a: 90deg"></i><i style="--a: 108deg"></i><i style="--a: 126deg"></i><i style="--a: 144deg"></i><i style="--a: 162deg"></i><i style="--a: 180deg"></i><i style="--a: 198deg"></i><i style="--a: 216deg"></i><i style="--a: 234deg"></i><i style="--a: 252deg"></i><i style="--a: 270deg"></i><i style="--a: 288deg"></i><i style="--a: 306deg"></i><i style="--a: 324deg"></i><i style="--a: 342deg"></i></span></div>
+      <div class="embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <svg class="scene" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice" role="img" aria-label="Ram, with the third eye open, shoots one arrow through all ten heads of Ravana. Each head is a test check.">
+        <defs>
+          <image id="ravana-art" href="/assets/ravana.webp" x="1080.6" y="480.0" width="479.4" height="520"/>
+          <clipPath id="head-1"><rect x="1148.8" y="509.8" width="44" height="70.7"/></clipPath>
+          <clipPath id="head-2"><rect x="1182.5" y="505.7" width="44" height="74.8"/></clipPath>
+          <clipPath id="head-3"><rect x="1216.2" y="500.4" width="44" height="80.0"/></clipPath>
+          <clipPath id="head-4"><rect x="1250.3" y="496.3" width="44" height="84.1"/></clipPath>
+          <clipPath id="head-5"><rect x="1291.3" y="478.9" width="58" height="101.6"/></clipPath>
+          <clipPath id="head-6"><rect x="1343.8" y="496.3" width="44" height="84.1"/></clipPath>
+          <clipPath id="head-7"><rect x="1379.5" y="500.4" width="44" height="80.0"/></clipPath>
+          <clipPath id="head-8"><rect x="1413.3" y="505.7" width="44" height="74.8"/></clipPath>
+          <clipPath id="head-9"><rect x="1445.3" y="509.8" width="44" height="70.7"/></clipPath>
+          <clipPath id="head-10"><rect x="1479.9" y="509.8" width="44" height="70.7"/></clipPath>
+          <filter id="spent"><feColorMatrix type="saturate" values="0.1"/><feComponentTransfer><feFuncR type="linear" slope="0.55"/><feFuncG type="linear" slope="0.55"/><feFuncB type="linear" slope="0.55"/></feComponentTransfer></filter>
+          <radialGradient id="eye-glow"><stop offset="0" stop-color="#FFF4C2"/><stop offset="0.45" stop-color="#FFD25E" stop-opacity="0.8"/><stop offset="1" stop-color="#FFB627" stop-opacity="0"/></radialGradient>
+          <g id="arrow">
+            <path class="arrow-shaft" d="M-248.2 0H-12"/>
+            <path class="arrow-head" d="M0 0-22-8-15 0-22 8Z"/>
+            <path class="arrow-feather" d="M-248.2 0-263.2 -10H-231.2L-219.2 0-231.2 10H-263.2Z"/>
+          </g>
+        </defs>
+        <use href="#ravana-art" class="ravana"/>
+        <g class="ram">
+          <image href="/assets/ram.webp" x="40" y="400" width="480.0" height="600"/>
+          <polyline class="bowstring" id="bowstring" points="366.7,420.2 366.9,563.3 367.2,733.8" data-drawn="248.9" data-rest="366.9"/>
+          <g class="arrow arrow-rest"><use href="#arrow" transform="translate(497.1 563.3)"/></g>
+          <g class="third-eye" transform="translate(256.1 504.1)"><circle class="third-eye-glow" r="16" fill="url(#eye-glow)"/><path class="third-eye-lid" d="M0-7.5C3.6-3.4 3.6 3.4 0 7.5-3.6 3.4-3.6-3.4 0-7.5Z"/><circle class="third-eye-pupil" r="1.8"/></g>
+        </g>
+        <image class="ram-standing" href="/assets/ram-standing.webp" x="-2.3" y="400" width="480" height="600"/>
+        <path id="shot-path" class="shot-path" d="M497.1 563.3L1594 563.3"/>
+        <path class="trail" d="M497.1 563.3L1594 563.3"/>
+        <g class="hit hit-pass" data-x="1170.8" data-label="Happy path passed">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-1)" style="transform-origin: 1170.8px 580.5px"/>
+          <path class="cut" d="M1153.2 543.3L1188.4 583.3"/>
+          <circle class="burst" cx="1170.8" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1170.8 500.8)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="hit hit-pass" data-x="1204.5" data-label="Boundary value checked">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-2)" style="transform-origin: 1204.5px 580.5px"/>
+          <path class="cut" d="M1186.9 543.3L1222.1 583.3"/>
+          <circle class="burst" cx="1204.5" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1204.5 496.7)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="hit hit-bug" data-x="1238.2" data-label="Bug found: crash on empty input">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-3)" style="transform-origin: 1238.2px 580.4px"/>
+          <path class="cut" d="M1220.6 543.3L1255.8 583.3"/>
+          <circle class="burst" cx="1238.2" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1238.2 491.4)"><circle r="14"/><text y="5.5">✗</text></g>
+        </g>
+        <g class="hit hit-pass" data-x="1272.3" data-label="Wi‑Fi off handled">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-4)" style="transform-origin: 1272.3px 580.4px"/>
+          <path class="cut" d="M1254.7 543.3L1289.9 583.3"/>
+          <circle class="burst" cx="1272.3" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1272.3 487.3)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="hit hit-pass" data-x="1320.3" data-label="Back navigation OK">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-5)" style="transform-origin: 1320.3px 580.5px"/>
+          <path class="cut" d="M1297.1 543.3L1343.5 583.3"/>
+          <circle class="burst" cx="1320.3" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1320.3 469.9)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="hit hit-pass" data-x="1365.8" data-label="Kill and reopen OK">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-6)" style="transform-origin: 1365.8px 580.4px"/>
+          <path class="cut" d="M1348.2 543.3L1383.4 583.3"/>
+          <circle class="burst" cx="1365.8" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1365.8 487.3)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="hit hit-bug" data-x="1401.5" data-label="Bug found: copy differs from Figma">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-7)" style="transform-origin: 1401.5px 580.4px"/>
+          <path class="cut" d="M1383.9 543.3L1419.1 583.3"/>
+          <circle class="burst" cx="1401.5" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1401.5 491.4)"><circle r="14"/><text y="5.5">✗</text></g>
+        </g>
+        <g class="hit hit-pass" data-x="1435.3" data-label="Double tap blocked">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-8)" style="transform-origin: 1435.3px 580.5px"/>
+          <path class="cut" d="M1417.7 543.3L1452.9 583.3"/>
+          <circle class="burst" cx="1435.3" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1435.3 496.7)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="hit hit-pass" data-x="1467.3" data-label="Dark mode readable">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-9)" style="transform-origin: 1467.3px 580.5px"/>
+          <path class="cut" d="M1449.7 543.3L1484.9 583.3"/>
+          <circle class="burst" cx="1467.3" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1467.3 500.8)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="hit hit-pass" data-x="1501.9" data-label="Small screen OK">
+          <use href="#ravana-art" class="head-down" clip-path="url(#head-10)" style="transform-origin: 1501.9px 580.5px"/>
+          <path class="cut" d="M1484.3 543.3L1519.5 583.3"/>
+          <circle class="burst" cx="1501.9" cy="563.3" r="26"/>
+          <g class="badge" transform="translate(1501.9 500.8)"><circle r="14"/><text y="5.5">✓</text></g>
+        </g>
+        <g class="arrow arrow-flying" transform="translate(1594 563.3)"><use href="#arrow"/></g>
+      </svg>
+      <p class="callout" id="callout" aria-hidden="true"></p>
+      <p class="visually-hidden" id="verdict" role="status">Testing complete: 10 checks, 8 passed, 2 bugs found.</p>
+      <div class="complete" id="complete" aria-hidden="true">
+        <p class="complete-title"><span class="hooray">Hooray!</span> Testing complete <span aria-hidden="true">🎉</span></p>
+        <p class="complete-stats"><span>10 checks</span> <span class="ok">8 passed</span> <span class="bad">2 bugs found</span></p>
+        <div class="petals" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <ol class="checks" aria-label="What the arrow checked">
+      <li class="check-pass"><span aria-hidden="true">✓</span> Happy path passed</li>
+      <li class="check-pass"><span aria-hidden="true">✓</span> Boundary value checked</li>
+      <li class="check-bug"><span aria-hidden="true">✗</span> Bug found: crash on empty input</li>
+      <li class="check-pass"><span aria-hidden="true">✓</span> Wi‑Fi off handled</li>
+      <li class="check-pass"><span aria-hidden="true">✓</span> Back navigation OK</li>
+      <li class="check-pass"><span aria-hidden="true">✓</span> Kill and reopen OK</li>
+      <li class="check-bug"><span aria-hidden="true">✗</span> Bug found: copy differs from Figma</li>
+      <li class="check-pass"><span aria-hidden="true">✓</span> Double tap blocked</li>
+      <li class="check-pass"><span aria-hidden="true">✓</span> Dark mode readable</li>
+      <li class="check-pass"><span aria-hidden="true">✓</span> Small screen OK</li>
+    </ol>
+    <div class="shot-foot">
+      <button type="button" class="link-button" id="shoot" hidden>Shoot again</button>
+    </div>
+  </div>
+</section>
+
+<section class="demo" aria-labelledby="demo-title">
+  <h2 id="demo-title">Watch it test a feature</h2>
+  <figure class="stage" id="stage">
+    <div class="stage-log">
+      <ol class="log" id="log">
+        <li class="log-you" data-screen="home">Test that Settings search finds Wi‑Fi, and that Back always comes home.</li>
+        <li class="log-agent" data-screen="home">Plan: 3 cases. Network &amp; internet opens. Search finds Wi‑Fi. Back returns to Settings.</li>
+        <li class="log-cmd" data-screen="network" data-tap="net"><code>tap "Network &amp; internet"</code></li>
+        <li class="log-check" data-screen="network"><code>check "Internet"</code> <span class="pass">passed</span></li>
+        <li class="log-cmd" data-screen="home"><code>key back</code></li>
+        <li class="log-cmd" data-screen="search" data-tap="search"><code>tap "Search Settings"</code></li>
+        <li class="log-cmd" data-screen="results"><code>type "wifi"</code></li>
+        <li class="log-check" data-screen="results"><code>check "~Wi‑Fi"</code> <span class="pass">passed</span></li>
+        <li class="log-cmd" data-screen="home"><code>key back</code>, <code>key back</code></li>
+        <li class="log-check" data-screen="home"><code>check "Search Settings"</code> <span class="pass">passed</span></li>
+        <li class="log-agent" data-screen="home">Report ready: 3 of 3 passed, with a screenshot for every check.</li>
+      </ol>
+    </div>
+    <div class="stage-phone">
+      <div class="phone" aria-hidden="true">
+        <div class="phone-screen" data-name="home">
+          <p class="ph-title">Settings</p>
+          <p class="ph-search" data-id="search">Search Settings</p>
+          <ul class="ph-list">
+            <li data-id="net"><b>Network &amp; internet</b><small>Mobile, Wi‑Fi, hotspot</small></li>
+            <li><b>Connected devices</b><small>Bluetooth, pairing</small></li>
+            <li><b>Apps</b><small>Recent apps, default apps</small></li>
+            <li><b>Notifications</b><small>History, conversations</small></li>
+            <li><b>Battery</b><small>82%</small></li>
+            <li><b>Display</b><small>Dark theme, font size</small></li>
+          </ul>
+        </div>
+        <div class="phone-screen" data-name="network">
+          <p class="ph-title"><span class="ph-back">‹</span> Network &amp; internet</p>
+          <ul class="ph-list">
+            <li><b>Internet</b><small>Wi‑Fi network</small></li>
+            <li><b>Calls &amp; SMS</b><small>Default SIM</small></li>
+            <li><b>SIMs</b><small>2 SIMs</small></li>
+            <li><b>Airplane mode</b><small>Off</small></li>
+            <li><b>Hotspot &amp; tethering</b><small>Off</small></li>
+          </ul>
+        </div>
+        <div class="phone-screen" data-name="search">
+          <p class="ph-field"><span class="ph-back">‹</span> <span class="ph-caret">Search settings</span></p>
+        </div>
+        <div class="phone-screen" data-name="results">
+          <p class="ph-field"><span class="ph-back">‹</span> wifi</p>
+          <ul class="ph-list">
+            <li><b>Wi‑Fi</b><small>Network &amp; internet › Internet</small></li>
+            <li><b>Wi‑Fi preferences</b><small>Network &amp; internet › Internet</small></li>
+            <li><b>Wi‑Fi hotspot</b><small>Hotspot &amp; tethering</small></li>
+          </ul>
+        </div>
+        <span class="tap-ring" hidden></span>
+      </div>
+    </div>
+    <figcaption>
+      <span>Claude Code driving the Android Settings app, based on the example plan in the repo.</span>
+      <button type="button" class="link-button" id="stage-toggle" aria-controls="log" hidden>Pause replay</button>
+    </figcaption>
+  </figure>
+</section>
+
+<section class="steps" aria-labelledby="steps-title">
+  <h2 id="steps-title">Plan, tap, check, report</h2>
+  <ol class="tiles">
+    <li class="tile tile-saffron"><h3>Plans</h3><p>Turns your feature into test cases, plus the edge cases you missed.</p></li>
+    <li class="tile tile-vermilion"><h3>Taps</h3><p>Drives a real phone or emulator by ids, labels and text, not by guessing from screenshots.</p></li>
+    <li class="tile tile-peacock"><h3>Checks</h3><p>Verifies every expected result on screen. The agent can also run a read-only DB query or compare a Figma frame, and record the result.</p></li>
+    <li class="tile tile-ink"><h3>Reports</h3><p>A shareable pass/fail report: every case, every check, a screenshot for each, and the bugs found. <a href="/sample-report/report.html">See a sample report</a></p></li>
+  </ol>
+</section>
+
+<section class="why" aria-labelledby="why-title">
+  <h2 id="why-title" class="visually-hidden">Why teams use it</h2>
+  <ul class="why-list">
+    <li><h3>Learns your app</h3><p>Every run maps the screens. Next time, <code>goto</code> takes it straight there.</p></li>
+    <li><h3>You steer it live</h3><p>Watch the phone, message the agent, pause it, hand over an OTP.</p></li>
+    <li><h3>Runs on your computer</h3><p>tnazar, the dashboard and your reports stay local. No telemetry, no SDK in your app. Claude Code sends the screens it reads to Anthropic's model.</p></li>
+    <li><h3>Android only, for now</h3><p>No iOS yet. <a href="/docs/compare/">See how it compares to Appium, Espresso and Maestro</a>.</p></li>
+  </ul>
+</section>
+
+<section class="start" aria-labelledby="start-title">
+  <div class="start-copy">
+    <h2 id="start-title">Try it on your Android phone or emulator</h2>
+    <p>You need adb, Python 3.9+ and Claude Code. Teesri Nazar is free and MIT licensed; Claude Code needs a Claude subscription or API usage.</p>
+    <a class="btn btn-ink" href="/docs/">Read the docs</a>
+  </div>
+  <pre class="terminal" tabindex="0"><code><span class="t-prompt"># no phone? start an emulator
+</span>emulator -avd &lt;your_avd&gt; &amp;
+git clone https://github.com/abhi9avx/teesri-nazar.git
+cd teesri-nazar &amp;&amp; claude
+<span class="t-prompt">› </span><span class="t-say">Check that Settings search finds Wi‑Fi.</span></code></pre>
+</section>
+
+<section class="feedback" aria-labelledby="feedback-title">
+  <h2 id="feedback-title">Tell us what you think</h2>
+  <p class="section-lede">Teesri Nazar is young and open source. Your ideas, open questions and bug reports shape what ships next.</p>
+  <div class="feedback-cards">
+    <a class="feedback-card" href="https://github.com/abhi9avx/teesri-nazar/issues/new?title=Idea%3A%20"><strong>Suggest a feature</strong><span>Something it should test, or do better. Opens a GitHub issue.</span></a>
+    <a class="feedback-card" href="https://github.com/abhi9avx/teesri-nazar/issues/new?title=Bug%3A%20"><strong>Report a bug</strong><span>What you ran, what you expected, what happened. Opens a GitHub issue.</span></a>
+    <div class="feedback-card"><strong>Share feedback</strong><span>Thoughts, questions or using it at work? Email Abhinav.</span>
+    <div class="email-box">
+      <span class="email-addr">kumarabhinav1777@gmail.com</span>
+      <button type="button" class="btn-mini" data-copy="kumarabhinav1777@gmail.com">Copy</button>
+      <a class="btn-mini" href="https://mail.google.com/mail/?view=cm&amp;to=kumarabhinav1777@gmail.com&amp;su=Teesri%20Nazar%20feedback" target="_blank" rel="noopener">Gmail</a>
+      <a class="btn-mini" href="mailto:kumarabhinav1777@gmail.com?subject=Teesri%20Nazar%20feedback">Mail app</a>
+    </div>
+    </div>
+  </div>
+</section>
+
+<section class="shipped" aria-labelledby="shipped-title">
+  <h2 id="shipped-title">Shipped</h2>
+  <ol class="releases">{{releases}}</ol>
+  <a href="/changelog/">Full changelog</a>
+</section>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Teesri Nazar",
+  "alternateName": "तीसरी नज़र",
+  "description": "An open-source AI agent that tests Android app features on a real device and reports pass or fail, with a screenshot for every check.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux",
+  "url": "https://teesrinazar.github.io/",
+  "sameAs": ["https://github.com/abhi9avx/teesri-nazar"],
+  "author": {"@type": "Person", "name": "Abhinav Kumar", "jobTitle": "SDET II", "sameAs": ["https://www.linkedin.com/in/abhi9avx/", "https://github.com/abhi9avx"]},
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+}
+</script>

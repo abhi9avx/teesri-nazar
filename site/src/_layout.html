@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<link rel="canonical" href="{{canonical}}">
+<meta name="theme-color" content="#0A0A0A">
+<script>
+  // Set the theme before first paint: dark unless the reader picked light.
+  (function () {
+    var dark = true;
+    try { var saved = localStorage.getItem("theme"); if (saved) dark = saved === "dark"; } catch (e) { /* storage blocked: stay dark */ }
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    if (!dark) document.querySelector('meta[name="theme-color"]').content = "#F27A1A";
+  })();
+</script>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Teesri Nazar">
+<meta property="og:title" content="{{title}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:image" content="{{base}}/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Teesri Nazar: the third eye on your Android app">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/assets/fonts/rozha-one-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/ibm-plex-sans-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css">
+<script src="/assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <a class="brand" href="/">
+    <img src="/assets/eye.svg" alt="" width="24" height="30">
+    <span class="brand-name">Teesri Nazar</span>
+    <span class="brand-hi" lang="hi">तीसरी नज़र</span>
+  </a>
+  <nav aria-label="Main">
+    <ul>
+      <li><a href="/docs/">Docs</a></li>
+      <li><a href="/changelog/">Changelog</a></li>
+      <li><a href="/about/">About</a></li>
+      <li><a href="https://github.com/abhi9avx/teesri-nazar">GitHub</a></li>
+    </ul>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="true">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
+      <span class="theme-label">Dark mode</span>
+    </button>
+  </nav>
+</header>
+<main id="main">
+{{content}}
+</main>
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p class="footer-brand"><img src="/assets/eye.svg" alt="" width="16" height="20">Teesri Nazar is open source under the <a href="https://github.com/abhi9avx/teesri-nazar/blob/main/LICENSE">MIT license</a>.</p>
+    <p>Made by <a href="https://github.com/abhi9avx">Abhinav Kumar</a>.</p>
+  </div>
+</footer>
+</body>
+</html>
