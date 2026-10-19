@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from . import device as dev
 from . import live
 from . import report as rpt
 from . import usage
@@ -92,7 +93,7 @@ class Dashboard:
     def state(self) -> dict:
         active = get_active()
         out: dict = {"active": None, "paused": live.paused(), "secrets": sorted(self.secrets),
-                     "slow_ms": rpt.SLOW_MS}
+                     "slow_ms": rpt.SLOW_MS, "agent": live.agent_status()}
         if active:
             run, serial = active
             meta = run.meta()
@@ -103,7 +104,7 @@ class Dashboard:
             started = meta.get("started_at", "")
             read = live.delivered()
             out["inbox"] = [{"text": m["text"], "t": m["t"], "delivered": i < read,
-                             "secret": m.get("secret"), "note": m.get("note")}
+                             "secret": m.get("secret"), "note": m.get("note"), "info": bool(m.get("info"))}
                             for i, m in enumerate(live.messages()) if m["t"] >= started][-30:]
         return out
 
@@ -152,7 +153,8 @@ class Dashboard:
         return {"ok": True}
 
     def secret(self, body: dict) -> dict:
-        if not get_active():
+        active = get_active()
+        if not active:
             raise ValueError("no active run: start a test first")
         name = re.sub(r"[^A-Z0-9_]", "_", str(body.get("name", "")).strip().upper())
         name = name if name.startswith("UI_") else f"UI_{name}"
@@ -161,10 +163,50 @@ class Dashboard:
             raise ValueError("give a name (letters, digits, _) and a value up to 256 characters")
         self.secrets[name] = value
         note = str(body.get("note", "")).strip()
-        live.post((f"{note} — " if note else "") +
-                  f"Secret value provided as {name}: type it with `./tnazar type --env {name} --into <field>`."
-                  f" Never print or note the value.", secret=name, note=note)
-        return {"ok": True, "name": name}
+        how = f"`./tnazar type --env {name} --into <field>`. Never print or note the value."
+
+        def tell(text: str, **extra) -> None:
+            live.post((f"{note} — " if note else "") + text, secret=name, note=note, **extra)
+
+        if not body.get("type_now"):
+            tell(f"Secret value provided as {name}: type it with {how}")
+            return {"ok": True, "name": name, "typed": False}
+        # PIN and OTP screens expire: typing waits only for the agent step in progress, and the
+        # agent hears about it afterwards.
+        run, serial = active
+        try:
+            with live.device_lock():
+                try:
+                    dev.type_text(Adb(serial), value)
+                except (AdbError, ValueError) as exc:
+                    reason = typing_error(exc)
+                    run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard",
+                             "ok": False, "error": reason})
+                    tell(f"Secret value provided as {name}; typing it from the dashboard failed ({reason}): "
+                         f"type it with {how}")
+                    raise ValueError(f"{name} saved for the agent, but typing it failed: {reason}") from exc
+        except live.DeviceBusy:
+            tell(f"Secret value provided as {name}; the device was busy, so it was not typed: type it with {how}")
+            raise ValueError(f"{name} saved, but the agent is in the middle of a step: try again in a moment") from None
+        run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard"})
+        tell(f"{name} was already typed into the focused field by the dashboard: check the screen; "
+             f"re-type only if it did not land, with {how}", info=True)
+        return {"ok": True, "name": name, "typed": True}
+
+
+def typing_error(exc: Exception) -> str:
+    """Why typing failed, in words: adb's own message quotes the command (and so the value),
+    and its stderr may echo pieces of it, so none of that text is kept."""
+    text = str(exc).lower()
+    if isinstance(exc, ValueError):
+        return "only plain ASCII can be typed"
+    if "timed out" in text:
+        return "adb timed out"
+    for words, reason in ((("offline", "not found", "no devices"), "the device is offline"),
+                          (("unauthorized",), "the device is not authorized for adb")):
+        if any(w in text for w in words):
+            return reason
+    return "the device did not accept the input"
 
 
 def make_handler(dash: Dashboard):

@@ -32,6 +32,7 @@ EXIT_INSTEAD = 4  # `wait A --or B`: B showed up, so A is not coming
 TARGET_WAIT = 3.0
 TIMED = commands.TIMED_EVENTS
 HELD = commands.DEVICE_COMMANDS
+MOVES_FOCUS = commands.ACTION_COMMANDS
 
 
 # ---------------------------------------------------------------- context
@@ -136,6 +137,7 @@ def cmd_start(args) -> int:
     run = Run.create(args.name, meta)
     set_active(run, serial)
     live.mark_all_read()  # messages typed before this run are not instructions for it
+    live.clear_agent_status()
     live.set_paused(False)
     dev.logcat_clear(adb)
     print(f"run: {run.name}  device: {serial} {model}".rstrip())
@@ -148,7 +150,7 @@ def cmd_start(args) -> int:
             print("app data cleared")
     if not args.keep_animations:
         print("animations: off (restored on stop)")
-    print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
+    print(uia2.start_line(adb))
     return 0
 
 
@@ -248,9 +250,18 @@ def cmd_observe(args) -> int:
     return 0
 
 
+def _missed(ctx: "Ctx", event: dict, exc: NotFound) -> NotFound:
+    """A step that found nothing is still a timeline row, red, with the reason."""
+    ctx.log({**event, "ok": False, "error": str(exc).split("\n", 1)[0]})
+    return exc
+
+
 def cmd_tap(args) -> int:
     ctx = Ctx.from_args(args.device)
-    t = resolve(ctx, args.target, args, timeout=args.wait)
+    try:
+        t = resolve(ctx, args.target, args, timeout=args.wait)
+    except NotFound as exc:
+        raise _missed(ctx, {"type": "tap", "target": args.target, "long": args.long}, exc)
     x, y = t["xy"]
     if args.long:
         dev.long_press(ctx.adb, x, y)
@@ -278,7 +289,11 @@ def cmd_type(args) -> int:
     if args.into:
         opts = argparse.Namespace(id=args.id, desc=args.desc, text=None,
                                   contains=args.contains, nth=args.nth)
-        target = resolve(ctx, args.into, opts, timeout=args.wait)
+        try:
+            target = resolve(ctx, args.into, opts, timeout=args.wait)
+        except NotFound as exc:
+            raise _missed(ctx, {"type": "type", "target": args.into, "text": None if secret else text,
+                                "secret": secret, "env": args.env}, exc)
         el = target["element"]
         secret = secret or bool(el and el.password)
         dev.tap(ctx.adb, *target["xy"])
@@ -487,8 +502,15 @@ def cmd_adb(args) -> int:
     ctx = Ctx.from_args(args.device)
     if not args.args:
         raise UserError("usage: tnazar adb <adb args...>")
-    proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args])
-    ctx.log({"type": "adb", "args": redact(args.args), "exit": proc.returncode})
+    proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args],
+                          capture_output=True, encoding="utf-8", errors="replace")
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
+    event = {"type": "adb", "args": redact(args.args), "exit": proc.returncode}
+    if proc.returncode:
+        why = next((ln.strip() for ln in (proc.stderr or proc.stdout or "").splitlines() if ln.strip()), "")
+        event["error"] = redact([why])[0]
+    ctx.log(event)
     # adb's own code could collide with tnazar's (3 held, 5 paused) and make a plan runner retry forever.
     return EXIT_FAIL if proc.returncode else 0
 
@@ -497,6 +519,7 @@ def cmd_say(args) -> int:
     ctx_run = get_active()
     if ctx_run:
         ctx_run[0].log({"type": "say", "text": args.text})
+    live.set_agent_status("working", args.text)
     print(f"» {args.text}")
     return 0
 
@@ -507,6 +530,32 @@ def cmd_wait_resume(args) -> int:
         return 0
     print("still paused by the user; run `./tnazar wait-resume` again before the next step")
     return live.EXIT_PAUSED
+
+
+def cmd_wait_message(args) -> int:
+    active = get_active()
+    if not active:
+        print("no active run")
+        return 0
+    run = active[0]
+
+    def same_run() -> bool:
+        now = get_active()
+        return now is not None and now[0].path == run.path
+
+    live.set_listener(os.getpid())
+    while live.wait_message(args.timeout, same_run):
+        # The agent's own command may have delivered it first: then keep listening.
+        if live.needs_agent(live.deliver(run.log)):
+            print("Read the user's message above and act on it now.")
+            return live.EXIT_HELD
+    if same_run():
+        print(f"no message in {args.timeout:g}s")
+    elif get_active():
+        print("a new run started: run `./tnazar wait-message` again to listen to it")
+    else:
+        print("no active run")
+    return 0
 
 
 def cmd_ui(args) -> int:
@@ -537,6 +586,16 @@ def cmd_runs(args) -> int:
 def cmd_run(args) -> int:
     from . import runner
     return runner.run(args)
+
+
+def cmd_flow(args) -> int:
+    from . import appmap
+    return appmap.run_flow(args)
+
+
+def cmd_flows(args) -> int:
+    from . import appmap
+    return appmap.list_flows(args)
 
 
 def cmd_replay(args) -> int:
@@ -677,6 +736,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("say", cmd_say, "narrate what you are about to do (shown in the dashboard timeline)")
     p.add_argument("text")
+    p = add("wait-message", cmd_wait_message,
+            "block until the user sends a dashboard message (run it in the background while idle)")
+    p.add_argument("--timeout", type=float, default=None, help="give up after N seconds (default: until the run ends)")
     add("wait-resume", cmd_wait_resume, f"wait up to {int(live.PAUSE_WAIT)}s for the user to resume a paused run")
     p = add("ui", cmd_ui, "live dashboard on localhost: screen, timeline, messages to the agent")
     p.add_argument("--port", type=int, default=8765)
@@ -694,6 +756,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stop-on-fail", action="store_true", help="stop at the first case that does not pass")
     # Also accepted after `run`, where people type it; SUPPRESS keeps a value given before the command.
     p.add_argument("--device", "-s", default=argparse.SUPPRESS, help="device serial to run the plan on")
+
+    p = add("flow", cmd_flow, "run a saved route (a plan `flow`) on the active run, in one command")
+    p.add_argument("name")
+    p.add_argument("--plan", metavar="FILE", help="the plan file to take it from (default: plans/*.plan of the run's app)")
+    p = add("flows", cmd_flows, "list the saved routes (the app map) for the active run's app")
+    p.add_argument("--plan", metavar="FILE", help="list only this file's flows")
 
     p = add("replay", cmd_replay, "re-run a recorded run on a device and re-check every verification")
     p.add_argument("run")
@@ -719,6 +787,12 @@ def main(argv: list[str] | None = None) -> int:
         if active and (held := _hold(active[0])) is not None:
             return held
         try:
+            if active and args.cmd in MOVES_FOCUS:
+                try:
+                    with live.device_lock():
+                        return args.fn(args) or 0
+                except live.DeviceBusy:
+                    raise UserError("the dashboard is still typing on the device; run the step again") from None
             return args.fn(args) or 0
         finally:
             # Shown, not consumed: the next device command is still held until the agent re-plans.
@@ -745,11 +819,10 @@ def _hold(run: Run) -> int | None:
                  "waited_ms": round((time.monotonic() - began) * 1000)})
         if not resumed:
             told = live.deliver(run.log)
-            print("PAUSED: the user paused this run. Command NOT run. "
-                  "Run `./tnazar wait-resume` until it prints `resumed`, then continue.")
-            return live.EXIT_HELD if told else live.EXIT_PAUSED
+            print(f"PAUSED: the user paused this run. Command NOT run. {live.PAUSED_HINT}")
+            return live.EXIT_HELD if live.needs_agent(told) else live.EXIT_PAUSED
         print("resumed")
-    if live.deliver(run.log):
+    if live.needs_agent(live.deliver(run.log)):
         print("Command NOT run: read the user's message above and decide the next step "
               "(re-run the command if it still applies).")
         return live.EXIT_HELD

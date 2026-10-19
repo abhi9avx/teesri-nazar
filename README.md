@@ -111,8 +111,11 @@ Login with the test user and verify the home screen loads.
 | `./tnazar case start TC-01 "title"` / `case end` | Group steps into a test case |
 | `./tnazar stop` | Finish and write the report |
 | `./tnazar run plans/x.plan` | Run every case of a plan file in one go (no AI turn per step) |
+| `./tnazar flows` | List the saved routes (the app map: `flow`s in `plans/*.plan` for the run's app) |
+| `./tnazar flow open_settings` | Run one saved route on the active run, in one command |
 | `./tnazar ui` | Live dashboard: screen, timeline, messages to Claude |
 | `./tnazar say "Opening login"` | Narrate the next step (timeline heading) |
+| `./tnazar wait-message` | Block until you send a dashboard message (the agent runs it in the background) |
 | `./tnazar replay <name>` | Run a recorded test again |
 | `./tnazar replay <name> --fresh` | Clear the app's data first, then replay |
 | `./tnazar replay <name> --visual` | Also compare old and new screenshots with Claude (runs `claude -p`, uses tokens) |
@@ -163,14 +166,24 @@ the panes stack.
 
 ### Steering the agent
 
-- **Messages.** The agent reads your message before its **next device step**. That step is
-  held back (not run) so the agent can change course. The list shows *"waiting for the
-  agent's next step…"* until then, and *"✓ delivered"* after. If the agent is idle (its
-  turn has ended), the message waits until it runs a command again.
+- **Messages.** The agent keeps `./tnazar wait-message` running in the background, so your
+  message reaches it in about a second, even while it is idle or busy elsewhere. Its next
+  device step is held back (not run) so it can change course. The list shows *"waiting for
+  the agent…"* until then, and *"✓ delivered"* after (*"✓ typed on the device"* for a PIN
+  or OTP the dashboard typed itself).
+- **What the agent is doing.** A line above the message box: *Got your message* (just
+  delivered), *Thinking about your message* (5 s after delivery, until it narrates its next
+  step), *Working: …* (its last narration, for a minute), *Listening* or *Not listening right
+  now* (the message waits for its next step). If a message gets no reply for 2 minutes, the
+  line says the agent may have stopped. A step that could not run shows as a red row with
+  the reason.
 - **Pause.** The agent's next device step waits. If you are still paused after 60 s, the
   agent is told to wait (`./tnazar wait-resume`) until you press **Resume**.
-- **OTP / PIN.** Enter a name (e.g. `OTP`), the value and, optionally, where to use it. The
-  agent types it with `--env UI_OTP`, so the value never reaches the chat. It is kept
+- **OTP / PIN.** Enter a name (e.g. `OTP`), the value and, optionally, where to use it.
+  With **Type it now** (on by default) the dashboard types it into the field that has focus
+  as soon as the agent's step in progress ends, because PIN and OTP screens expire; the agent is told afterwards and checks
+  the screen. Untick it to let the agent type it with `--env UI_OTP` into a field it picks.
+  Either way the value never reaches the chat. It is kept
   only in the dashboard's memory, never written to disk, shown as `••••` (*"🔒 OTP sent
   (value hidden)"*), and cleared when a new run starts.
 - **Plan runs** (`tnazar run <plan>`). Pause holds the runner as long as you like. A message
@@ -184,8 +197,8 @@ the panes stack.
 | `cannot listen on 127.0.0.1:8765` | Another dashboard (or app) uses the port: stop it or use `--port 9000`. |
 | *Waiting for the device…* | No device: check `adb devices`. |
 | *Screen hidden by the app* | The screen blocks capture (`FLAG_SECURE`, e.g. a PIN screen). The test goes on; only the picture is hidden. |
-| `screen reads: uiautomator dump` at `start` | Works, just slower (~2 s per read). Install Appium's UiAutomator2 server on the device for ~0.05 s reads. |
-| A message stays *waiting* | The agent is idle (its turn ended). Ask it to continue in Claude Code. |
+| `screen reads: uiautomator dump` at `start` | Works, just slower (~2 s per read). The next line says why; when the server is missing it prints the `adb install` commands for the APKs Appium downloaded (`$APPIUM_HOME`, default `~/.appium`). Run them once for ~0.05 s reads. |
+| A message stays *waiting* | The status line says *Not listening right now*: the agent's `wait-message` is not running, or its turn ended. Ask it to continue in Claude Code. |
 | Controls are greyed out | There is no active run. |
 
 ### Safety
@@ -256,6 +269,7 @@ testdata.example.yaml   ← accounts, env, DB, Figma: copy to testdata.yaml (git
 runs/                   ← one folder per run: events, screenshots, logs, report (gitignored)
 tests/                  ← unit tests:  python3 -m unittest discover -s tests
                            (fakedevice.py stands in for adb, so tests and CI need no phone)
+scripts/smoke_dashboard.py ← live dashboard check on a real device or emulator (Settings app)
 .github/workflows/      ← CI: runs the tests on Python 3.9 and 3.13 for every push
 ```
 

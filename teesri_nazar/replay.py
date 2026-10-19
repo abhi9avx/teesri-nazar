@@ -160,7 +160,7 @@ def run(args) -> int:
     try:
         meta["animations_before"] = dev.animations_off(adb)
         target.update_meta(animations_before=meta["animations_before"])
-        print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
+        print(uia2.start_line(adb))
         if args.fresh and meta["package"]:
             dev.force_stop(adb, meta["package"])
             dev.clear_data(adb, meta["package"])
@@ -197,6 +197,11 @@ def run(args) -> int:
                 ctx.log({"type": "shot", "label": e.get("label", ""), "file": target.rel(path)})
                 if args.visual:
                     pairs.append((str(source.path / e["file"]), str(path)))
+                continue
+            if e.get("ok") is False:
+                continue  # a step that did not run when it was recorded
+            if e.get("by") == "dashboard" and e.get("env") not in os.environ:
+                print(f"  skipped: {e['env']} was typed live from the dashboard (set ${e['env']} to replay it)")
                 continue
             step += 1
             try:

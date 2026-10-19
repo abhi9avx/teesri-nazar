@@ -5,7 +5,9 @@ import json
 import os
 import subprocess
 import tempfile
+import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -14,7 +16,7 @@ from unittest import mock
 
 from fakedevice import FakeClock, tnazar
 from teesri_nazar import cli, live, ui
-from teesri_nazar.session import Run, set_active
+from teesri_nazar.session import Run, clear_active, set_active
 
 from test_cli import CliTestCase
 
@@ -101,6 +103,164 @@ class InboxTest(CliTestCase):
         self.assertEqual(len(self.adb.taps), 1)
 
 
+class WaitMessageTest(CliTestCase):
+    def test_returns_as_soon_as_the_user_sends_a_message(self):
+        run = self.start()
+        timer = threading.Timer(0.3, live.post, ["log out and log back in"])
+        timer.start()
+        self.addCleanup(timer.join)
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn(">> USER (dashboard): log out and log back in", out)
+        self.assertEqual(events(run, "user_msg")[0]["text"], "log out and log back in")
+        self.ok("tap", "Login")  # already delivered: the next step is not held for it
+
+    def test_a_message_already_waiting_returns_at_once(self):
+        self.start()
+        live.post("retry the PIN")
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn("retry the PIN", out)
+
+    def test_times_out_quietly_with_no_message(self):
+        self.start()
+        code, out, _ = tnazar("wait-message", "--timeout", "0.3")
+        self.assertEqual(code, 0)
+        self.assertIn("no message", out)
+
+    def test_stops_when_the_run_ends(self):
+        self.start()
+        timer = threading.Timer(0.3, clear_active)
+        timer.start()
+        self.addCleanup(timer.join)  # it must never fire after the test's home is gone
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, 0)
+        self.assertIn("no active run", out)
+
+
+def hold_device(test, seconds: float) -> None:
+    """Another process's turn on the device (the dashboard typing, or an agent tap) for `seconds`."""
+    held = threading.Event()
+
+    def turn():
+        with live.device_lock():
+            held.set()
+            time.sleep(seconds)
+    t = threading.Thread(target=turn)
+    t.start()
+    test.addCleanup(t.join)
+    held.wait(5)
+
+
+class DeviceLockTest(CliTestCase):
+    def test_an_agent_tap_waits_while_the_dashboard_is_typing(self):
+        self.start()
+        hold_device(self, 0.4)
+        began = time.monotonic()
+        self.ok("tap", "Login")
+        self.assertGreaterEqual(time.monotonic() - began, 0.35)
+        self.assertEqual(len(self.adb.taps), 1)
+
+    def test_a_lock_held_by_a_process_that_died_is_free_at_once(self):
+        self.start()
+        code = ("import fcntl, os, sys; f = open(sys.argv[1], 'a'); fcntl.flock(f, fcntl.LOCK_EX); "
+                "print('held', flush=True); os.kill(os.getpid(), 9)")
+        proc = subprocess.run([sys.executable, "-c", code, str(live.device_lock_file())], capture_output=True, text=True)
+        self.assertIn("held", proc.stdout)
+        began = time.monotonic()
+        self.ok("tap", "Login")
+        self.assertLess(time.monotonic() - began, 1)
+
+    def test_an_info_message_is_shown_but_the_command_still_runs(self):
+        self.start()
+        live.post("UI_OTP was already typed", info=True)
+        out = self.ok("tap", "Login")
+        self.assertIn(">> USER (dashboard): UI_OTP was already typed", out)
+        self.assertEqual(len(self.adb.taps), 1)
+
+
+class AgentStatusTest(CliTestCase):
+    """The dashboard says whether the agent is listening, and what it is doing."""
+
+    def test_say_shows_the_step_and_a_live_listener_still_counts_as_listening(self):
+        self.start()
+        live.set_listener(os.getpid())
+        self.ok("say", "Opening settings")
+        st = live.agent_status()
+        self.assertEqual((st["state"], st["text"], st["listening"]), ("working", "Opening settings", True))
+
+    def test_wait_message_listens_then_reports_the_message(self):
+        self.start()
+        seen = []
+        timer = threading.Timer(0.3, lambda: (seen.append(live.agent_status()["listening"]), live.post("open help")))
+        timer.start()
+        self.addCleanup(timer.join)
+        tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(seen, [True])
+        st = live.agent_status()
+        self.assertEqual((st["state"], st["text"]), ("got_message", "open help"))
+
+    def test_a_listener_that_died_is_not_listening(self):
+        self.start()
+        live.set_listener(2 ** 22 + 12345)
+        self.assertFalse(live.agent_status()["listening"])
+
+    def test_the_status_quotes_the_message_not_an_info_note_after_it(self):
+        self.start()
+        live.post("open help")
+        live.post("UI_OTP was already typed", info=True)
+        self.ok("say", "x")
+        live.post("log out")
+        live.post("UI_PIN was already typed", info=True)
+        tnazar("tap", "Login")
+        self.assertEqual(live.agent_status()["text"], "log out")
+
+
+class LeftoverStateTest(CliTestCase):
+    def test_start_clears_the_previous_runs_status(self):
+        live.device_lock_file().parent.mkdir(parents=True, exist_ok=True)
+        live.set_agent_status("working", "the previous run's step")
+        self.start()
+        st = live.agent_status()
+        self.assertEqual((st["state"], st["listening"]), ("idle", False))
+
+
+class WaitMessageRulesTest(CliTestCase):
+    def test_an_info_note_does_not_wake_the_agent(self):
+        self.start()
+        live.post("UI_OTP was already typed", info=True)
+        timer = threading.Timer(0.3, live.post, ["now log out"])
+        timer.start()
+        self.addCleanup(timer.join)
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn("now log out", out)
+
+    def test_without_a_timeout_it_waits_until_the_run_ends(self):
+        self.start()
+        timer = threading.Timer(0.6, clear_active)
+        timer.start()
+        self.addCleanup(timer.join)
+        began = time.monotonic()
+        code, out, _ = tnazar("wait-message")
+        self.assertGreaterEqual(time.monotonic() - began, 0.5)
+        self.assertEqual(code, 0)
+        self.assertIn("no active run", out)
+
+    def test_a_replaced_run_says_so_instead_of_no_active_run(self):
+        self.start()
+        timer = threading.Timer(0.3, lambda: set_active(Run.create("next", {"package": "com.example.app"}), "fake-1"))
+        timer.start()
+        self.addCleanup(timer.join)
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, 0)
+        self.assertIn("a new run started", out)
+
+    def test_is_in_the_command_registry(self):
+        from teesri_nazar import commands
+        self.assertIn("wait-message", {c.name for c in commands.COMMANDS})
+
+
 class SteeringUnderLoadTest(CliTestCase):
     def test_a_burst_of_messages_is_delivered_once_each_in_order(self):
         run = self.start()
@@ -165,6 +325,14 @@ class PauseTest(CliTestCase):
         live.set_paused(False)
         self.assertIn("resumed", self.ok("wait-resume"))
         self.ok("tap", "Login")
+
+    def test_paused_with_only_an_info_note_is_still_a_pause(self):
+        self.start()
+        live.set_paused(True)
+        live.post("UI_OTP was already typed", info=True)
+        code, out, _ = tnazar("tap", "Login")
+        self.assertEqual(code, live.EXIT_PAUSED)
+        self.assertEqual(self.adb.taps, [])
 
     def test_resume_within_the_wait_runs_the_command(self):
         self.start()
@@ -349,6 +517,103 @@ class ServerTest(unittest.TestCase):
         [msg] = json.loads(self.call("GET", "/api/state")[1])["inbox"]
         self.assertEqual((msg["secret"], msg["note"]), ("UI_OTP", "use it on the OTP screen"))
         self.assertNotIn("4455", json.dumps(msg))
+
+    def test_type_now_types_into_the_focused_field_without_waiting_for_the_agent(self):
+        run = self.active_run()
+        adb = mock.MagicMock()
+        with mock.patch.object(ui, "Adb", return_value=adb) as make, mock.patch.object(ui.dev.time, "sleep"):
+            status, body = self.call("POST", "/api/secret", {"name": "mpin", "value": "7531", "type_now": True})
+        self.assertEqual((status, json.loads(body)["typed"]), (200, True))
+        make.assert_called_once_with("fake-1")
+        self.assertEqual([c.args for c in adb.shell.call_args_list], [("input", "text", d) for d in "7531"])
+        [typed] = events(run, "type")
+        self.assertEqual((typed["secret"], typed["env"], typed["by"], typed["text"]), (True, "UI_MPIN", "dashboard", None))
+        [msg] = live.unread()
+        self.assertIn("already typed", msg["text"])
+        on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
+        self.assertNotIn("7531", on_disk)
+
+    def test_type_now_reports_a_device_error_and_still_keeps_the_secret(self):
+        self.active_run()
+        adb = mock.MagicMock()
+        adb.shell.side_effect = ui.AdbError("device offline")
+        with mock.patch.object(ui, "Adb", return_value=adb):
+            status, body = self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        self.assertEqual(status, 400)
+        self.assertIn("offline", json.loads(body)["error"])
+        self.assertEqual(json.loads(self.call("GET", "/api/secret/UI_OTP")[1]), {"value": "0000"})
+
+    def test_a_typing_failure_never_reveals_any_part_of_the_value(self):
+        run = self.active_run()
+        adb = mock.MagicMock()
+        for err in ("adb shell input text 7 failed (1): error: closed",
+                    "adb timed out after 60s: shell input text Zq9pass",
+                    "adb shell input text Z failed (1): bad char near 'q9pa'"):
+            adb.shell.side_effect = ui.AdbError(err)
+            with mock.patch.object(ui, "Adb", return_value=adb):
+                status, body = self.call("POST", "/api/secret", {"name": "pw", "value": "Zq9pass", "type_now": True})
+            self.assertEqual(status, 400)
+        on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
+        for leak in ("Zq9pass", "q9pa", "input text"):
+            self.assertNotIn(leak, body.decode() + on_disk)
+        self.assertIn("timed out", on_disk)
+
+    def test_a_typing_failure_is_a_red_row_in_the_timeline(self):
+        run = self.active_run()
+        adb = mock.MagicMock()
+        adb.shell.side_effect = ui.AdbError("adb shell input text 7 failed (1): error: device offline")
+        with mock.patch.object(ui, "Adb", return_value=adb):
+            self.call("POST", "/api/secret", {"name": "mpin", "value": "7531", "type_now": True})
+        [typed] = events(run, "type")
+        self.assertEqual((typed["ok"], typed["by"], typed["env"]), (False, "dashboard", "UI_MPIN"))
+        self.assertIn("offline", typed["error"])
+
+    def test_two_secrets_sent_at_once_are_typed_one_after_the_other(self):
+        self.active_run()
+        typed = []
+        adb = mock.MagicMock()
+        adb.shell.side_effect = lambda *a, **k: (typed.append(a[-1]), time.sleep(0.01))
+        with mock.patch.object(ui, "Adb", return_value=adb), mock.patch.object(ui.dev, "KEY_GAP", 0.02):
+            threads = [threading.Thread(target=self.call, args=("POST", "/api/secret",
+                                                                {"name": n, "value": v, "type_now": True}))
+                       for n, v in (("otp", "1111"), ("pin", "2222"))]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        self.assertIn("".join(typed), ("11112222", "22221111"))
+
+    def test_typing_waits_for_an_agent_step_in_progress(self):
+        self.active_run()
+        hold_device(self, 0.4)
+        began = time.monotonic()
+        with mock.patch.object(ui, "Adb"), mock.patch.object(ui.dev.time, "sleep"):
+            self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        self.assertGreaterEqual(time.monotonic() - began, 0.35)
+
+    def test_typing_gives_up_politely_when_the_agent_keeps_the_device(self):
+        self.active_run()
+        hold_device(self, 0.6)
+        with mock.patch.object(live, "DEVICE_WAIT", 0.2), mock.patch.object(ui, "Adb") as adb:
+            status, body = self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        self.assertEqual(status, 400)
+        self.assertIn("try again", json.loads(body)["error"])
+        adb.assert_not_called()
+        self.assertEqual(json.loads(self.call("GET", "/api/secret/UI_OTP")[1]), {"value": "0000"})
+
+    def test_the_already_typed_note_does_not_stop_the_agent(self):
+        self.active_run()
+        with mock.patch.object(ui, "Adb"), mock.patch.object(ui.dev.time, "sleep"):
+            self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        [msg] = live.unread()
+        self.assertTrue(msg["info"])
+
+    def test_an_already_typed_note_is_marked_info_in_the_message_list(self):
+        self.active_run()
+        with mock.patch.object(ui, "Adb"), mock.patch.object(ui.dev.time, "sleep"):
+            self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        [msg] = json.loads(self.call("GET", "/api/state")[1])["inbox"]
+        self.assertEqual((msg["info"], msg["delivered"]), (True, False))
 
     def test_events_resume_from_an_offset_and_skip_a_half_written_line(self):
         run = self.active_run()

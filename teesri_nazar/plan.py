@@ -33,6 +33,9 @@ never `#index` or `x,y`: there is no observed screen to index and no element to 
 `tnazar run` exits 0 when every case passed, 1 when a case failed, 2 on a plan or setup
 error (or an unexpected error mid-run, which ends the case as blocked and stops the run),
 and 3 when a dashboard message handed the run back (it stays open; continue with --from).
+
+The app map: `tnazar flow <name>` runs one flow against the active run, from any
+`plans/*.plan` whose `app` is the run's app. A map file may hold flows and no case.
 """
 
 from __future__ import annotations
@@ -58,11 +61,19 @@ class Step:
     line: int
     argv: list[str]
 
+    def summary(self) -> str:
+        head, *rest = self.argv
+        arg = next((a for a in rest if not a.startswith("-")), "")
+        return f'{head} "{arg}"' if " " in arg else f"{head} {arg}".rstrip()
+
 
 @dataclass
 class RunFlow:
     line: int
     flow: str
+
+    def summary(self) -> str:
+        return f"run {self.flow}"
 
 
 @dataclass
@@ -70,6 +81,9 @@ class Retry:
     line: int
     times: int
     body: list = field(default_factory=list)
+
+    def summary(self) -> str:
+        return f"retry {self.times} [{' → '.join(i.summary() for i in self.body)}]"
 
 
 @dataclass
@@ -80,6 +94,9 @@ class If:
     other: list = field(default_factory=list)
     alts: list = field(default_factory=list)  # --or: screens that may show up instead
     wait: float = 0.0                          # --wait: seconds to wait for target or an --or
+
+    def summary(self) -> str:
+        return f'if "{self.target}"'
 
 
 @dataclass
@@ -105,12 +122,13 @@ class Plan:
     cases: list[Case]
 
 
-def load(path: str | Path) -> Plan:
+def load(path: str | Path, flows_only: bool = False) -> Plan:
     p = Path(path)
-    return parse(p.read_text(), str(p))
+    return parse(p.read_text(), str(p), flows_only)
 
 
-def parse(text: str, source: str = "plan") -> Plan:
+def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
+    """flows_only: an app map (`tnazar flow`) may hold flows and no case."""
     app = name = ""
     flows: dict[str, Flow] = {}
     cases: list[Case] = []
@@ -209,7 +227,7 @@ def parse(text: str, source: str = "plan") -> Plan:
         fail(top.line, f"flow `{top.name}` has no `end`")
     if not app:
         raise PlanError(f"{source}: the plan needs `app <package>` at the top")
-    if not cases:
+    if not cases and not flows_only:
         raise PlanError(f"{source}: the plan has no `case`")
     for c in cases:
         if not c.body:

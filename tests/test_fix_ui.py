@@ -6,7 +6,9 @@ import json
 import os
 import re
 import socket
+import shutil
 import stat
+import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -130,3 +132,124 @@ class PageTest(unittest.TestCase):
         self.assertIn("--on-fill: #111418", dark)
         self.assertIn(".dur.slow { color: var(--on-fill)", HTML)
         self.assertIn(".pill { font-size: 12px; padding: 1px 8px; border-radius: 10px; color: var(--on-fill)", HTML)
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node to run the dashboard's describe()")
+class TimelineWordingTest(unittest.TestCase):
+    """The timeline says what happened in plain words, and never 'timed out' when something else showed."""
+
+    def describe(self, *events):
+        a = HTML.index("const fmtDur")
+        script = (HTML[a:HTML.index("\n", a)] + "\n" + HTML[HTML.index("// Ids are written"):
+                  HTML.index("// ------------------------------------------------------------------ timeline")]
+                  + f"\nfor (const e of {json.dumps(events)}) console.log(describe(e)[1]);")
+        out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
+        return out.splitlines()
+
+    def describe_rows(self, *events):
+        """[line, detail] for each event."""
+        a = HTML.index("const fmtDur")
+        script = (HTML[a:HTML.index("\n", a)] + "\n" + HTML[HTML.index("// Ids are written"):
+                  HTML.index("// ------------------------------------------------------------------ timeline")]
+                  + f"\nconsole.log(JSON.stringify({json.dumps(events)}.map((e) => {{ const d = describe(e); return [d[1], d[2] || \"\"]; }})));")
+        return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+    def agent_line(self, status: dict, age_ms: int) -> str:
+        a = HTML.index("const fmtDur")
+        script = (HTML[a:HTML.index("\n", a)] + "\n" + HTML[HTML.index("// Ids are written"):
+                  HTML.index("// ------------------------------------------------------------------ timeline")]
+                  + f"\nconsole.log(agentLine({json.dumps(status)}, {age_ms})[0]);")
+        return subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout.strip()
+
+    def test_a_wait_that_found_the_other_screen_says_so(self):
+        [line] = self.describe({"type": "wait", "ok": False, "selector": {"id": "btn_continue"},
+                                "found_instead": {"text": "Something went wrong"}, "timeout": 20})
+        self.assertEqual(line, 'Expected "continue", but "Something went wrong" showed instead')
+
+    def test_a_real_timeout_names_the_time_and_an_old_event_without_one_still_reads(self):
+        lines = self.describe({"type": "wait", "ok": False, "selector": {"desc": "mainScreen"}, "timeout": 20},
+                              {"type": "wait", "ok": False, "selector": {"desc": "mainScreen"}},
+                              {"type": "wait_online", "ok": False})
+        self.assertEqual(lines, ['"main screen" did not appear within 20s', '"main screen" did not appear',
+                                 "Still offline"])
+
+    def test_ids_read_like_words_and_words_stay_as_written(self):
+        lines = self.describe({"type": "tap", "selector": {"id": "PROFILE_BTN_ID"}, "label": "PROFILE_BTN_ID"},
+                              {"type": "tap", "selector": {"desc": "App settings"}, "label": "App settings"},
+                              {"type": "tap", "selector": {"desc": "OK"}, "label": "OK"},
+                              {"type": "tap", "selector": {"text": "Pay", "contains": True}, "label": "Pay now"},
+                              {"type": "type", "secret": True, "env": "UI_MPIN", "selector": {"id": "pin_input_field"}},
+                              {"type": "type", "secret": True, "env": "UI_MPIN", "by": "dashboard"},
+                              {"type": "launch", "restart": True})
+        self.assertEqual(lines, ['Tap "profile"', 'Tap "App settings"', 'Tap "OK"', 'Tap "Pay" (partial)',
+                                 'Type the MPIN (hidden) into "pin"',
+                                 "You typed the MPIN from the dashboard (hidden)", "Restart the app"])
+
+    def test_check_and_if_lines_name_the_element_in_words(self):
+        lines = self.describe({"type": "check", "ok": False, "what": "id=pin_input_field is visible"},
+                              {"type": "check", "ok": False, "what": "id=wifi_switch is visible, checked"},
+                              {"type": "check", "ok": False, "what": "desc=Navigate up is visible"},
+                              {"type": "check", "ok": True, "what": '"Settings" is visible'},
+                              {"type": "check", "ok": True, "kind": "db", "what": "txn row status = SUCCESS"},
+                              {"type": "if", "target": "id=btn_continue", "found": True},
+                              {"type": "if", "target": "desc=Navigate up", "found": True},
+                              {"type": "if", "target": "~Pay", "found": False},
+                              {"type": "if", "target": "Home", "found": True},
+                              {"type": "tap", "selector": {"id": "com.example.app:id/btn_pay"}})
+        self.assertEqual(lines, ['"pin" is visible', '"wifi switch" is visible, checked',
+                                 '"Navigate up" is visible', '"Settings" is visible',
+                                 "[db] txn row status = SUCCESS",
+                                 'Is "continue" on screen? Yes', 'Is "Navigate up" on screen? Yes',
+                                 'Is "Pay" (partial) on screen? No', 'Is "Home" on screen? Yes', 'Tap "pay"'])
+
+    def test_a_step_that_could_not_run_says_why(self):
+        rows = self.describe_rows({"type": "tap", "ok": False, "target": "Nowhere", "error": 'not found: "Nowhere"'},
+                                  {"type": "type", "by": "dashboard", "ok": False, "env": "UI_MPIN",
+                                   "error": "the device is offline"},
+                                  {"type": "adb", "args": ["shell", "false"], "exit": 1, "error": "error: closed"})
+        self.assertEqual(rows, [['Could not tap "Nowhere"', 'not found: "Nowhere"'],
+                                ["Typing the MPIN from the dashboard failed", "the device is offline"],
+                                ["Device command: adb shell false", "failed (exit 1): error: closed"]])
+
+    def test_the_detail_line_keeps_what_the_old_timeline_showed(self):
+        rows = self.describe_rows({"type": "launch", "package": "com.example.app"},
+                                  {"type": "swipe", "from": [1, 2], "to": [3, 4]},
+                                  {"type": "shot", "label": "login"},
+                                  {"type": "hold", "waited_ms": 60000, "resumed": False})
+        self.assertEqual(rows, [["Open the app", "com.example.app"], ["Swipe", "from 1,2 to 3,4"],
+                                ["Screenshot: login", ""],
+                                ["Paused by you for 1m 0s", "the agent was told to wait until you resume"]])
+
+    def js(self, expr: str):
+        a = HTML.index("const fmtDur")
+        script = (HTML[a:HTML.index("\n", a)] + "\n" + HTML[HTML.index("// Ids are written"):
+                  HTML.index("// ------------------------------------------------------------------ timeline")]
+                  + f"\nconsole.log(JSON.stringify({expr}));")
+        return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+    def test_your_message_is_never_shown_below_steps_that_came_after_it(self):
+        events = [{"type": "say", "text": "Opening search"}, {"type": "tap", "label": "Search"},
+                  {"type": "user_msg", "text": "now go back"}, {"type": "key", "key": "back"},
+                  {"type": "say", "text": "Going back"}, {"type": "key", "key": "back"}]
+        blocks = self.js(f"layout({json.dumps(events)}).map((b) => [b.kind, b.steps ? b.steps.map((e) => e.type) : b.e.type])")
+        self.assertEqual(blocks, [["group", ["tap"]], ["user", "user_msg"], ["step", "key"], ["group", ["key"]]])
+
+    def test_the_time_shows_only_on_lines_it_belongs_to(self):
+        timed = lambda st, age: self.js(f"agentLine({json.dumps(st)}, {age})")[1]
+        self.assertTrue(timed({"state": "got_message", "text": "x", "listening": True}, 1000))
+        self.assertTrue(timed({"state": "working", "text": "x", "listening": True}, 1000))
+        self.assertFalse(timed({"state": "working", "text": "x", "listening": True}, 120000))
+        self.assertFalse(timed({"state": "idle", "text": "", "listening": False}, 0))
+
+    def test_the_status_line_never_gets_stuck(self):
+        listening = {"state": "idle", "text": "", "listening": True}
+        self.assertTrue(self.agent_line(listening, 0).startswith("🟢 Listening"))
+        self.assertTrue(self.agent_line({**listening, "listening": False}, 0).startswith("⚪ Not listening"))
+        got = {"state": "got_message", "text": "open help", "listening": False}
+        self.assertTrue(self.agent_line(got, 1000).startswith("📨 Got your message"))
+        self.assertTrue(self.agent_line(got, 10000).startswith("🤔 Thinking about your message"))
+        self.assertIn("may have stopped", self.agent_line(got, 300000))
+        working = {"state": "working", "text": "Opening settings", "listening": True}
+        self.assertTrue(self.agent_line(working, 1000).startswith("⚙️ Working"))
+        self.assertTrue(self.agent_line(working, 120000).startswith("🟢 Listening"))
+

@@ -88,6 +88,8 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
 .chips button { font-size: 12px; padding: 3px 8px; border-radius: 12px; }
 .inline { display: flex; gap: 6px; } .inline input { min-width: 0; flex: 1; }
 .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.agent-bar { font-size: 13px; padding: 6px 8px; margin-bottom: 8px; border-radius: 6px; background: var(--chip); }
+.agent-bar .age { color: var(--muted); }
 .err { color: var(--fail); font-size: 12px; margin-top: 6px; min-height: 1em; }
 .msglist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .msglist li { background: var(--msg); border-radius: 6px; padding: 5px 8px; }
@@ -123,6 +125,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
       <div class="card" id="run-card"><h3>Run</h3><dl class="kv" id="run-kv"><dt>—</dt><dd>no run</dd></dl></div>
       <div class="card">
         <h3>Talk to the agent</h3>
+        <div class="agent-bar" id="agent-bar" aria-live="polite"></div>
         <div class="inline" style="margin-bottom:8px">
           <button id="pause-btn" class="danger">⏸ Pause</button>
         </div>
@@ -130,7 +133,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
         <div class="chips" id="chips"></div>
         <button class="primary" id="send-btn">Send message</button>
         <div class="err" id="msg-err" aria-live="polite"></div>
-        <div class="hint">The agent reads your message before its next step and changes what it does. If the agent is not running, the message waits.</div>
+        <div class="hint">While the line above says <b>Listening</b>, your message reaches the agent in about a second; otherwise at its next step. It finishes the step in progress first.</div>
       </div>
       <div class="card">
         <h3>Send OTP / PIN (kept hidden)</h3>
@@ -139,6 +142,7 @@ textarea { width: 100%; resize: vertical; min-height: 64px; }
           <input id="sec-value" type="password" autocomplete="off" placeholder="the number" aria-label="value">
         </div>
         <input id="sec-note" placeholder="where to use it (optional), e.g. on the OTP screen" style="width:100%;margin-top:6px">
+        <label style="display:block;margin-top:6px"><input type="checkbox" id="sec-now" checked> Type it now into the field that has focus (PIN/OTP screens expire)</label>
         <button id="sec-btn" style="margin-top:8px">Send hidden</button>
         <div class="err" id="sec-err" aria-live="polite"></div>
         <div class="hint">Never saved and never shown: logs and reports show ••••. Cleared when a new test run starts. <span id="sec-list"></span></div>
@@ -200,36 +204,115 @@ const clock = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
 const userText = (m) => m.secret
   ? `🔒 ${m.secret.replace(/^UI_/, "")} sent (value hidden)${m.note ? ` — ${m.note}` : ""}`
   : m.text;
+// Ids are written for code ("pin_input_field"); the timeline names them like a person would ("pin").
+// Words a person wrote ("OK", "App settings") stay as they are.
+const NOISE = new Set(["id", "btn", "button", "tag", "iv", "tv", "view", "field", "input", "layout", "container", "text"]);
+const looksLikeId = (s) => /^[\w.:\/-]+$/.test(s) && (/_|:id\//.test(s) || /[a-z][A-Z]/.test(s));
+function human(raw) {
+  raw = String(raw);
+  if (!looksLikeId(raw)) return raw;
+  const words = raw.replace(/^[\w.]+:id\//, "").replace(/([a-z])([A-Z])/g, "$1 $2").split(/[\s_.\-:/]+/)
+    .map((w) => w.toLowerCase()).filter((w) => w && !NOISE.has(w));
+  return words.length ? words.join(" ") : raw;
+}
 function sel(s) {
   if (!s) return "";
-  if (s.id) return `id=${s.id}`;
-  if (s.desc) return `desc="${s.desc}"`;
-  if (s.text) return `${s.contains ? "~" : ""}"${s.text}"`;
-  return JSON.stringify(s);
+  if (s.text) return `"${s.text}"${s.contains ? " (partial)" : ""}`;
+  if (s.desc) return `"${human(s.desc)}"`;
+  if (s.id) return `"${human(s.id)}"`;
+  return "the screen";
 }
+// A target as typed in a plan or printed by the CLI: id=…, desc=…, ~text, "text" or plain text.
+function targetText(t) {
+  t = String(t).trim();
+  let m;
+  if ((m = t.match(/^id=(.+)$/))) return `"${human(m[1])}"`;
+  if ((m = t.match(/^desc=("?)(.+)\1$/))) return `"${human(m[2])}"`;
+  if ((m = t.match(/^~("?)(.+)\1$/))) return `"${m[2]}" (partial)`;
+  if ((m = t.match(/^"(.+)"$/))) return `"${m[1]}"`;
+  return `"${t}"`;
+}
+// UI check lines arrive as `<selector> is visible[, checked]`; anything else (db, figma) is the tester's own words.
+function checkText(what) {
+  const i = String(what).lastIndexOf(" is ");
+  const state = i < 0 ? "" : what.slice(i + 4);
+  return /^(visible|gone)(, [\w ]+)*$/.test(state) ? `${targetText(what.slice(0, i))} is ${state}` : what;
+}
+const named = (s) => !!(s && (s.text || s.desc || s.id));
+const secretName = (env) => env ? env.replace(/^UI_/, "") : "secret";
+const within = (secs, text) => secs != null ? `${text} ${secs}s` : "";
 function describe(e) {
+  const failed = e.ok === false;
   switch (e.type) {
-    case "launch": return ["🚀", `Launch ${e.package}${e.fresh ? " (fresh)" : e.restart ? " (restart)" : ""}`];
-    case "open_url": return ["🔗", `Open ${e.url}`];
-    case "tap": return ["👆", `${e.long ? "Long-press" : "Tap"} ${e.label ? `"${e.label}"` : ""}`, e.selector ? sel(e.selector) : `at ${e.xy}`];
+    case "launch": return ["🚀", e.fresh ? "Open the app with its data cleared" : e.restart ? "Restart the app" : "Open the app", e.package || ""];
+    case "open_url": return ["🔗", `Open link ${e.url}`];
+    case "tap": {
+      const verb = e.long ? "long-press" : "tap";
+      if (failed) return ["❌", `Could not ${verb} ${targetText(e.target)}`, e.error || ""];
+      const what = named(e.selector) ? sel(e.selector) : e.label ? `"${human(e.label)}"` : "a spot on the screen";
+      return ["👆", `${verb[0].toUpperCase() + verb.slice(1)} ${what}`];
+    }
     case "type": {
-      const v = e.secret ? `•••• ${e.env ? `(${e.env})` : "(secret)"}` : `"${e.text}"`;
-      return ["⌨️", `Type ${v}${e.selector ? ` into ${sel(e.selector)}` : ""}${e.enter ? " + enter" : ""}`];
+      if (e.by === "dashboard") return failed
+        ? ["❌", `Typing the ${secretName(e.env)} from the dashboard failed`, e.error || ""]
+        : ["⌨️", `You typed the ${secretName(e.env)} from the dashboard (hidden)`];
+      if (failed) return ["❌", `Could not type into ${targetText(e.target)}`, e.error || ""];
+      const v = e.secret ? (e.env ? `the ${secretName(e.env)} (hidden)` : "a hidden value") : `"${e.text}"`;
+      return ["⌨️", `Type ${v}${e.selector ? ` into ${sel(e.selector)}` : ""}${e.enter ? " and press Enter" : ""}`];
     }
     case "key": return ["⏎", `Press ${e.key}`];
-    case "scroll": return ["↕️", `Scroll ${e.direction}${e.to ? ` to ${sel(e.to)}` : ""}${e.to ? (e.found ? " — found" : " — not found") : ""}`];
-    case "swipe": return ["👉", `Swipe ${e.from} → ${e.to}`];
-    case "wait": return [e.ok ? "⏳" : "⌛", `Wait for ${sel(e.selector)} ${e.gone ? "to disappear" : "to appear"} ${e.ok ? "✓" : "✗ timed out"}`,
-                         e.polls ? `${e.polls} screen check${e.polls > 1 ? "s" : ""}` : ""];
-    case "check": return [e.ok ? "✅" : "❌", `${e.kind && e.kind !== "ui" ? `[${e.kind}] ` : ""}${e.what}`, e.detail || ""];
-    case "shot": return ["📸", `Screenshot ${e.label || ""}`];
-    case "note": return [e.kind === "bug" ? "🐞" : "📝", `${e.kind}: ${e.text}`];
-    case "adb": return ["🛠", `adb ${(e.args || []).join(" ")}`, `exit ${e.exit}`];
-    case "if": return ["🔀", `If "${e.target}" is on screen → ${e.found ? "yes" : "no"}`];
-    case "wait_online": return [e.ok ? "📶" : "📵", e.ok ? "Device back online" : `Still offline after ${e.timeout}s`];
-    case "hold": return ["⏸", `Held by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : "; agent told to wait-resume"}`];
+    case "scroll": return ["↕️", e.to ? `Scroll ${e.direction} looking for ${sel(e.to)}: ${e.found ? "found" : "not found"}` : `Scroll ${e.direction}`];
+    case "swipe": return ["👉", "Swipe", e.from && e.to ? `from ${e.from} to ${e.to}` : ""];
+    case "wait": {
+      const what = sel(e.selector);
+      if (e.ok) return ["⏳", `${what} ${e.gone ? "went away" : "appeared"}`];
+      if (e.found_instead) return ["⚠️", `Expected ${what}, but ${sel(e.found_instead)} showed instead`];
+      return ["⌛", `${what} ${e.gone ? "did not go away" : "did not appear"} ${within(e.timeout, "within")}`.trim()];
+    }
+    case "check": return [e.ok ? "✅" : "❌", `${e.kind && e.kind !== "ui" ? `[${e.kind}] ` : ""}${checkText(e.what)}`, e.ok ? "" : e.detail || ""];
+    case "shot": return ["📸", `Screenshot${e.label ? `: ${e.label}` : ""}`];
+    case "note": return [e.kind === "bug" ? "🐞" : "📝", `${e.kind === "bug" ? "Bug" : "Note"}: ${e.text}`];
+    case "adb": return ["🛠", `Device command: adb ${(e.args || []).join(" ")}`, e.exit ? `failed (exit ${e.exit})${e.error ? `: ${e.error}` : ""}` : ""];
+    case "if": return ["🔀", `Is ${targetText(e.target)} on screen? ${e.found ? "Yes" : "No"}`];
+    case "wait_online": return [e.ok ? "📶" : "📵", e.ok ? "Device back online" : `Still offline ${within(e.timeout, "after")}`.trim()];
+    case "hold": return ["⏸", `Paused by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : ""}`,
+                         e.resumed ? "" : "the agent was told to wait until you resume"];
     default: return ["•", e.type];
   }
+}
+
+// The status line: what the agent last did, and whether a listener is up. Nothing in it can stay
+// stale: "working" fades back to listening, and a message with no reply says so.
+const GOT_FOR = 5000, THINKING_FOR = 120000, WORKING_FOR = 60000;
+function agentLine(a, age) {
+  const quote = a.text ? `: “${a.text.length > 80 ? a.text.slice(0, 80) + "…" : a.text}”` : "";
+  if (a.state === "got_message") {
+    if (age < GOT_FOR) return [`📨 Got your message${quote}`, true];
+    if (age < THINKING_FOR) return [`🤔 Thinking about your message${quote}`, true];
+    return [`⚠️ No reply to your message for ${fmtDur(age)}${quote}: the agent may have stopped; check Claude Code`, false];
+  }
+  if (a.state === "working" && age < WORKING_FOR) return [`⚙️ Working${quote}`, true];
+  return [a.listening ? "🟢 Listening: your message reaches the agent in about a second"
+                      : "⚪ Not listening right now: your message waits for the agent's next step", false];
+}
+
+// The timeline's blocks in order: a `say` opens a group its steps go under; your message, a
+// case boundary or the next `say` closes it, so nothing that came later is drawn above it.
+function layout(events) {
+  const blocks = [];
+  let group = null;
+  for (const e of events) {
+    if (e.type === "io") continue;  // older runs: output size per command, now shown per case
+    if (e.type === "say") { group = { kind: "group", e, steps: [] }; blocks.push(group); continue; }
+    if (["user_msg", "case_start", "case_end"].includes(e.type)) {
+      group = null;
+      blocks.push({ kind: e.type === "user_msg" ? "user" : e.type, e });
+      continue;
+    }
+    if (group) group.steps.push(e);
+    else blocks.push({ kind: "step", e });
+  }
+  return blocks;
 }
 
 // ------------------------------------------------------------------ timeline
@@ -250,8 +333,8 @@ function row(e, t0) {
     cell.append(d);
   }
   r.append(cell);
-  if (e.type === "check") r.classList.add(e.ok ? "ok-check" : "bad");
-  if (e.type === "wait" && !e.ok) r.classList.add("bad");
+  if (e.type === "check" && e.ok) r.classList.add("ok-check");
+  if (e.ok === false || (e.type === "adb" && e.exit)) r.classList.add("bad");
   if (e.type === "note" && e.kind === "bug") r.classList.add("bug");
   const shot = e.shot || e.file;
   if (shot && view) {
@@ -277,50 +360,37 @@ function render() {
     return;
   }
   const t0 = meta && meta.started_at ? Date.parse(meta.started_at) : null;
-  let group = null, steps = 0, total = 0, lastRow = null;
-  const closeGroup = () => {
-    if (!group) return;
-    group.querySelector(".gmeta").textContent = steps ? `${steps} step${steps > 1 ? "s" : ""} · ${fmtDur(total)}` : "";
-    group = null; steps = 0; total = 0;
-  };
-  for (const e of events) {
-    if (e.type === "case_start") {
-      closeGroup();
+  for (const b of layout(events)) {
+    const e = b.e;
+    if (b.kind === "case_start") {
       const c = el("div", "case");
       c.append(el("span", "id", e.case), el("span", null, e.title || ""));
       const cost = usageLabel(caseUsage[e.case]);
       if (cost) { const s = el("span", "case-cost", `🪙 ${cost}`); s.title = "model usage for this test case (from the Claude Code session log)"; c.append(s); }
       tl.append(c);
-    } else if (e.type === "case_end") {
-      closeGroup();
+    } else if (b.kind === "case_end") {
       const c = el("div", "case-end");
       c.append(el("span", `pill ${e.status}`, e.status.toUpperCase()), document.createTextNode(e.reason ? `  ${e.reason}` : ""));
       const cost = usageLabel(caseUsage[e.case]);
       if (cost) { const s = el("span", "case-cost", `🪙 ${cost}`); s.title = "model usage for this case (from the Claude Code session log)"; c.append(s); }
       tl.append(c);
-    } else if (e.type === "io") {
-      // Older runs logged per-command output size; token cost is shown per test case instead.
-    } else if (e.type === "say") {
-      closeGroup();
-      group = el("div", "group");
-      const h = el("div", "ghead");
-      h.append(el("span", "when", clock(e.t)), el("span", "txt", `» ${e.text}`), el("span", "dur gmeta", ""));
-      group.append(h, el("div", "gbody"));
+    } else if (b.kind === "group") {
+      const group = el("div", "group"), h = el("div", "ghead"), body = el("div", "gbody");
+      const total = b.steps.reduce((sum, s) => sum + (s.dur_ms || 0), 0);
+      const n = b.steps.length;
+      h.append(el("span", "when", clock(e.t)), el("span", "txt", `» ${e.text}`),
+               el("span", "dur gmeta", n ? `${n} step${n > 1 ? "s" : ""} · ${fmtDur(total)}` : ""));
+      for (const s of b.steps) body.append(row(s, t0));
+      group.append(h, body);
       tl.append(group);
-    } else if (e.type === "user_msg") {
+    } else if (b.kind === "user") {
       const r = el("div", "row user");
       r.append(el("span", "when", clock(e.t)), el("span", "ico", "📨"), el("span", "what", `You: ${userText(e)}`), el("span"));
       tl.append(r);
     } else {
-      const r = row(e, t0);
-      lastRow = r;
-      if (group) {
-        group.querySelector(".gbody").append(r);
-        steps++; total += e.dur_ms || 0;
-      } else tl.append(r);
+      tl.append(row(e, t0));
     }
   }
-  closeGroup();
   if (stick) tl.scrollTop = tl.scrollHeight;
 }
 $("timeline").addEventListener("scroll", () => {
@@ -400,7 +470,17 @@ function renderRunCard() {
   if (report) add("Report", "report.html", `/runs/${encodeURIComponent(meta.name)}/report.html`);
 }
 
+function renderAgent() {
+  const a = state && state.agent, bar = $("agent-bar");
+  if (!a || !(state && state.active)) { bar.textContent = ""; bar.hidden = true; return; }
+  bar.hidden = false;
+  const age = a.t ? Date.now() - Date.parse(a.t) : 0;
+  const [line, timed] = agentLine(a, age);
+  bar.replaceChildren(document.createTextNode(line + " "));
+  if (timed && a.t) bar.append(el("span", "age", `· ${fmtDur(age)} ago`));
+}
 function renderControl() {
+  renderAgent();
   const active = state && state.active;
   const paused = state && state.paused;
   $("dot").className = "dot" + (paused ? " paused" : active ? " live" : "");
@@ -417,8 +497,9 @@ function renderControl() {
   if (!inbox.length) { const li = el("li", null, "None yet"); li.style.cssText = "background:none;color:var(--muted)"; ul.append(li); }
   for (const m of inbox.slice().reverse()) {
     const li = el("li", null, userText(m));
-    if (m.secret) li.title = `The agent types it with --env ${m.secret}`;
-    li.append(el("span", "st", `${clock(m.t)} · ${m.delivered ? "✓ delivered to the agent" : "waiting for the agent's next step…"}`));
+    if (m.secret) li.title = m.info ? "Typed on the device from the dashboard" : `The agent types it with --env ${m.secret}`;
+    const st = m.info ? "✓ typed on the device" : m.delivered ? "✓ delivered to the agent" : "waiting for the agent…";
+    li.append(el("span", "st", `${clock(m.t)} · ${st}`));
     ul.append(li);
   }
 }
@@ -465,9 +546,9 @@ for (const c of CHIPS) { const b = el("button", null, c); b.onclick = () => { $(
 $("sec-btn").onclick = async () => {
   $("sec-err").textContent = "";
   try {
-    const j = await post("/api/secret", { name: $("sec-name").value, value: $("sec-value").value, note: $("sec-note").value });
+    const j = await post("/api/secret", { name: $("sec-name").value, value: $("sec-value").value, note: $("sec-note").value, type_now: $("sec-now").checked });
     $("sec-value").value = ""; $("sec-note").value = "";
-    $("sec-err").textContent = ""; $("sec-list").textContent = `Sent as ${j.name}`;
+    $("sec-err").textContent = ""; $("sec-list").textContent = j.typed ? `Typed as ${j.name}: check the screen` : `Sent as ${j.name}`;
     await tickState();
   } catch (err) { $("sec-err").textContent = err.message; }
 };

@@ -43,14 +43,19 @@ COMMANDS = (
     Command("runs", None),
     Command("replay", None),
     Command("run", None),
+    Command("flow", None, device=True),  # its steps record their own events
+    Command("flows", None),
     Command("ui", None),
     Command("devices", None),
     Command("packages", None),
     Command("wait-resume", None),
+    Command("wait-message", None),
 )
 
 # Commands a dashboard pause or an unread message holds back.
 DEVICE_COMMANDS = frozenset(c.name for c in COMMANDS if c.device)
+# Commands that change the app's state (and may move focus): the dashboard waits for them before typing.
+ACTION_COMMANDS = frozenset(c.name for c in COMMANDS if c.action)
 # Events that record how long their command took (`dur_ms`).
 TIMED_EVENTS = frozenset(c.event for c in COMMANDS if c.device and c.event)
 # Events of commands that change the app's state: report step counts; replay re-runs them.

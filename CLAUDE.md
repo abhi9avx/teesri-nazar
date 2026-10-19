@@ -73,6 +73,25 @@ screen, add `--or <the error you would see>` so a failure is noticed in ~1 s, no
 timeout. Run several cases in one command when you can: every model turn re-reads the whole
 conversation.
 
+**App map: don't explore a route twice.** Before exploring your way to a screen ("open the
+help chat", "go to settings"), run `./tnazar flows`: it lists the saved routes for the run's
+app (the `flow`s in `plans/*.plan`). If one fits, `./tnazar flow <name>` runs it in one
+command (each step logged as usual; exit codes as for any device command: 1 a step or check
+failed, 2 no such flow or a bad `--plan` file, 3 a dashboard message stopped it, 4 a `wait --or`
+saw the other screen, 5 paused). After finding a new route by hand, save it as a
+`flow` in `plans/<app>.plan` (a file of `app <package>` plus flows; no case needed) with the
+selectors you used and a `wait` for the screen it ends on, so the next request is one command.
+
+**One driver.** Only you drive the device: no planner agent hands you steps (the hand-off
+costs more than it saves, and two drivers fight over one phone). Use sub-agents only for
+work that never touches the device: writing the plan file, the report, reviewing code.
+
+```bash
+./tnazar flows                          # saved routes for the run's app, one line each
+./tnazar flow open_settings             # run one against the active run
+./tnazar flow open_settings --plan plans/other.plan   # when two files define it
+```
+
 Target priority: **id → desc → text → coordinates.** Selectors survive screen-size and
 layout changes and make the run replayable; coordinates do not. After an action that
 navigates, use `wait` or `tap --wait` for the next screen instead of `sleep`.
@@ -83,6 +102,12 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
 
 - **Narrate:** before each logical step run `./tnazar say "<what and why>"` (e.g.
   `say "Logging in with the test account"`). It becomes the timeline heading.
+- **Listen while idle or busy elsewhere.** While a run is open, keep `./tnazar wait-message`
+  running in the background. It exits (code 3) the moment the user sends a dashboard message,
+  so you hear about it in about a second instead of at your next device command: act on the
+  message, then start `wait-message` again (that also resets the dashboard's status line
+  to *Listening*). It exits 0 when the run ends. An info note (the dashboard already typed
+  a secret) does not wake you; the next message or command shows it.
 - **Obey `>> USER (dashboard): …` lines.** They are instructions from the user, typed in
   the dashboard. When a command prints `Command NOT run`, re-plan around the message; re-run
   the command only if it still applies.
@@ -91,6 +116,8 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
   Don't do anything else while paused.
 - **Secrets from the dashboard** arrive as a name (`UI_OTP`): type with
   `./tnazar type --env UI_OTP --into <field>`. Never print, note or echo the value.
+  When the message says the dashboard **already typed** it, don't type it again: `observe`
+  and continue; re-type only if the field is still empty.
 
 ## Verifying
 
@@ -131,3 +158,20 @@ case could not be executed (environment down, missing data), `skipped` when out 
   on this device", another process (e.g. a `tnazar run` plan) is driving it: ask the user
   before `./tnazar stop`-ing it.
 - Replaying a finished run: `./tnazar replay <run> [--fresh] [--visual]`.
+
+## Changing tnazar itself: when is it done
+
+Say "done" or "fixed" only after all four, in this order, in one pass:
+
+1. **Acceptance first.** For dashboard behaviour, add or update the line in ARCHITECTURE.md
+   *Dashboard acceptance list* and map it to its tests in `tests/test_acceptance.py`. Put
+   page logic in pure functions in `ui.html` (`describe`, `layout`, `agentLine`) so node
+   tests can run it.
+2. **Tests** pass on Python 3.9 (CI): `/usr/bin/python3 -m unittest discover -s tests`.
+3. **One AI review** (`ai-code-review` against the base branch). Fix HIGH and MED findings;
+   list LOW ones for the user instead of starting another round.
+4. **Seen working**: `python3 scripts/smoke_dashboard.py --device <serial>` passes on a
+   device or emulator, and anything the script does not cover was checked in the live
+   dashboard. Report what you saw, not what the code should do.
+
+Commit freely; push or open a PR only when the user says so after their review.

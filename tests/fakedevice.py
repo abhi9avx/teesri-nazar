@@ -330,7 +330,9 @@ def fake_device(adb: FakeAdb):
 
     clock = FakeClock()
     with tempfile.TemporaryDirectory() as home, contextlib.ExitStack() as stack:
-        stack.enter_context(mock.patch.dict(os.environ, {"TNAZAR_HOME": home}))
+        # APPIUM_HOME: the server APKs a test puts there, never the ones on the machine running it.
+        stack.enter_context(mock.patch.dict(os.environ, {"TNAZAR_HOME": home,
+                                                         "APPIUM_HOME": os.path.join(home, "appium")}))
         for mod in (cli, replay):
             stack.enter_context(mock.patch.object(mod, "Adb", lambda serial: adb))
             stack.enter_context(mock.patch.object(mod, "pick_serial", lambda explicit=None: SERIAL))

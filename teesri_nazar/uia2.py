@@ -12,10 +12,14 @@ holds the device's UI automation connection), so the server is stopped before fa
 from __future__ import annotations
 
 import json
+import os
+import re
+import shlex
 import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from .adb import Adb
 from .session import state_dir
@@ -86,6 +90,44 @@ def start(adb: Adb) -> bool:
         return False
     _state_file().write_text(json.dumps({"serial": adb.serial, "port": port, "session": session}) + "\n")
     return True
+
+
+def start_line(adb: Adb) -> str:
+    """Start the server and say which reads the run uses; when slow, why and how to fix it."""
+    if start(adb):
+        return "screen reads: fast (UiAutomator2 server)"
+    line = "screen reads: uiautomator dump (~2 s per read)\n"
+    if installed(adb):
+        return line + f"  the UiAutomator2 server is installed but did not answer within {READY_TIMEOUT:g} s"
+    line += f"  the UiAutomator2 server is not installed on {adb.serial}"
+    apks = local_apks()
+    if not apks:
+        return line + ("; get it with `npm i -g appium && appium driver install uiautomator2`,"
+                       " then start again for the install commands")
+    # Installing changes the device, so tnazar only prints the commands.
+    return line + "; for ~0.05 s reads install it once:\n" + "\n".join(
+        f"    adb -s {shlex.quote(adb.serial)} install -r -g {shlex.quote(str(apk))}" for apk in apks)
+
+
+def local_apks() -> list[Path]:
+    """The newest server + test APK pair Appium downloaded on this machine, or []."""
+    root = Path(os.environ.get("APPIUM_HOME") or Path.home() / ".appium")
+    found = []
+    # Where Appium keeps the server: a plain install, or inside the driver; one level of
+    # nesting covers a versioned folder. Not a full walk of node_modules on every `start`.
+    pattern = "apks/appium-uiautomator2-server-v*.apk"
+    homes = ("node_modules/appium-uiautomator2-server",
+             "node_modules/appium-uiautomator2-driver/node_modules/appium-uiautomator2-server")
+    apks = [a for prefix in ("", "*/") for h in homes for a in root.glob(f"{prefix}{h}/{pattern}")]
+    for apk in apks:
+        test = apk.with_name("appium-uiautomator2-server-debug-androidTest.apk")
+        version = re.search(r"-v([\d.]+)\.apk$", apk.name)
+        if test.exists() and version:
+            found.append((tuple(int(n) for n in version.group(1).split(".") if n), apk, test))
+    if not found:
+        return []
+    _, apk, test = max(found)
+    return [apk, test]
 
 
 # Seconds to wait before each retry of a read the server answered with an error (~3 s in all).
