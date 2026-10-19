@@ -164,3 +164,11 @@ class TimelineWordingTest(unittest.TestCase):
         self.assertEqual(lines, ['Tap "home toolbar profile"', 'Tap "App settings"',
                                  'Type the MPIN (hidden) into "pin entry"',
                                  "You typed the MPIN from the dashboard (hidden)", "Restart the app"])
+
+    def test_check_and_if_lines_name_the_element_in_words(self):
+        lines = self.describe({"type": "check", "ok": False, "what": "id=pin_entry_input_field is visible"},
+                              {"type": "check", "ok": True, "what": '"Check balance" is visible'},
+                              {"type": "if", "target": "id=btn_continue", "found": True},
+                              {"type": "tap", "selector": {"id": "com.example.app:id/btn_pay"}})
+        self.assertEqual(lines, ['"pin entry" is visible', '"Check balance" is visible',
+                                 'Is "continue" on screen? Yes', 'Tap "pay"'])

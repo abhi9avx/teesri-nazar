@@ -204,6 +204,7 @@ const userText = (m) => m.secret
 // Ids are written for code ("pin_entry_input_field"); the timeline names them like a person would ("pin entry").
 const NOISE = new Set(["id", "btn", "button", "tag", "iv", "tv", "view", "field", "input", "layout", "container", "text"]);
 function human(raw) {
+  raw = String(raw).replace(/^[\w.]+:id\//, "");  // "com.app:id/btn_pay" → "btn_pay"
   if (/\s/.test(raw) && !/_/.test(raw)) return String(raw);  // already words, like "App settings"
   const words = String(raw).replace(/([a-z])([A-Z])/g, "$1 $2").split(/[\s_.\-:/]+/)
     .map((w) => w.toLowerCase()).filter((w) => w && !NOISE.has(w));
@@ -216,6 +217,9 @@ function sel(s) {
   if (s.id) return `"${human(s.id)}"`;
   return "the screen";
 }
+// Check and `if` lines arrive as selector text ('id=pin_entry is visible'); name the element like a person would.
+const readable = (text) => String(text).replace(/^~?(?:id|desc)=("?)([^"]+?)\1(?=\s|$)/, (_, q, v) => `"${human(v)}"`)
+  .replace(/^(?!")([^\s"][^"]*?) is (visible|gone|checked|unchecked|enabled|disabled)$/, (_, v, s) => `"${v}" is ${s}`);
 const named = (s) => !!(s && (s.text || s.desc || s.id));
 const secretName = (env) => env ? env.replace(/^UI_/, "") : "secret";
 function describe(e) {
@@ -237,11 +241,11 @@ function describe(e) {
       if (e.found_instead) return ["⚠️", `Expected ${what}, but ${sel(e.found_instead)} showed instead`];
       return ["⌛", `${what} ${e.gone ? "did not go away" : "did not appear"} within ${e.timeout}s`];
     }
-    case "check": return [e.ok ? "✅" : "❌", `${e.kind && e.kind !== "ui" ? `[${e.kind}] ` : ""}${e.what}`, e.ok ? "" : e.detail || ""];
+    case "check": return [e.ok ? "✅" : "❌", `${e.kind && e.kind !== "ui" ? `[${e.kind}] ` : ""}${readable(e.what)}`, e.ok ? "" : e.detail || ""];
     case "shot": return ["📸", "Screenshot"];
     case "note": return [e.kind === "bug" ? "🐞" : "📝", `${e.kind === "bug" ? "Bug" : "Note"}: ${e.text}`];
-    case "adb": return ["🛠", "Device command", e.exit ? `failed (exit ${e.exit})` : ""];
-    case "if": return ["🔀", `Is "${e.target}" on screen? ${e.found ? "Yes" : "No"}`];
+    case "adb": return ["🛠", `Device command: adb ${(e.args || []).join(" ")}`, e.exit ? `failed (exit ${e.exit})` : ""];
+    case "if": return ["🔀", `Is ${readable(e.target)} on screen? ${e.found ? "Yes" : "No"}`];
     case "wait_online": return [e.ok ? "📶" : "📵", e.ok ? "Device back online" : `Still offline after ${e.timeout}s`];
     case "hold": return ["⏸", `Paused by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : ""}`];
     default: return ["•", e.type];

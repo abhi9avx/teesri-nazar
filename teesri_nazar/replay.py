@@ -67,6 +67,8 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
             text = os.environ[e["env"]]
         else:
             hint = f"set ${e['env']}" if e.get("env") else "record it with --env VAR"
+            if e.get("by") == "dashboard":
+                hint += "; it was typed live from the dashboard into the focused field"
             raise StepFailed(f"type: secret value was not recorded ({hint})")
         if e.get("selector") or e.get("xy"):
             dev.tap(adb, *_locate(ctx, e, size, timeout))

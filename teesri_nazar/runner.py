@@ -146,7 +146,8 @@ class Executor:
         """What the CLI does before a device command, for the screen read an `if` makes itself."""
         while live.paused():
             live.wait_resume()
-        if live.unread():
+        live.wait_typing()
+        if live.needs_agent(live.unread()):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 live.deliver(self.run.log)

@@ -6,6 +6,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -134,6 +135,26 @@ class WaitMessageTest(CliTestCase):
         code, out, _ = tnazar("wait-message", "--timeout", "10")
         self.assertEqual(code, 0)
         self.assertIn("no active run", out)
+
+
+class DashboardTypingTest(CliTestCase):
+    def test_an_agent_command_waits_while_the_dashboard_is_typing(self):
+        self.start()
+        live.typing_file().write_text("")
+        timer = threading.Timer(0.4, live.typing_file().unlink)
+        timer.start()
+        self.addCleanup(timer.join)
+        began = time.monotonic()
+        self.ok("tap", "Login")
+        self.assertGreaterEqual(time.monotonic() - began, 0.4)
+        self.assertEqual(len(self.adb.taps), 1)
+
+    def test_an_info_message_is_shown_but_the_command_still_runs(self):
+        self.start()
+        live.post("UI_OTP was already typed", info=True)
+        out = self.ok("tap", "Login")
+        self.assertIn(">> USER (dashboard): UI_OTP was already typed", out)
+        self.assertEqual(len(self.adb.taps), 1)
 
 
 class SteeringUnderLoadTest(CliTestCase):
@@ -409,6 +430,25 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("device offline", json.loads(body)["error"])
         self.assertEqual(json.loads(self.call("GET", "/api/secret/UI_OTP")[1]), {"value": "0000"})
+
+    def test_a_typing_failure_never_reveals_the_value(self):
+        self.active_run()
+        adb = mock.MagicMock()
+        adb.shell.side_effect = ui.AdbError("adb shell input text 7 failed (1): error: closed")
+        with mock.patch.object(ui, "Adb", return_value=adb):
+            status, body = self.call("POST", "/api/secret", {"name": "mpin", "value": "7531", "type_now": True})
+        self.assertEqual(status, 400)
+        error = json.loads(body)["error"]
+        self.assertIn("error: closed", error)
+        for text in [error] + [m["text"] for m in live.unread()]:
+            self.assertNotIn("input text", text)
+
+    def test_the_already_typed_note_does_not_stop_the_agent(self):
+        self.active_run()
+        with mock.patch.object(ui, "Adb"), mock.patch.object(ui.dev.time, "sleep"):
+            self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        [msg] = live.unread()
+        self.assertTrue(msg["info"])
 
     def test_events_resume_from_an_offset_and_skip_a_half_written_line(self):
         run = self.active_run()

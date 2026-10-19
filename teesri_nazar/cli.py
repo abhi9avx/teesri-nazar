@@ -515,8 +515,12 @@ def cmd_wait_message(args) -> int:
         print("no active run")
         return 0
     run = active[0]
-    if not live.wait_message(args.timeout, lambda: (a := get_active()) is not None and a[0].path == run.path):
-        print("no active run" if not get_active() else f"no message in {args.timeout:g}s")
+    def same_run() -> bool:
+        active = get_active()
+        return active is not None and active[0].path == run.path
+
+    if not live.wait_message(args.timeout, same_run):
+        print(f"no message in {args.timeout:g}s" if same_run() else "no active run")
         return 0
     live.deliver(run.log)
     print("Read the user's message above and act on it now.")
@@ -766,7 +770,8 @@ def _hold(run: Run) -> int | None:
                   "Run `./tnazar wait-resume` until it prints `resumed`, then continue.")
             return live.EXIT_HELD if told else live.EXIT_PAUSED
         print("resumed")
-    if live.deliver(run.log):
+    live.wait_typing()
+    if live.needs_agent(live.deliver(run.log)):
         print("Command NOT run: read the user's message above and decide the next step "
               "(re-run the command if it still applies).")
         return live.EXIT_HELD

@@ -7,6 +7,8 @@ chance to hand it what the user typed in the browser.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import secrets
 import time
@@ -20,6 +22,7 @@ EXIT_HELD = 3    # a device command was not run: the user sent a message
 EXIT_PAUSED = 5  # a device command was not run: the user still has the run paused
 PAUSE_WAIT = 60.0  # stays under the agent's 2-minute command timeout
 POLL = 0.5
+TYPING_WAIT = 15.0  # an 8-digit code takes ~2 s; a crashed dashboard must not hold the agent forever
 MESSAGE_WAIT = 1800.0  # one idle stretch of the agent; it starts another when this ends
 
 
@@ -37,6 +40,10 @@ def pause_file() -> Path:
 
 def ui_file() -> Path:
     return state_dir() / "ui.json"
+
+
+def typing_file() -> Path:
+    return state_dir() / "typing"
 
 
 # ---------------------------------------------------------------- inbox
@@ -69,17 +76,25 @@ def mark_all_read() -> None:
     _cursor_file().write_text(str(len(messages())))
 
 
+def needs_agent(msgs: list[dict]) -> bool:
+    """An info message (the dashboard already did it) is shown, but does not stop a step."""
+    return any(not m.get("info") for m in msgs)
+
+
 def deliver(log) -> list[dict]:
     """Print unread messages for the agent, record them in the run, mark them read."""
-    seen = delivered()
-    msgs = messages()[seen:]
-    for m in msgs:
-        print(f">> USER (dashboard): {m['text']}")
-        log({"type": "user_msg", "text": m["text"], "id": m["id"], "sent": m["t"],
-             "secret": m.get("secret"), "note": m.get("note")})
-    if msgs:
-        # Only what was printed: a message that lands meanwhile stays unread for the next step.
-        _cursor_file().write_text(str(seen + len(msgs)))
+    # `wait-message` in the background and the agent's own command can deliver at the same moment.
+    with (state_dir() / "inbox.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        seen = delivered()
+        msgs = messages()[seen:]
+        for m in msgs:
+            print(f">> USER (dashboard): {m['text']}")
+            log({"type": "user_msg", "text": m["text"], "id": m["id"], "sent": m["t"],
+                 "secret": m.get("secret"), "note": m.get("note")})
+        if msgs:
+            # Only what was printed: a message that lands meanwhile stays unread for the next step.
+            _cursor_file().write_text(str(seen + len(msgs)))
     return msgs
 
 
@@ -91,6 +106,24 @@ def wait_message(limit: float, running) -> bool:
             return False
         time.sleep(POLL)
     return True
+
+
+@contextlib.contextmanager
+def dashboard_typing():
+    """While the dashboard types a secret, agent commands wait instead of moving focus mid-PIN."""
+    typing_file().write_text(now_iso() + "\n")
+    try:
+        yield
+    finally:
+        typing_file().unlink(missing_ok=True)
+
+
+def wait_typing(limit: float = TYPING_WAIT) -> None:
+    if not typing_file().exists():
+        return
+    deadline = time.monotonic() + limit
+    while typing_file().exists() and time.monotonic() < deadline:
+        time.sleep(POLL / 5)
 
 
 # ---------------------------------------------------------------- pause

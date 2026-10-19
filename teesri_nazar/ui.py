@@ -153,7 +153,8 @@ class Dashboard:
         return {"ok": True}
 
     def secret(self, body: dict) -> dict:
-        if not get_active():
+        active = get_active()
+        if not active:
             raise ValueError("no active run: start a test first")
         name = re.sub(r"[^A-Z0-9_]", "_", str(body.get("name", "")).strip().upper())
         name = name if name.startswith("UI_") else f"UI_{name}"
@@ -162,25 +163,28 @@ class Dashboard:
             raise ValueError("give a name (letters, digits, _) and a value up to 256 characters")
         self.secrets[name] = value
         note = str(body.get("note", "")).strip()
-        lead = f"{note} — " if note else ""
-        if body.get("type_now"):
-            # PIN and OTP screens expire: typing waits for nobody, the agent hears about it afterwards.
-            run, serial = get_active()
-            try:
+        how = f"`./tnazar type --env {name} --into <field>`. Never print or note the value."
+
+        def tell(text: str, **extra) -> None:
+            live.post((f"{note} — " if note else "") + text, secret=name, note=note, **extra)
+
+        if not body.get("type_now"):
+            tell(f"Secret value provided as {name}: type it with {how}")
+            return {"ok": True, "name": name, "typed": False}
+        # PIN and OTP screens expire: typing waits for nobody, the agent hears about it afterwards.
+        run, serial = active
+        try:
+            with live.dashboard_typing():
                 dev.type_text(Adb(serial), value)
-            except (AdbError, ValueError) as exc:
-                live.post(f"{lead}Secret value provided as {name}; typing it from the dashboard failed ({exc}): "
-                          f"type it with `./tnazar type --env {name} --into <field>`. Never print or note the value.",
-                          secret=name, note=note)
-                raise ValueError(f"{name} saved for the agent, but typing it failed: {exc}") from exc
-            run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard"})
-            live.post(f"{lead}{name} was already typed into the focused field by the dashboard: check the screen; "
-                      f"re-type with `./tnazar type --env {name} --into <field>` only if it did not land."
-                      f" Never print or note the value.", secret=name, note=note)
-            return {"ok": True, "name": name, "typed": True}
-        live.post(f"{lead}Secret value provided as {name}: type it with `./tnazar type --env {name} --into <field>`."
-                  f" Never print or note the value.", secret=name, note=note)
-        return {"ok": True, "name": name, "typed": False}
+        except (AdbError, ValueError) as exc:
+            # adb's message quotes the command it ran, and that command carries the value.
+            reason = str(exc).rsplit("): ", 1)[-1]
+            tell(f"Secret value provided as {name}; typing it from the dashboard failed ({reason}): type it with {how}")
+            raise ValueError(f"{name} saved for the agent, but typing it failed: {reason}") from exc
+        run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard"})
+        tell(f"{name} was already typed into the focused field by the dashboard: check the screen; "
+             f"re-type only if it did not land, with {how}", info=True)
+        return {"ok": True, "name": name, "typed": True}
 
 
 def make_handler(dash: Dashboard):
