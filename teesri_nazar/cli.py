@@ -68,6 +68,21 @@ class Ctx:
         save_xml(state_dir() / "last-screen.xml", screen.xml)
         return screen
 
+    def stamp_target(self, t: dict) -> dict:
+        """The screen a tap acted on and, for the map, the element's most durable selector (its
+        id survives a renamed label). Empty when the screen was not read for this step."""
+        sid = self.stamp(t["screen"])
+        if not sid:
+            return {}
+        out = {"sid": sid}
+        try:
+            stable = scr.stable_selector(t["screen"], t["element"]).to_dict()
+        except Exception:  # noqa: BLE001 - same rule as stamp()
+            return out
+        if stable and not stable.get("nth") and stable != t["selector"]:
+            out["stable"] = stable
+        return out
+
     def stamp(self, screen: scr.Screen | None) -> str | None:
         """The screen's identity for the navigation map, recorded on the command's event. Never
         fails the command: learning is a by-product, not part of the step."""
@@ -301,12 +316,7 @@ def cmd_tap(args) -> int:
         dev.tap(ctx.adb, x, y)
     event = {"type": "tap", "selector": t["selector"], "xy": [x, y], "label": t["label"],
              "long": args.long, "screen": _screen_size(ctx)}
-    if sid := ctx.stamp(t["screen"]):
-        event["sid"] = sid
-        # For the map: the element's most durable selector (its id survives a renamed label).
-        stable = scr.stable_selector(t["screen"], t["element"]).to_dict()
-        if stable and not stable.get("nth") and stable != t["selector"]:
-            event["stable"] = stable
+    event.update(ctx.stamp_target(t))
     ctx.log(event)
     print(f"{'long-pressed' if args.long else 'tapped'} {t['label']!r} at {x},{y}")
     return 0
@@ -859,7 +869,7 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     try:
         active = get_active() if args.cmd in HELD else None
-        if active and (held := _hold(active[0])) is not None:
+        if active and (held := hold(active[0])) is not None:
             return held
         try:
             # `adb logcat` only reads, and may stream for minutes: it must not block typing.
@@ -885,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         return 130
 
 
-def _hold(run: Run) -> int | None:
+def hold(run: Run) -> int | None:
     """Stop a device command when the user paused the run or left a message it has not seen."""
     if live.paused():
         print(f"|| paused from the dashboard; waiting up to {int(live.PAUSE_WAIT)}s for resume")

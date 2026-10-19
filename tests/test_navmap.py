@@ -118,6 +118,45 @@ class LearnEdgesTest(unittest.TestCase):
         self.assertEqual((e["kind"], e["sel"], e["label"]), ("xy", None, ""))
 
 
+class ReviewFixesTest(unittest.TestCase):
+    """Found by the spec review: each one a way to run a money step, leak text, or bind a wrong name."""
+
+    def test_a_money_button_with_an_amount_is_never_runnable_even_by_its_id(self):
+        log = Log().add(type="tap", sid="CART", selector={"text": "Place order ₹1,299"},
+                        stable={"id": "btn_primary"}, label="Place order ₹1,299").wait("DONE")
+        e = [o for o in learn(log) if o["k"] == "edge"][0]
+        self.assertNotEqual(e["kind"], "tap")
+
+    def test_scroll_hints_are_scrubbed(self):
+        log = Log().seen("HOME").add(type="scroll", sid="HOME", direction="down",
+                                     to={"text": "John Smith 9876543210"}, found=True) \
+            .tap("HOME", text="Statements").wait("STMT")
+        e = [o for o in learn(log) if o["k"] == "edge"][0]
+        self.assertIsNone(e["scroll"])
+        self.assertNotIn("9876543210", json.dumps(learn(log)))
+
+    def test_navigate_up_and_close_are_knowledge_only(self):
+        for sel in ({"desc": "Navigate up"}, {"desc": "Close"}, {"text": "Cancel"}, {"id": "btn_back"}):
+            log = Log().add(type="tap", sid="SAV", selector=sel, label="x").wait("HOME")
+            self.assertEqual(edges(learn(log)), [("SAV", "HOME", "back")], sel)
+
+    def test_long_labels_are_not_stored(self):
+        log = Log().tap("HOME", text="Asha Ramachandran Krishnan").wait("PROF")
+        e = [o for o in learn(log) if o["k"] == "edge"][0]
+        self.assertEqual((e["sel"], e["label"]), (None, ""))
+
+    def test_a_name_repeated_in_one_run_is_one_line(self):
+        log = Log()
+        for _ in range(3):
+            log.add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True).check("PB")
+        self.assertEqual(sum(1 for o in learn(log) if o["k"] == "name"), 1)
+
+    def test_a_goto_answered_by_a_flow_ends_the_search(self):
+        log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \
+            .add(type="nav", phrase="settings", outcome="flow").check("SET")
+        self.assertEqual([o for o in learn(log) if o["k"] == "name"], [])
+
+
 class EpisodeTest(unittest.TestCase):
     def miss(self, log, phrase, sid):
         return log.add(type="nav", phrase=phrase, outcome="unknown", sid=sid, episode=True)
@@ -261,6 +300,48 @@ class StoreTest(unittest.TestCase):
         self.assertIsNone(self.route("HOME", "SAV", ver="2.0"))
         self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r4", ver="2.0")
         self.assertTrue(self.route("HOME", "SAV", ver="2.0"))
+
+    def test_failures_on_an_old_version_do_not_retire_the_step_on_a_new_one(self):
+        self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r1", ver="1.0")
+        fail = Log().add(type="nav", phrase="x", outcome="failed",
+                         edge={"from": "HOME", "to": "SAV", "kind": "tap", "sel": {"text": "Savings"}})
+        self.save(fail, "r2", ver="1.0")
+        self.save(fail, "r3", ver="1.0")
+        self.assertIsNone(self.route("HOME", "SAV", ver="1.0"))
+        self.assertTrue(self.route("HOME", "SAV", ver="2.0"))
+
+    def test_a_tap_that_stays_put_never_becomes_a_step_to_itself(self):
+        near = dict(scr("HOME"), id="HOME2", tokens=scr("HOME")["tokens"][:4] + ["HOMEx"])
+        obs = navmap.learn(Log().tap("HOME", text="Dark mode").wait("HOME2").events, run="r1", version="1",
+                           screens={"HOME": scr("HOME"), "HOME2": near})
+        navmap.Store(APP).append(obs, "r1")
+        self.assertEqual(navmap.NavMap.load(APP, version="1").edges, {})
+
+    def test_a_screen_with_a_pay_title_is_never_a_target(self):
+        log = Log().tap("HOME", text="Bills").wait("PAYSCR")
+        obs = navmap.learn(log.events, run="r1", version="1",
+                           screens={"HOME": scr("HOME"), "PAYSCR": dict(scr("PAYSCR"), secure=True)})
+        navmap.Store(APP).append(obs, "r1")
+        self.assertIsNone(navmap.NavMap.load(APP, version="1").route("HOME", {"PAYSCR"}))
+
+    def test_a_map_written_by_another_schema_is_left_alone(self):
+        d = self.dir / APP
+        d.mkdir(parents=True)
+        (d / "map.jsonl").write_text('{"k": "header", "schema": 99, "app": "%s"}\n' % APP)
+        self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r1")
+        self.assertEqual((d / "map.jsonl").read_text().count("\n"), 1)
+
+    def test_compact_keeps_what_the_map_means(self):
+        self.save(Log().tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB"), "r1")
+        self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r2")
+        navmap.Store(APP).append([navmap.name_line("passbook", "PB", explicit=True)], None)
+        before = navmap.NavMap.load(APP, version="1.0")
+        navmap.compact(APP, "1.0")
+        after = navmap.NavMap.load(APP, version="1.0")
+        self.assertEqual({k: (e.ok_runs, e.results) for k, e in before.edges.items()},
+                         {k: (e.ok_runs, e.results) for k, e in after.edges.items()})
+        self.assertEqual(after.resolve("passbook"), {"PB"})
+        self.assertTrue(navmap.Store(APP).learned("r1"))
 
     def test_an_edge_that_failed_in_this_run_is_not_retried(self):
         self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r1")

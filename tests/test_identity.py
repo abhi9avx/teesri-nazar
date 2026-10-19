@@ -81,6 +81,20 @@ class DifferentScreenTest(unittest.TestCase):
         self.assertFalse(ident.same(a, b))
 
 
+class TabsTest(unittest.TestCase):
+    def tabs(self, selected):
+        out = [TOOLBAR, title("Bank")]
+        for i, t in enumerate(["Home", "Pay", "Rewards"]):
+            n = node(id=f"tab_{t.lower()}", text=t, bounds=(i * 300, 2200, i * 300 + 300, 2400))
+            n["selected"] = t == selected
+            out.append(n)
+        return out
+
+    def test_tabs_sharing_a_title_and_frame_differ_by_the_selected_tab(self):
+        self.assertFalse(ident.same(ident_of(self.tabs("Home")), ident_of(self.tabs("Rewards"))))
+        self.assertTrue(ident.same(ident_of(self.tabs("Pay")), ident_of(self.tabs("Pay"))))
+
+
 class KindTest(unittest.TestCase):
     def test_webview_covering_the_screen_is_opaque(self):
         i = ident_of([node(cls="android.webkit.WebView", clickable=False, bounds=(0, 0, 1080, 2400))])
@@ -125,7 +139,7 @@ class MatchTest(unittest.TestCase):
     def test_match_finds_the_stored_screen_and_never_drifts(self):
         a = ident.Ident("aaaaaaaa", "screen", frozenset("abcdefghij"), "t", False)
         b = ident.Ident("bbbbbbbb", "screen", frozenset("abcdefghiK"), "t", False)   # ~a
-        c = ident.Ident("cccccccc", "screen", frozenset("abcdefgLMN"), "t", False)   # far from a
+        c = ident.Ident("cccccccc", "screen", frozenset("abcdLMNOPQ"), "t", False)   # far from a
         stored = {a.id: a}
         self.assertEqual(ident.match(b, stored), "aaaaaaaa")
         self.assertIsNone(ident.match(c, stored))
@@ -150,6 +164,14 @@ class SettingsShapeTest(unittest.TestCase):
         b = ident_of(self.page("Connected devices", ["Pair new device"]))
         self.assertTrue(a.title)
         self.assertFalse(ident.same(a, b))
+
+    def test_a_page_whose_list_is_still_loading_is_the_same_page(self):
+        loading = self.page("Internet", ["Wi-Fi"]) + [node(id="progress_bar", cls="android.widget.ProgressBar",
+                                                          clickable=False, bounds=(0, 220, 1080, 230))]
+        loaded = self.page("Internet", ["Wi-Fi", "Mobile data"]) + [
+            node(id="settings_button", desc="Settings", bounds=(900, 900, 1000, 1000)),
+            node(id="switchWidget", cls="android.widget.Switch", bounds=(900, 1100, 1000, 1200))]
+        self.assertTrue(ident.same(ident_of(loading), ident_of(loaded)))
 
     def test_untitled_screens_never_merge_by_similarity(self):
         a = ident.Ident("aaaaaaaa", "screen", frozenset("abcde"), "", False)

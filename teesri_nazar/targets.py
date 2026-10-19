@@ -52,7 +52,8 @@ def selector_of(raw: str | None, contains: bool = False) -> scr.Selector:
 
 
 def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
-    """Find where to act. Returns {xy, selector, label, element, screen}."""
+    """Find where to act. Returns {xy, selector, label, element, screen}; `screen` is None unless
+    it was read just now (an `#index` resolves against the last `observe`)."""
     kind, value = parse_target(raw, args)
     if kind == "xy":
         return {"xy": value, "selector": None, "label": raw, "element": None, "screen": None}
@@ -61,6 +62,7 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
         width, height = ctx.adb.screen_size()
         xy = (round(width * value[0] / 100), round(height * value[1] / 100))
         return {"xy": xy, "selector": None, "label": raw, "element": None, "screen": None}
+    fresh = kind != "index"  # an index points into the last `observe`, which may be old
     if kind == "index":
         screen = ctx.last_screen()
         if value >= len(screen.elements):
@@ -78,7 +80,7 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
             raise NotFound(_not_found_msg(sel, screen))
     label = env.mask(el.text or el.desc) or el.short_id or el.short_cls
     return {"xy": el.center, "selector": sel.to_dict() or None, "label": label,
-            "element": el, "screen": screen}
+            "element": el, "screen": screen if fresh else None}
 
 
 def _not_found_msg(sel: scr.Selector, screen: scr.Screen) -> str:

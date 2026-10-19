@@ -21,7 +21,9 @@ import sys
 import time
 from pathlib import Path
 
-from . import cli, live
+from . import cli, ident, live, navmap, uia2
+from . import device as dev
+from . import screen as scr
 from .errors import UserError
 from .plan import Plan, PlanError, load
 from .runner import Executor, Failed, HandedBack, Paused, call, indent, tail
@@ -168,17 +170,13 @@ def _need_app():
 
 
 def _flow_for(phrase: str, app: str):
-    from .navmap import normalise
-    want = normalise(phrase)
+    want = navmap.normalise(phrase)
     found, _ = route_files(app)
-    hits = [(f, p, n) for f, p in found for n in p.flows if normalise(n) == want and want]
+    hits = [(f, p, n) for f, p in found for n in p.flows if navmap.normalise(n) == want and want]
     return hits[0] if len(hits) == 1 else None
 
 
 def goto(args) -> int:
-    from . import device as dev
-    from . import ident, navmap
-    from . import screen as scr
     since = live.Since()
     the_run, app = _need_app()
     phrase = " ".join(args.target).strip()
@@ -189,6 +187,8 @@ def goto(args) -> int:
         print(f"goto {phrase}: saved flow `{name}` ({_rel(f)})")
         if args.dry_run:
             return 0
+        # A new request: it ends an open search for an earlier phrase, like any goto.
+        the_run.log({"type": "nav", "phrase": phrase, "outcome": "flow", "flow": name})
         return run_flow(argparse.Namespace(name=name, plan=str(f), device=args.device))
 
     ctx = cli.Ctx.from_args(args.device)
@@ -198,7 +198,7 @@ def goto(args) -> int:
     m = navmap.current(the_run, app, version)
     for w in m.warnings[:3]:
         print(f"warning: map: {w}", file=sys.stderr)
-    it = ident.identify(screen, app=app, secrets=navmap._secrets())
+    it = ident.identify(screen, app=app, secrets=navmap.secrets())
     here = m.where(it) if it.id else None
     targets = m.resolve(phrase)
 
@@ -208,7 +208,7 @@ def goto(args) -> int:
     if not targets:
         if not navmap.normalise(phrase):
             raise UserError(f"say which screen: {phrase!r} names none")
-        close = navmap.suggest(navmap.normalise(phrase), m.known_names())
+        close = navmap.suggest(navmap.normalise(phrase), m.known_names() + _flow_names(app))
         nav("unknown", episode=True)
         print(f"goto {phrase}: not in the map yet." + (f" Did you mean: {', '.join(close)}?" if close else ""))
         print("Explore from here, then `check` the screen: the route and the name are learned. Current screen:")
@@ -251,7 +251,7 @@ def goto(args) -> int:
     cur = screen
     for i, hop in enumerate(path, 1):
         if i > 1:
-            held = cli._hold(the_run)
+            held = cli.hold(the_run)
             if held is None and live.needs_agent(since.take()):
                 held = live.EXIT_HELD
             if held is not None:
@@ -260,7 +260,7 @@ def goto(args) -> int:
                 return held
         try:
             with live.device_lock():
-                el = _find_for_hop(ctx, dev, scr, cur, hop)
+                el = _find_for_hop(ctx, cur, hop)
                 if el is None:
                     return _hop_failed(ctx, m, nav, phrase, i, hop, cur, "its button is not on the screen")
                 x, y = el.center
@@ -269,7 +269,7 @@ def goto(args) -> int:
                          "long": False, "screen": list(ctx.adb.screen_size()), "sid": ctx.stamp(cur), "via": "goto"})
         except live.DeviceBusy:
             raise UserError("the device is busy with another step; run goto again") from None
-        arrived, cur, why = _arrive(ctx, m, scr, ident, app, hop, args.timeout)
+        arrived, cur, why = _arrive(ctx, m, app, hop, args.timeout)
         if not arrived:
             return _hop_failed(ctx, m, nav, phrase, i, hop, cur, why)
     if sid := ctx.stamp(cur):
@@ -288,7 +288,13 @@ def _hop_text(m, h) -> str:
     return f'tap "{what}"' + (f" (scroll {h.scroll['direction']})" if h.scroll else "")
 
 
-def _find_for_hop(ctx, dev, scr, cur, hop):
+def _flow_names(app: str) -> list[str]:
+    return sorted({navmap.normalise(n) for _, p in route_files(app)[0] for n in p.flows} - {""})
+
+
+def _find_for_hop(ctx, cur, hop):
+    """The hop's button on the screen just read; scrolled to the way it was found when learned
+    (recorded as a `scroll` event, so a replay of this run scrolls too)."""
     sel = scr.Selector.from_dict(hop.sel)
     el = scr.find(cur, sel, strict=True)
     if el is not None or not hop.scroll:
@@ -299,21 +305,19 @@ def _find_for_hop(ctx, dev, scr, cur, hop):
     for _ in range(dev.SCROLL_MAX):
         dev.swipe(ctx.adb, *vec)
         before, screen = screen.signature(), scr.capture(ctx.adb)
-        if (el := scr.find(screen, sel, strict=True)) is not None:
-            return el
-        if screen.signature() == before:
-            return None
-    return None
+        if (el := scr.find(screen, sel, strict=True)) is not None or screen.signature() == before:
+            break
+    ctx.log({"type": "scroll", "direction": direction, "to": hop.sel, "within": None, "times": 1,
+             "found": el is not None, "via": "goto"})
+    return el
 
 
-def _arrive(ctx, m, scr, ident_mod, app, hop, timeout):
+def _arrive(ctx, m, app, hop, timeout):
     """Poll until the screen is the hop's target. Another screen holding still means the hop
     went somewhere else; the screen it started from just means the app is still on its way."""
-    from . import navmap
-    from . import uia2
     interval = 0.15 if uia2.active(ctx.adb) else 0.4
     deadline = time.monotonic() + timeout
-    other, since = None, 0.0
+    other, other_since = None, 0.0
     screen = None
     while True:
         try:
@@ -321,15 +325,15 @@ def _arrive(ctx, m, scr, ident_mod, app, hop, timeout):
         except cli.AdbError:
             screen = None
         if screen is not None:
-            it = ident_mod.identify(screen, app=app, secrets=navmap._secrets())
+            it = ident.identify(screen, app=app, secrets=navmap.secrets())
             sid = m.where(it) if it.id else None
             if sid == hop.to:
                 return True, screen, ""
             if it.id and sid != hop.frm:
                 now = time.monotonic()
                 if other != it.id:
-                    other, since = it.id, now
-                elif now - since >= STABLE_ELSEWHERE:
+                    other, other_since = it.id, now
+                elif now - other_since >= STABLE_ELSEWHERE:
                     name = m.label(sid) if sid else ""
                     return False, screen, f"it went to {('“' + name + '”') if name else 'another screen'}"
             else:
@@ -352,21 +356,27 @@ def _hop_failed(ctx, m, nav, phrase, i, hop, screen, why) -> int:
     return cli.EXIT_FAIL
 
 
+def _load(app: str, active):
+    """The map of `app`, with what the active run learned so far when it tests that app."""
+    if active and _app_of(active) == app:
+        run = active[0]
+        return navmap.current(run, app, run.meta().get("app_version", ""))
+    return navmap.NavMap.load(app)
+
+
 def cmd_map(args) -> int:
-    from . import navmap
     active = get_active()
     app = args.app or _app_of(active)
     if not app:
         raise UserError("which app? start a run with --package, or pass --app <package>")
-    version = active[0].meta().get("app_version", "") if active else ""
     if args.action == "list":
-        return _map_list(navmap, app, version, active, args.edges)
+        return _map_list(app, active, args.edges)
     if args.action == "name":
-        return _map_name(navmap, app, version, active, args)
+        return _map_name(app, active, args)
     if args.action == "forget":
         if len(args.args) != 1:
             raise UserError("usage: tnazar map forget <phrase|screen-id|route-id>")
-        m = navmap.current(active[0], app, version) if active else navmap.NavMap.load(app, version)
+        m = _load(app, active)
         key = args.args[0]
         what = "screen" if key in m.screens or key in m.alias else \
             "edge" if any(navmap.edge_id(e) == key for e in m.edges.values()) else "name"
@@ -376,22 +386,21 @@ def cmd_map(args) -> int:
         print(f"forgot {what} {key}")
         return 0
     if args.action == "audit":
-        m = navmap.NavMap.load(app, version)
-        strings = sorted({s for e in m.edges.values() for s in (e.label, *(str(v) for v in (e.sel or {}).values()))
-                          if s and s not in ("True", "0")} | set(m.known_names()))
+        m = navmap.NavMap.load(app)
+        steps = [(e.label, e.sel or {}, (e.scroll or {}).get("to") or {}) for e in m.edges.values()]
+        strings = sorted({str(v) for label, sel, to in steps for v in (label, *sel.values(), *to.values())
+                          if isinstance(v, str) and v} | set(m.known_names()))
         print(f"every readable string in the map of {app} ({navmap.Store(app).path}):")
         for s in strings:
             print(f"  {s}")
         return 0
-    if args.action == "compact":
-        n = navmap.compact(app, version)
-        print(f"map of {app} compacted: {n} lines")
-        return 0
-    return cli.EXIT_ERROR
+    n = navmap.compact(app)
+    print(f"map of {app} compacted: {n} lines")
+    return 0
 
 
-def _map_list(navmap, app, version, active, with_edges) -> int:
-    m = navmap.current(active[0], app, version) if active and _app_of(active) == app else navmap.NavMap.load(app, version)
+def _map_list(app, active, with_edges) -> int:
+    m = _load(app, active)
     for w in m.warnings[:3]:
         print(f"warning: map: {w}", file=sys.stderr)
     runnable = [e for e in m.edges.values() if m.runnable(e)]
@@ -422,14 +431,14 @@ def _map_list(navmap, app, version, active, with_edges) -> int:
     return 0
 
 
-def _map_name(navmap, app, version, active, args) -> int:
+def _map_name(app, active, args) -> int:
     if len(args.args) < 2:
         raise UserError("usage: tnazar map name <screen-id|here> <phrase> [--alias other]")
     where, phrases = args.args[0], [" ".join(args.args[1:]), *args.alias]
     lines = []
     if where == "here":
-        if not active:
-            raise UserError("`here` needs an active run on the device")
+        if not active or _app_of(active) != app:
+            raise UserError("`here` needs an active run of this app on the device")
         ctx = cli.Ctx.from_args(args.device)
         sid = ctx.stamp(ctx.capture())
         if not sid:
@@ -438,7 +447,7 @@ def _map_name(navmap, app, version, active, args) -> int:
         if rec:
             lines.append(dict(rec, k="screen"))
     else:
-        m = navmap.current(active[0], app, version) if active else navmap.NavMap.load(app, version)
+        m = _load(app, active)
         if where not in m.screens and where not in m.alias:
             raise UserError(f"no screen {where} in the map; `tnazar map` lists them")
         sid = m.canon(where)

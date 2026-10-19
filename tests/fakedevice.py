@@ -46,6 +46,8 @@ def screen_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> 
             "password": str(n["password"]).lower(), "bounds": f"[{l},{t}][{r},{b}]",
             "scrollable": str(n.get("scrollable", False)).lower(),
         }
+        if "selected" in n:
+            pairs["selected"] = str(n["selected"]).lower()
         return " ".join(f"{k}={quoteattr(v)}" for k, v in pairs.items())
 
     root = node(cls="android.widget.FrameLayout", clickable=False, bounds=(0, 0, *size))
@@ -66,6 +68,8 @@ def server_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> 
                  "bounds": f"[{l},{t}][{r},{b}]", "displayed": "true"}
         if n["desc"]:
             pairs["content-desc"] = n["desc"]
+        if "selected" in n:
+            pairs["selected"] = str(n["selected"]).lower()
         return f"<{n['cls']} " + " ".join(f"{k}={quoteattr(v)}" for k, v in pairs.items()) + f">{inner}</{n['cls']}>"
 
     root = node(cls="android.widget.FrameLayout", clickable=False, bounds=(0, 0, *size))

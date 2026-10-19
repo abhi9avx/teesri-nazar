@@ -20,6 +20,7 @@ load, so editing the file cannot clear it), did not fail in this run, and is not
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -34,13 +35,15 @@ from . import ident
 SCHEMA = 1
 MAX_GAP = 60.0          # seconds between an action and the read that shows where it went
 EPISODE_ACTIONS = 25    # a phrase search ends after this many actions without a new goto
-MAX_SELECTOR = 40
+MAX_SELECTOR = 24
 LOCK_WAIT = 2.0
 UNSAFE_WORDS = ("pay", "send", "transfer", "confirm", "buy", "purchase", "withdraw", "invest", "delete",
                 "remove", "submit", "checkout", "place order", "add money", "log out", "logout", "sign out",
                 "uninstall", "reset", "erase")
 _FILLER = ("open", "go to", "goto", "show me", "show", "check", "view", "navigate to", "take me to", "my", "the", "me")
 _PII = re.compile(r"\d|@|₹|\$|€|£|\brs\.?\b", re.IGNORECASE)
+# Taps that go back to wherever the user came from: where they lead depends on history.
+_BACKWARD = {"navigate up", "back", "go back", "close", "dismiss", "cancel", "done"}
 _WORD = re.compile(r"[a-z]+")
 
 
@@ -81,6 +84,20 @@ def _ts(t: str) -> float:
         return 0.0
 
 
+def secrets() -> set:
+    """Values never stored in or used for the map: only .env values. The dashboard's secrets cost
+    an HTTP call per step, and typed values (where they end up) are never part of the map."""
+    from .env import dotenv_keys
+    return {os.environ[k] for k in dotenv_keys() if os.environ.get(k)}
+
+
+def _backward(sel: dict | None, label: str) -> bool:
+    sel = sel or {}
+    words = {normalise(str(v)) for v in (label, sel.get("text"), sel.get("desc")) if v}
+    rid = (sel.get("id") or "").casefold()
+    return bool(words & _BACKWARD) or rid in ("btn_back", "back", "close", "btn_close", "up", "navigate_up")
+
+
 def _clean(value: str | None, secrets=()) -> bool:
     return bool(value) and len(value) <= MAX_SELECTOR and not _PII.search(value) \
         and not any(s and s in value for s in secrets)
@@ -111,13 +128,25 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
     hint = None          # a `scroll --to` that found the next tap's target
 
     def emit_edge(frm, to, act, t, ok=True):
-        sel = _scrub_selector(act.get("sel"), secrets)
+        raw = act.get("sel")
+        label = act.get("label") or ""
         kind = act["kind"]
+        texts = [label] + [raw.get(k) for k in ("text", "desc") if raw and raw.get(k)]
+        if kind == "tap" and _backward(raw, label):
+            kind = "back"
+        # A label that cannot be stored ("Place order ₹1,299", a name) is the very thing that
+        # says whether the step is safe: without it, the step is knowledge only, even by its id.
+        if kind == "tap" and any(not _clean(x, secrets) for x in texts):
+            kind = "xy"
+        sel = _scrub_selector(raw, secrets) if kind == "tap" else None
         if kind == "tap" and not sel:
             kind = "xy"
-        label = act.get("label") or ""
+        hint = act.get("scroll")
+        if hint:
+            to_sel = _scrub_selector(hint.get("to"), secrets)
+            hint = {"direction": hint.get("direction"), "to": to_sel} if to_sel else None
         out.append({"k": "edge", "from": frm, "to": to, "kind": kind, "sel": sel,
-                    "label": label if _clean(label, secrets) else "", "scroll": act.get("scroll"),
+                    "label": label if _clean(label, secrets) else "", "scroll": hint,
                     "run": run, "ver": version, "ok": ok, "t": t})
         used.update((frm, to))
 
@@ -177,7 +206,11 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
                         "sel": ed.get("sel"), "label": "", "scroll": None, "run": run, "ver": version,
                         "ok": False, "t": t})
     out = _once_per_run(out)
-    out.extend(_episodes(events, run))
+    named = set()
+    for o in _episodes(events, run):
+        if (o["phrase"], o["screen"]) not in named:
+            named.add((o["phrase"], o["screen"]))
+            out.append(o)
     for o in out:
         if o["k"] == "name":
             used.add(o["screen"])
@@ -290,11 +323,22 @@ class Store:
     def learned(self, run: str) -> bool:
         return any(d.get("k") == "learned" and d.get("run") == run for d in self.lines())
 
+    def foreign_schema(self) -> bool:
+        if not self.path.exists():
+            return False
+        with self.path.open(encoding="utf-8", errors="replace") as f:
+            first = f.readline()
+        try:
+            head = json.loads(first)
+        except ValueError:
+            return False
+        return isinstance(head, dict) and head.get("k") == "header" and head.get("schema") != SCHEMA
+
     def append(self, obs: list[dict], run: str | None) -> bool:
         """Add observations; a run's are added once. False when nothing was written."""
         self.dir.mkdir(parents=True, exist_ok=True)
         with _Lock(self.dir / "map.lock"):
-            if run and self.learned(run):
+            if self.foreign_schema() or (run and self.learned(run)):
                 return False
             fresh = not self.path.exists() or self.path.stat().st_size == 0
             with self.path.open("ab") as f:
@@ -309,13 +353,17 @@ class Store:
                 f.write("".join(json.dumps(d, ensure_ascii=False) + "\n" for d in lines).encode())
         return True
 
-    def rewrite(self, lines: list[dict]) -> None:
+    def lock(self) -> "_Lock":
         self.dir.mkdir(parents=True, exist_ok=True)
-        with _Lock(self.dir / "map.lock"):
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text("".join(json.dumps(d, ensure_ascii=False) + "\n"
-                                   for d in [{"k": "header", "schema": SCHEMA, "app": self.app}] + lines))
-            os.replace(tmp, self.path)
+        return _Lock(self.dir / "map.lock")
+
+    def rewrite_locked(self, lines: list[dict]) -> None:
+        """Replace the file; the caller holds `lock()` around reading what it rewrites."""
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text("".join(json.dumps(d, ensure_ascii=False) + "\n"
+                               for d in [{"k": "header", "schema": SCHEMA, "app": self.app}] + lines),
+                       encoding="utf-8")
+        os.replace(tmp, self.path)
 
 
 class MapLocked(OSError):
@@ -365,9 +413,6 @@ class Edge:
     @property
     def key(self) -> tuple:
         return (self.frm, self.to, self.kind, sel_key(self.sel))
-
-
-Hop = Edge
 
 
 def unsafe_label(*texts) -> bool:
@@ -434,7 +479,8 @@ class NavMap:
         sid = d["id"]
         if sid in self.screens or sid in self.alias:
             return
-        it = ident.Ident(sid, "screen", frozenset(d.get("tokens") or ()), d.get("title") or "", bool(d.get("secure")))
+        it = ident.Ident(sid, "screen", frozenset(d.get("tokens") or ()), d.get("title") or "", bool(d.get("secure")),
+                         frozenset(d.get("inner") or ()), d.get("tab") or "")
         same = ident.match(it, self.screens)
         if same:
             self.alias[sid] = same
@@ -447,6 +493,8 @@ class NavMap:
 
     def _edge(self, d: dict) -> None:
         frm, to = self.canon(d["from"]), self.canon(d["to"])
+        if frm == to:
+            return  # read as two ids, folded into one screen: the tap went nowhere
         kind = d.get("kind") or "tap"
         sel = d.get("sel") or None
         key = (frm, to, kind, sel_key(sel))
@@ -487,7 +535,7 @@ class NavMap:
         return e.to in self.secure or unsafe_label(e.label, sel.get("text"), sel.get("desc"), sel.get("id"))
 
     def retired(self, e: Edge) -> bool:
-        mine = [ok for v, ok, _ in e.results if v == self.version] or [ok for _, ok, _ in e.results]
+        mine = [ok for v, ok, _ in e.results if v == self.version or not self.version]
         return len(mine) >= 2 and not mine[-1] and not mine[-2]
 
     def runnable(self, e: Edge) -> bool:
@@ -547,25 +595,17 @@ def _when(d: dict) -> float:
 
 
 def edge_id(e: Edge) -> str:
-    import hashlib
     return hashlib.sha1("|".join(e.key).encode()).hexdigest()[:8]
 
 
 # ---------------------------------------------------------------- the CLI's side
-
-def _secrets() -> set:
-    # Only .env values: the dashboard's secrets cost an HTTP call per step, and typed values
-    # (where those end up) are never part of a screen's identity anyway.
-    from .env import dotenv_keys
-    return {os.environ[k] for k in dotenv_keys() if os.environ.get(k)}
-
 
 def stamp(run, screen) -> str | None:
     """Identify `screen` for the run's app and keep its tokens with the run (once per screen)."""
     app = run.meta().get("package")
     if not app:
         return None
-    it = ident.identify(screen, app=app, secrets=_secrets())
+    it = ident.identify(screen, app=app, secrets=secrets())
     if not it.id:
         return None
     f = run.path / "screens.jsonl"
@@ -573,7 +613,7 @@ def stamp(run, screen) -> str | None:
     if f'"id": "{it.id}"' not in known:
         with f.open("a") as out:
             out.write(json.dumps({"id": it.id, "tokens": sorted(it.tokens), "title": it.title,
-                                  "secure": it.secure}) + "\n")
+                                  "secure": it.secure, "inner": sorted(it.inner), "tab": it.tab}) + "\n")
     return it.id
 
 
@@ -597,7 +637,7 @@ def failed_in(events: list[dict]) -> set:
 
 def learn_run(run, app: str, version: str) -> str:
     """Store what a finished run taught; a summary line, or "" when it taught nothing new."""
-    obs = learn(run.events(), run.name, version, run_screens(run), _secrets())
+    obs = learn(run.events(), run.name, version, run_screens(run), secrets())
     if not any(o["k"] in ("edge", "name") for o in obs):
         return ""
     if not Store(app).append(obs, run.name):
@@ -610,28 +650,30 @@ def learn_run(run, app: str, version: str) -> str:
 def current(run, app: str, version: str) -> NavMap:
     """The stored map plus what the active run has learned so far (not yet stored)."""
     events = run.events()
-    extra = [] if Store(app).learned(run.name) else learn(events, run.name, version, run_screens(run), _secrets())
+    extra = [] if Store(app).learned(run.name) else learn(events, run.name, version, run_screens(run), secrets())
     return NavMap.load(app, version, extra=extra, failed=failed_in(events))
 
 
 def compact(app: str, version: str = "") -> int:
     """Rewrite the map folded: screens once, each step's results in order, names, no forgotten
-    things. What `NavMap.load` makes of it is unchanged."""
+    things. What `NavMap.load` makes of it is unchanged. Holds the lock throughout, so a run
+    learned meanwhile waits instead of being lost."""
     store = Store(app)
-    m = NavMap.load(app, version)
-    lines: list[dict] = []
-    for sid, it in m.screens.items():
-        lines.append({"k": "screen", "id": sid, "tokens": sorted(it.tokens), "title": it.title,
-                      "secure": sid in m.secure})
-    for e in m.edges.values():
-        for ver, ok, run in e.results:
-            lines.append({"k": "edge", "from": e.frm, "to": e.to, "kind": e.kind, "sel": e.sel, "label": e.label,
-                          "scroll": e.scroll, "run": run, "ver": ver, "ok": ok, "t": 0})
-    for phrase, binds in m.names.items():
-        for sid, explicit in binds:
-            lines.append({"k": "name", "phrase": phrase, "screen": sid,
-                          "src": "explicit" if explicit else "learned", "run": None, "t": 0})
-    runs = sorted({d["run"] for d in store.lines() if d.get("k") == "learned"})
-    lines += [{"k": "learned", "run": r} for r in runs]
-    store.rewrite(lines)
+    with store.lock():
+        m = NavMap.load(app, version)
+        lines: list[dict] = []
+        for sid, it in m.screens.items():
+            lines.append({"k": "screen", "id": sid, "tokens": sorted(it.tokens), "title": it.title,
+                          "secure": sid in m.secure, "inner": sorted(it.inner), "tab": it.tab})
+        for e in m.edges.values():
+            for ver, ok, run in e.results:
+                lines.append({"k": "edge", "from": e.frm, "to": e.to, "kind": e.kind, "sel": e.sel,
+                              "label": e.label, "scroll": e.scroll, "run": run, "ver": ver, "ok": ok, "t": 0})
+        for phrase, binds in m.names.items():
+            for sid, explicit in binds:
+                lines.append({"k": "name", "phrase": phrase, "screen": sid,
+                              "src": "explicit" if explicit else "learned", "run": None, "t": 0})
+        runs = sorted({d["run"] for d in store.lines() if d.get("k") == "learned"})
+        lines += [{"k": "learned", "run": r} for r in runs]
+        store.rewrite_locked(lines)
     return len(lines) + 1

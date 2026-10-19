@@ -1,14 +1,17 @@
 """Screen identity: "which screen of the app is this?", for the navigation map.
 
 `Screen.signature()` changes with every balance, row and timestamp, so it cannot tell that two
-reads show the same screen. `identify()` keeps only what stays put on a screen: element ids,
-the labels of buttons outside scrolling lists, and the title. Digits, typed values, list rows
-and other apps' windows (the keyboard, a system dialog) are left out, and every token is
-hashed: the map never holds screen text.
+reads show the same screen. `identify()` splits a screen into its frame (the title, buttons and
+labels outside scrolling lists, the selected tab, the list containers) and its content (the ids
+inside the lists). Digits, typed values, list text and other apps' windows (the keyboard, a
+system dialog) are left out, and every token is hashed: the map never holds screen text.
 
-Two reads are the same screen when their titles are equal and their token sets overlap by at
-least `SAME` (Jaccard; untitled screens must match exactly). The first identity stored for a screen is its canonical one; a new read
-is compared with stored canonicals only, so a screen never drifts into its neighbour.
+Two reads are the same screen when their ids are equal, or their titles are equal and their
+frames overlap by at least `SAME` (Jaccard). Content is left out of that comparison: a list
+that is still loading, or holds other rows today, is the same page (found on a real device).
+Without a title nothing anchors a fuzzy match (settings pages share every row id), so an
+untitled screen must match exactly. The first identity stored is canonical; a new read is
+compared with stored canonicals only, so a screen never drifts into its neighbour.
 """
 
 from __future__ import annotations
@@ -32,9 +35,11 @@ _BAR_IDS = ("toolbar", "action_bar", "app_bar", "appbar")
 class Ident:
     id: str                 # 8 hex characters; "" for a screen that is never stored
     kind: str               # screen | loading | opaque | foreign
-    tokens: frozenset       # hashed
+    tokens: frozenset       # the frame, hashed
     title: str              # hashed title, "" when the screen has none
-    secure: bool            # has a password field
+    secure: bool            # never route into it: a password field, or a pay/transfer/... title
+    inner: frozenset = frozenset()  # the lists' content, hashed: only for the exact id
+    tab: str = ""           # hashed selected tab(s): two different tabs are never one screen
 
 
 def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
@@ -48,7 +53,7 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
         return Ident("", "loading", frozenset(), "", False)
     scrolls = [e for e in els if e.scrollable]
     secrets = [s for s in secrets if s and len(s) >= 3]
-    tokens = set()
+    tokens, inner, tabs = set(), set(), set()
     quiet = []  # labels that are not buttons: used only when a screen has nothing else
     for e in els:
         if not (e.text or e.desc or e.clickable or e.scrollable or e.password or e.checkable
@@ -56,8 +61,10 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
             continue
         if any(_inside(e, s) for s in scrolls if s is not e):
             if e.rid:
-                tokens.add(f"in:{e.short_cls}:{e.short_id}")
+                inner.add(f"in:{e.short_cls}:{e.short_id}")
             continue
+        if e.selected:
+            tabs.add(e.short_id or _label(e.text or e.desc, secrets))
         if e.scrollable:
             tokens.add(f"scroll:{e.short_cls}:{e.short_id}")
         elif "EditText" in e.cls or e.password:
@@ -72,23 +79,29 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
                 quiet.append(token)
             else:
                 tokens.add(token)
-    if not tokens:
+    if not tokens and not inner:
         tokens.update(quiet)
     title = _title(els, scrolls, screen, secrets)
-    hashed = frozenset(_h(t) for t in tokens)
+    frame = frozenset(_h(t) for t in tokens)
+    content = frozenset(_h(t) for t in inner)
     t_hash = _h("title:" + title) if title else ""
-    sid = hashlib.sha1((t_hash + "|" + "|".join(sorted(hashed))).encode()).hexdigest()[:8]
-    return Ident(sid, "screen", hashed, t_hash, any(e.password for e in els))
+    tab = _h("tab:" + "|".join(sorted(tabs))) if tabs else ""
+    sid = hashlib.sha1((t_hash + "|" + tab + "|" + "|".join(sorted(frame)) + "|" + "|".join(sorted(content))
+                        ).encode()).hexdigest()[:8]
+    guarded = any(e.password for e in els) or (bool(title) and _unsafe_title(title))
+    return Ident(sid, "screen", frame, t_hash, guarded, content, tab)
 
 
 def same(a: Ident, b: Ident) -> bool:
-    """Equal ids, or the same title and overlapping tokens. Without a title nothing anchors a
-    fuzzy match (settings pages share every row id), so untitled screens must match exactly."""
     if a.id and a.id == b.id:
         return True
-    if not a.title or a.title != b.title or not a.tokens or not b.tokens:
-        return False
-    return len(a.tokens & b.tokens) / len(a.tokens | b.tokens) >= SAME
+    return bool(a.title) and a.title == b.title and a.tab == b.tab and _overlap(a.tokens, b.tokens) >= SAME
+
+
+def _overlap(a: frozenset, b: frozenset) -> float:
+    if not a and not b:
+        return 1.0  # a page that is all list: the title alone says which one
+    return len(a & b) / len(a | b)
 
 
 def match(ident: Ident, stored: dict) -> str | None:
@@ -101,10 +114,10 @@ def match(ident: Ident, stored: dict) -> str | None:
         return None
     best, score = None, SAME
     for sid, other in stored.items():
-        if other.title != ident.title or not other.tokens or not ident.tokens:
+        if other.title != ident.title or other.tab != ident.tab:
             continue
-        s = len(other.tokens & ident.tokens) / len(other.tokens | ident.tokens)
-        if s >= score:
+        s = _overlap(other.tokens, ident.tokens)
+        if s > score or (s == score and best is None):
             best, score = sid, s
     return best
 
@@ -113,11 +126,18 @@ def _h(token: str) -> str:
     return hashlib.sha1(token.encode()).hexdigest()[:10]
 
 
-def _label(raw: str, secrets) -> str:
+def _label(raw: str, secrets, limit: int = MAX_LABEL) -> str:
     if any(s in raw for s in secrets):
         return ""
     label = _DIGITS.sub("#", _norm(raw))
-    return label if len(label) <= MAX_LABEL else ""
+    return label if len(label) <= limit else ""
+
+
+_UNSAFE_TITLE = re.compile(r"\b(pay|payment|transfer|send money|confirm|checkout|withdraw|enter (m)?pin)\b")
+
+
+def _unsafe_title(title: str) -> bool:
+    return bool(_UNSAFE_TITLE.search(title))
 
 
 def _app_elements(screen: Screen, app: str | None) -> list[Element]:
@@ -159,9 +179,7 @@ def _title(els, scrolls, screen, secrets) -> str:
             and not any(_inside(e, s) for s in scrolls)
 
     def norm_raw(raw: str) -> str:
-        if any(s in raw for s in secrets):
-            return ""
-        return _DIGITS.sub("#", _norm(raw))[:40]
+        return _label(raw, secrets, limit=10_000)[:40]
 
     def norm(e: Element) -> str:
         return norm_raw(e.text)

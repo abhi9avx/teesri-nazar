@@ -483,3 +483,20 @@ days** for v1 (v0.1 scope was ≈ 21–26).
 | S3 | two runs on two devices learning the same app at once | appends under a lock; nothing lost or torn |
 | S4 | a run stopped twice / learned at `stop` and again at the next `start` | learned once (a per-run marker) |
 | S5 | `.dev` and `.test` builds | separate maps |
+
+---
+
+## 14. As built (feature/nav-map) — where it differs from the text above, and why
+
+| Area | Built | Why |
+|---|---|---|
+| A1 identity | A screen is its **frame** (title, buttons and labels outside lists, the selected tab, list containers) plus its **content** (ids inside lists). Titled screens match on title + selected tab + frame overlap ≥ 0.6; untitled screens only exactly | On the emulator, Settings pages are one scroll view sharing every row id (0.8 overlap without titles), and the Internet page's list changes while it scans: content cannot identify a page |
+| A1 kinds | No `overlay` kind: an in-app dialog is an ordinary screen; another package's window is `foreign` (transparent) | Simpler; a system dialog is never a place to start or end a route |
+| B2 selectors | A tap records the element's unique id (`stable`) next to the typed selector; learned steps use the id | A relabelled button (same id) keeps working |
+| B2 labels | A step whose label or selector holds digits, currency, `@`, a `.env` value or > 24 characters is knowledge only (never replayed) | The label is what says a step moves money ("Place order ₹1,299"); without it the step cannot be judged safe |
+| B2 back | Taps on "Navigate up", Close, Cancel, Back, Done are knowledge only, like `key back` | Where they lead depends on history |
+| B2 `#n` | An `#index` tap is not stamped with a screen | It points into the last `observe`, which may be stale |
+| B4 names | The search ends at the passing check that says every word of the phrase; else the check saying most of it; a check saying none of it counts only if the agent did not press Back after it. A `goto` answered by a saved flow also ends a search | A later unrelated check stole the name in testing |
+| B9 unsafe | Also: a screen whose title says pay / transfer / confirm / checkout / withdraw / enter PIN is never a target. Extra words: `TNAZAR_UNSAFE_WORDS` (comma list) instead of `testdata.yaml` | Titles are hashed, so this is decided when the screen is read |
+| B6 retire | Counts only results on the current app version | A new build gets a fresh chance |
+| Not built yet | L5 benchmark (`scripts/bench_navmap.py`, needs real agent turns), Phase 0.5 prompt-only experiment, B13 report section, `observe --diff/--hints` (A4, v1.1) | — |

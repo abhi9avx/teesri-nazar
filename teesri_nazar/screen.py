@@ -30,6 +30,7 @@ class Element:
     scrollable: bool = False
     password: bool = False
     package: str = ""
+    selected: bool = False  # the current tab; not shown by `observe` (its output is pinned)
 
     @property
     def center(self) -> tuple[int, int]:
@@ -122,6 +123,7 @@ def parse(xml: str) -> Screen:
             scrollable=a("scrollable") == "true",
             password=a("password") == "true",
             package=a("package", ""),
+            selected=a("selected") == "true",
         ))
     package = elements[0].package if elements else ""
     return Screen(elements, xml, (width, height), package)

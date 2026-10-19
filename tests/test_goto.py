@@ -488,3 +488,19 @@ class DashboardTest(unittest.TestCase):
         blocks = self.run_js("""layout([{type: "seen", sid: "abc"}, {type: "tap", selector: {text: "Savings"}}])
                                 .map((b) => b.e.type)""")
         self.assertEqual(blocks, ["tap"])
+
+
+class StampTest(GotoBase):
+    def test_an_index_tap_is_not_stamped_with_the_old_observed_screen(self):
+        run = self.start()
+        self.t("observe")
+        self.t("tap", "#4")  # Savings, from the observed Home
+        self.t("tap", "#4")  # index 4 of the OLD screen: not where the app is now
+        taps = [e for e in run.events() if e["type"] == "tap"]
+        self.assertTrue(all("sid" not in e for e in taps))
+
+    def test_a_map_error_never_fails_a_tap_that_worked(self):
+        self.start()
+        with mock.patch("teesri_nazar.screen.stable_selector", side_effect=RuntimeError("boom")):
+            self.t("tap", "Savings")
+        self.assertEqual(self.adb.current, "savings")
