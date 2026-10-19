@@ -91,6 +91,19 @@ class AdbSuccessTest(CliTestCase):
             self.ok("adb", "shell", "true")
 
 
+class AdbFailureReasonTest(CliTestCase):
+    def test_a_failed_adb_command_records_why_without_secrets(self):
+        import subprocess
+        run = self.start()
+        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="error: closed\nmore detail\n")
+        with mock.patch.object(cli.subprocess, "run", return_value=failed):
+            code, _, err = tnazar("adb", "shell", "false")
+        self.assertEqual(code, cli.EXIT_FAIL)
+        self.assertIn("error: closed", err)
+        [e] = [e for e in run.events() if e["type"] == "adb"]
+        self.assertEqual(e["error"], "error: closed")
+
+
 class RegistryAndConstantsTest(unittest.TestCase):
     def test_cli_uses_the_shared_registry(self):
         self.assertEqual(cli.TIMED, commands.TIMED_EVENTS)

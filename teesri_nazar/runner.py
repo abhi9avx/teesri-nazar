@@ -39,7 +39,7 @@ class Failed:
 
 @dataclass
 class Paused:
-    output: str
+    """The user kept the run paused: a flow gives the turn back (exit 5)."""
 
 
 @dataclass
@@ -88,7 +88,7 @@ def run(args) -> int:
         # "--": a title (or id) starting with "-" is not an option.
         call(["case", "start", "--", case.id] + ([case.title] if case.title else []))
         try:
-            result = Executor(p, the_run, case, since).body(case.body)
+            result = Executor(p, the_run, case.id, since).body(case.body)
         except Exception as exc:  # noqa: BLE001 - whatever broke, the run must not stay open
             call(["case", "end", "blocked", "--reason", f"error: {exc}"])
             print(f"{case.id:8} BLOCKED  error: {exc}")
@@ -122,11 +122,11 @@ def _stop() -> None:
 class Executor:
     """Runs plan items through the CLI; `tnazar run` waits out a pause as long as the user keeps it."""
 
-    def __init__(self, plan: Plan, the_run: Run, case: Case, since: live.Since):
-        self.plan, self.run, self.case, self.since = plan, the_run, case, since
+    def __init__(self, plan: Plan, the_run: Run, case_id: str, since: live.Since):
+        self.plan, self.run, self.case_id, self.since = plan, the_run, case_id, since
         self.failed_checks = 0
 
-    def long_pause(self, out: str) -> Paused | None:
+    def long_pause(self) -> Paused | None:
         """The user kept the run paused past PAUSE_WAIT: keep waiting (None) or give the turn back."""
         while not live.wait_resume():
             pass  # no model timeout here: wait as long as the user keeps it paused
@@ -147,7 +147,7 @@ class Executor:
             if held:
                 return held
             found, reads = self.visible(item.target, item.alts, item.wait)
-            self.run.log({"type": "if", "target": item.target, "found": found, "reads": reads, "case": self.case.id})
+            self.run.log({"type": "if", "target": item.target, "found": found, "reads": reads, "case": self.case_id})
             return self.body(item.then if found else item.other, record)
         if isinstance(item, Retry):
             for attempt in range(1, item.times + 1):
@@ -161,10 +161,9 @@ class Executor:
     def hold(self) -> HandedBack | Paused | None:
         """What the CLI does before a device command, for the screen read an `if` makes itself."""
         if live.paused() and not live.wait_resume() and not live.needs_agent(live.unread()):
-            paused = self.long_pause("")
+            paused = self.long_pause()
             if paused:
                 return paused
-        live.wait_typing()
         if live.needs_agent(live.unread()):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
@@ -191,7 +190,7 @@ class Executor:
                 return HandedBack(out)
             if code != live.EXIT_PAUSED:
                 break
-            paused = self.long_pause(out)
+            paused = self.long_pause()
             if paused:
                 return paused
         if step.argv[0] == "check" and code == cli.EXIT_FAIL:
@@ -204,7 +203,7 @@ class Executor:
     def fail(self, line: int, what: str, detail: str, record: bool, code: int = cli.EXIT_FAIL) -> Failed:
         first = next((ln for ln in detail.splitlines() if ln.strip()), "failed")
         if record:
-            self.run.log({"type": "check", "kind": "ui", "ok": False, "case": self.case.id,
+            self.run.log({"type": "check", "kind": "ui", "ok": False, "case": self.case_id,
                           "what": f"line {line}: {what}: {first.strip()}"})
         return Failed(f"line {line}: {what}\n{detail}", code)
 

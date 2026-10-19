@@ -236,3 +236,18 @@ class ListenerTest(FlowBase):
         self.assertEqual(code, live.EXIT_HELD)
         self.assertIn("stop and log out", out)
         self.assertEqual([e for e in run.events() if e["type"] == "tap"], [])
+
+    def test_a_message_delivered_while_the_flow_starts_still_stops_it(self):
+        self.write("app.plan")
+        run = self.start()
+        real = runner.call
+
+        def call(argv):
+            if argv[0] == "say":  # the listener delivers while the flow is announcing itself
+                live.post("stop and log out")
+                live.deliver(run.log)
+            return real(argv)
+        with mock.patch.object(runner, "call", call), mock.patch("teesri_nazar.appmap.call", call):
+            code, out, _ = tnazar("flow", "login")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertEqual([e for e in run.events() if e["type"] in ("tap", "type")], [])

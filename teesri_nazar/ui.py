@@ -171,22 +171,42 @@ class Dashboard:
         if not body.get("type_now"):
             tell(f"Secret value provided as {name}: type it with {how}")
             return {"ok": True, "name": name, "typed": False}
-        # PIN and OTP screens expire: typing waits for nobody, the agent hears about it afterwards.
+        # PIN and OTP screens expire: typing waits only for the agent step in progress, and the
+        # agent hears about it afterwards.
         run, serial = active
-        live.wait_agent_idle()
         try:
-            with live.dashboard_typing():
-                dev.type_text(Adb(serial), value)
-        except (AdbError, ValueError) as exc:
-            # adb's message quotes the command it ran, and that command carries the value.
-            reason = re.sub(r"input text \S+", "input text ••••", str(exc).rsplit("): ", 1)[-1])
-            reason = reason.replace(value, "••••").replace(dev.escape_input_text(value) if value.isascii() else value, "••••")
-            tell(f"Secret value provided as {name}; typing it from the dashboard failed ({reason}): type it with {how}")
-            raise ValueError(f"{name} saved for the agent, but typing it failed: {reason}") from exc
+            with live.device_lock():
+                try:
+                    dev.type_text(Adb(serial), value)
+                except (AdbError, ValueError) as exc:
+                    reason = typing_error(exc)
+                    run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard",
+                             "ok": False, "error": reason})
+                    tell(f"Secret value provided as {name}; typing it from the dashboard failed ({reason}): "
+                         f"type it with {how}")
+                    raise ValueError(f"{name} saved for the agent, but typing it failed: {reason}") from exc
+        except live.DeviceBusy:
+            tell(f"Secret value provided as {name}; the device was busy, so it was not typed: type it with {how}")
+            raise ValueError(f"{name} saved, but the agent is in the middle of a step: try again in a moment") from None
         run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard"})
         tell(f"{name} was already typed into the focused field by the dashboard: check the screen; "
              f"re-type only if it did not land, with {how}", info=True)
         return {"ok": True, "name": name, "typed": True}
+
+
+def typing_error(exc: Exception) -> str:
+    """Why typing failed, in words: adb's own message quotes the command (and so the value),
+    and its stderr may echo pieces of it, so none of that text is kept."""
+    text = str(exc).lower()
+    if isinstance(exc, ValueError):
+        return "only plain ASCII can be typed"
+    if "timed out" in text:
+        return "adb timed out"
+    for words, reason in ((("offline", "not found", "no devices"), "the device is offline"),
+                          (("unauthorized",), "the device is not authorized for adb")):
+        if any(w in text for w in words):
+            return reason
+    return "the device did not accept the input"
 
 
 def make_handler(dash: Dashboard):

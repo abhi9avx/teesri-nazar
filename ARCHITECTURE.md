@@ -464,6 +464,8 @@ A few lines of `events.jsonl`:
 {"t":"…Z","type":"type","text":null,"secret":true,"env":"APP_MPIN","selector":{"id":"mpin_input"},"xy":[540,620],"screen":[1080,2400],"clear":false,"enter":false}
 {"t":"…Z","type":"tap","selector":{"id":"btn_login"},"xy":[540,860],"label":"Login","long":false,"screen":[1080,2400]}
 {"t":"…Z","type":"check","kind":"ui","ok":true,"what":"\"Home\" is visible","selector":{"text":"Home"},"shot":"shots/101502-check-pass.png","case":"TC-01"}
+{"t":"…Z","type":"tap","ok":false,"target":"Nowhere","long":false,"error":"not found: \"Nowhere\""}
+{"t":"…Z","type":"type","text":null,"secret":true,"env":"UI_OTP","by":"dashboard"}
 {"t":"…Z","type":"case_end","case":"TC-01","status":"pass","reason":""}
 ```
 
@@ -677,7 +679,10 @@ How it works:
      now but not then).
    - **UI checks** → re-verified for real, with new screenshots.
    - **DB / Figma checks** → can't be re-verified automatically; logged as notes.
-   - **secrets** → re-read from the same `$ENV` name on the replaying machine.
+   - **secrets** → re-read from the same `$ENV` name on the replaying machine. A secret the
+     user typed live from the dashboard (`"by": "dashboard"`) is skipped with a note unless
+     its `$UI_…` name is set.
+   - **steps that did not run** (`"ok": false`: a tap that found nothing) → skipped.
 3. If a step fails, the rest of that case is skipped and the case is marked **blocked**;
    replay moves on to the next case.
 4. Exit code `0` only if every case and check passed — usable in CI.
@@ -714,12 +719,16 @@ flowchart LR
     S -- "screencap + dumpsys window" --> D["📱 Device"]
     B -- "message / pause / secret" --> S
     S -- "writes" --> I[".tnazar/inbox.jsonl<br/>.tnazar/paused"]
+    S -- "Type it now: input text" --> D
     C["🤖 Claude → ./tnazar tap …"] -- "checks before each device step" --> I
     C -- "type --env UI_OTP" --> S
+    W["🤖 wait-message (background)"] -- "wakes Claude on a message" --> I
+    C & S -- "one turn at a time" --> L[".tnazar/device.lock"]
+    C -- "status" --> A[".tnazar/agent.json<br/>listener.json"]
 ```
 
-There is no channel into Claude itself: Claude runs one short `tnazar` command per step, so
-**every device command is a checkpoint**.
+Claude runs one short `tnazar` command per step, so **every device command is a
+checkpoint**; between steps, the background `wait-message` is the channel that wakes it.
 
 - **Messages.** Before a device command (`tap`, `type`, `check`, `scroll`, …) runs, unread
   messages are printed as `>> USER (dashboard): …`, recorded as `user_msg` events, and the
@@ -756,21 +765,30 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
   a lock (`.tnazar/inbox.lock`), so the listener and a command never print the same message
   twice; if a command delivered it first, the listener keeps waiting. A `tnazar run` plan or
   `tnazar flow` also stops before its next step for a message the listener delivered
-  (`live.Since`), so the plan and the agent never drive the device at the same time.
-- **Agent status.** `.tnazar/agent.json` holds what the agent is doing: `listening` (set by
-  `wait-message`, with its pid; a dead pid reads as `away`), `got_message` (set on delivery),
-  `working` (the last `say`). The control pane shows it as one line, and *Thinking…* when
-  a message has had no step for 5 s.
+  (`live.Since`, counted from the moment the plan or flow starts), so the plan and the agent
+  never drive the device at the same time. When a new run replaces the one it listens to,
+  it exits 0 and says so; the agent starts it again.
+- **Agent status.** Two facts, kept apart: `.tnazar/listener.json` has the pid of the
+  running `wait-message` (listening while it is alive), and `.tnazar/agent.json` has what the
+  agent last did: `got_message` (set on delivery, quoting the message, not an info note) or
+  `working` (its last `say`). The control pane shows one line: *Got your message* for 5 s
+  after delivery, then *Thinking about your message* until the next `say`, and after 2 min
+  without one *No reply … the agent may have stopped*. *Working* shows for 60 s after a `say`;
+  then the line falls back to *Listening* or *Not listening right now*. `start` clears both
+  files.
 - **Secrets.** A value typed in the dashboard stays in the server's memory. With **Type it
   now** (the default) the server types it straight into the field that has focus, because
   PIN and OTP screens expire; the step is logged as a `type` event with `"by": "dashboard"`
   and no value, and Claude gets an *info* message ("already typed: check the screen") that
-  is shown but does not stop its next command. While the server types, `.tnazar/typing`
-  exists and device commands wait for it (up to 15 s), so a tap cannot move focus mid-PIN;
-  the other way round, the server waits for a focus-moving command already running
-  (`.tnazar/busy`, up to 15 s). A marker older than 15 s was left by a killed process and is
-  ignored; `start` removes both, and the previous run's status line. If typing fails, adb's
-  message is kept without the command it quotes, which carries the value. Without *Type it now*, Claude is told
+  is shown but does not stop its next command. Typing and every agent step that can move
+  focus (`tap`, `type`, `key`, `scroll`, …) take turns through an flock on
+  `.tnazar/device.lock`: two dashboard requests never interleave their digits, a tap never
+  moves focus mid-PIN, and a holder that dies frees the lock at once. Each side waits up to
+  30 s (a `tap --wait` can hold it that long), then gives up and says *try again*; waits and
+  checks don't take the lock. If typing fails, the reason is put in words of its own
+  (*adb timed out*, *the device is offline*, …): adb's message quotes the command and the
+  device may echo pieces of the value, so none of its text is kept. The failure is a red
+  `type` row (`"ok": false`). Without *Type it now*, Claude is told
   the name (`UI_OTP`) and types it with `--env UI_OTP`; `type` fetches it from the server
   with a per-session token (in `.tnazar/ui.json`, mode 600). `tnazar adb` arguments that
   contain any `.env` value or dashboard secret are logged as `••••`. Masking covers printed output
@@ -786,6 +804,8 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
 Limit: a message reaches Claude while it is running commands or has `wait-message` running.
 Otherwise it waits for the next step, and the status line says *Not listening right now*.
 Claude still needs a few seconds to read the message and decide; only the delivery is instant.
+A step that could not run (a tap that found nothing, a failed adb command) is a red row with
+its reason.
 
 ---
 
@@ -834,7 +854,7 @@ model turn per step, every time. The app map remembers routes instead: each one 
 `flow`, kept in `plans/*.plan` (a map file is `app <package>` plus flows; it needs no case).
 
 - `tnazar flows` lists the flows of every map whose `app` is the active run's app, with a
-  one-line summary of each (`tap "Settings" → wait "Log out"`).
+  one-line summary of each (`tap Settings → wait "Log out"`).
 - `tnazar flow <name> [--plan FILE]` runs one against the **active** run with the plan
   runner's executor, so `if`, `retry` and nested `run` work and each step goes through the
   normal CLI: recorded, shown in the timeline (after a `say` heading), held by the
@@ -907,7 +927,8 @@ python3 -m unittest discover -s tests
   screenshots. The element tree still works.
 - **Typing is ASCII-only** (`adb input text`): no ₹, Hindi or emoji.
 - **One device, one active run at a time.**
-- **Dashboard messages wait while Claude is idle** — they are delivered at its next command.
+- **Dashboard messages wait while nothing listens** — when Claude's turn has ended and no
+  `wait-message` runs, they are delivered at its next command.
 - **DB / Figma checks are not re-verified on replay** — they appear as notes.
 
 ---

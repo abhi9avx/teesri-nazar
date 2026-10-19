@@ -9,7 +9,7 @@ Unlike `tnazar run`, a failed step does not fail the current case: the agent rea
 code and decides. A `check` in the flow is recorded in the current case as usual.
 
 Exit codes: 0 done; 1 a step or check failed; 4 a `wait --or` saw the other screen;
-2 no such flow, no active run, a bad map file; 3 a dashboard message stopped the flow;
+2 no such flow, no active run, a bad `--plan` file (other broken map files are skipped with a warning); 3 a dashboard message stopped the flow;
 5 the user paused the run mid-flow.
 """
 
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import cli, live
 from .errors import UserError
-from .plan import Case, Plan, PlanError, load
+from .plan import Plan, PlanError, load
 from .runner import Executor, Failed, HandedBack, Paused, call, indent, tail
 from .session import get_active, home
 
@@ -58,8 +58,8 @@ def _label(f: Path, args) -> str:
 class FlowExecutor(Executor):
     """A flow gives a long pause back to the agent, like any device command (exit 5)."""
 
-    def long_pause(self, out: str) -> Paused:
-        return Paused(out)
+    def long_pause(self) -> Paused:
+        return Paused()
 
 
 def _sources(args, app: str | None) -> list[tuple[Path, Plan]]:
@@ -72,6 +72,8 @@ def _sources(args, app: str | None) -> list[tuple[Path, Plan]]:
 
 
 def run_flow(args) -> int:
+    # From the first moment: a message the background listener delivers while the flow starts still stops it.
+    since = live.Since()
     active = get_active()
     if not active:
         raise UserError("no active run: `./tnazar start <name> --package <app>` first")
@@ -92,9 +94,8 @@ def run_flow(args) -> int:
 
     began = time.monotonic()
     call(["say", f"Going to {args.name} (saved route in {source})"])
-    # Not a plan case: the flow's checks go to whatever case the agent has open.
-    open_case = Case(line=0, id=the_run.current_case() or "", title="")
-    ex = FlowExecutor(p, the_run, open_case, live.Since())
+    # The flow's checks go to whatever case the agent has open.
+    ex = FlowExecutor(p, the_run, the_run.current_case() or "", since)
     result = ex.body(p.flows[args.name].body, record=False)
     took = time.monotonic() - began
     if isinstance(result, HandedBack):

@@ -67,8 +67,9 @@ class Adb:
             binary: bool = False) -> subprocess.CompletedProcess:
         cmd = [self._bin, "-s", self.serial] + args
         try:
+            # Logcat carries whatever apps log: a byte that is not UTF-8 must not crash a read.
             proc = subprocess.run(cmd, capture_output=True, timeout=timeout,
-                                  **({} if binary else {"encoding": "utf-8", "errors": "replace"}))
+                                  encoding=None if binary else "utf-8", errors=None if binary else "replace")
         except subprocess.TimeoutExpired as exc:
             raise AdbError(f"adb timed out after {timeout}s: {' '.join(args)}") from exc
         if check and proc.returncode != 0:

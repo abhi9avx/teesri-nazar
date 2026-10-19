@@ -113,7 +113,13 @@ def local_apks() -> list[Path]:
     """The newest server + test APK pair Appium downloaded on this machine, or []."""
     root = Path(os.environ.get("APPIUM_HOME") or Path.home() / ".appium")
     found = []
-    for apk in root.rglob("appium-uiautomator2-server-v*.apk"):
+    # Where Appium keeps the server: a plain install, or inside the driver; one level of
+    # nesting covers a versioned folder. Not a full walk of node_modules on every `start`.
+    pattern = "apks/appium-uiautomator2-server-v*.apk"
+    homes = ("node_modules/appium-uiautomator2-server",
+             "node_modules/appium-uiautomator2-driver/node_modules/appium-uiautomator2-server")
+    apks = [a for prefix in ("", "*/") for h in homes for a in root.glob(f"{prefix}{h}/{pattern}")]
+    for apk in apks:
         test = apk.with_name("appium-uiautomator2-server-debug-androidTest.apk")
         version = re.search(r"-v([\d.]+)\.apk$", apk.name)
         if test.exists() and version:

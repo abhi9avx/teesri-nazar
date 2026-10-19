@@ -1,6 +1,7 @@
 """The CLI end to end against a fake device: run lifecycle, actions, checks, case results."""
 
 import os
+import json
 import unittest
 from unittest import mock
 
@@ -627,3 +628,23 @@ class ReportTest(CliTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FailedStepRowTest(CliTestCase):
+    """A step that could not run is still a row in the timeline, with the reason."""
+
+    def test_a_tap_that_finds_nothing_is_recorded_with_the_reason(self):
+        run = self.start()
+        code, _, _ = tnazar("tap", "Nowhere", "--wait", "0.3")
+        self.assertEqual(code, cli.EXIT_FAIL)
+        [tap] = [e for e in run.events() if e["type"] == "tap"]
+        self.assertEqual((tap["ok"], tap["target"]), (False, "Nowhere"))
+        self.assertIn("not found", tap["error"])
+
+    def test_typing_into_a_missing_field_is_recorded_without_the_text(self):
+        run = self.start()
+        code, _, _ = tnazar("type", "s3cret-value", "--secret", "--into", "id=missing", "--wait", "0.3")
+        self.assertEqual(code, cli.EXIT_FAIL)
+        [typed] = [e for e in run.events() if e["type"] == "type"]
+        self.assertEqual((typed["ok"], typed["text"]), (False, None))
+        self.assertNotIn("s3cret-value", json.dumps(run.events()))

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import tempfile
+import sys
 import threading
 import time
 import unittest
@@ -137,17 +138,38 @@ class WaitMessageTest(CliTestCase):
         self.assertIn("no active run", out)
 
 
-class DashboardTypingTest(CliTestCase):
-    def test_an_agent_command_waits_while_the_dashboard_is_typing(self):
+def hold_device(test, seconds: float) -> None:
+    """Another process's turn on the device (the dashboard typing, or an agent tap) for `seconds`."""
+    held = threading.Event()
+
+    def turn():
+        with live.device_lock():
+            held.set()
+            time.sleep(seconds)
+    t = threading.Thread(target=turn)
+    t.start()
+    test.addCleanup(t.join)
+    held.wait(5)
+
+
+class DeviceLockTest(CliTestCase):
+    def test_an_agent_tap_waits_while_the_dashboard_is_typing(self):
         self.start()
-        live.typing_file().write_text("")
-        timer = threading.Timer(0.4, live.typing_file().unlink)
-        timer.start()
-        self.addCleanup(timer.join)
+        hold_device(self, 0.4)
         began = time.monotonic()
         self.ok("tap", "Login")
-        self.assertGreaterEqual(time.monotonic() - began, 0.4)
+        self.assertGreaterEqual(time.monotonic() - began, 0.35)
         self.assertEqual(len(self.adb.taps), 1)
+
+    def test_a_lock_held_by_a_process_that_died_is_free_at_once(self):
+        self.start()
+        code = ("import fcntl, os, sys; f = open(sys.argv[1], 'a'); fcntl.flock(f, fcntl.LOCK_EX); "
+                "print('held', flush=True); os.kill(os.getpid(), 9)")
+        proc = subprocess.run([sys.executable, "-c", code, str(live.device_lock_file())], capture_output=True, text=True)
+        self.assertIn("held", proc.stdout)
+        began = time.monotonic()
+        self.ok("tap", "Login")
+        self.assertLess(time.monotonic() - began, 1)
 
     def test_an_info_message_is_shown_but_the_command_still_runs(self):
         self.start()
@@ -158,48 +180,49 @@ class DashboardTypingTest(CliTestCase):
 
 
 class AgentStatusTest(CliTestCase):
-    """The dashboard always says what the agent is doing: listening, got the message, or working on a step."""
+    """The dashboard says whether the agent is listening, and what it is doing."""
 
-    def test_say_shows_what_the_agent_is_working_on(self):
+    def test_say_shows_the_step_and_a_live_listener_still_counts_as_listening(self):
         self.start()
-        self.ok("say", "Opening the leaderboard")
+        live.set_listener(os.getpid())
+        self.ok("say", "Opening settings")
         st = live.agent_status()
-        self.assertEqual((st["state"], st["text"]), ("working", "Opening the leaderboard"))
+        self.assertEqual((st["state"], st["text"], st["listening"]), ("working", "Opening settings", True))
 
-    def test_wait_message_shows_listening_then_got_your_message(self):
+    def test_wait_message_listens_then_reports_the_message(self):
         self.start()
         seen = []
-        timer = threading.Timer(0.3, lambda: (seen.append(live.agent_status()["state"]), live.post("open the chatbot")))
+        timer = threading.Timer(0.3, lambda: (seen.append(live.agent_status()["listening"]), live.post("open help")))
         timer.start()
         self.addCleanup(timer.join)
         tnazar("wait-message", "--timeout", "10")
-        self.assertEqual(seen, ["listening"])
+        self.assertEqual(seen, [True])
         st = live.agent_status()
-        self.assertEqual((st["state"], st["text"]), ("got_message", "open the chatbot"))
+        self.assertEqual((st["state"], st["text"]), ("got_message", "open help"))
 
-    def test_a_listener_that_died_is_not_shown_as_listening(self):
+    def test_a_listener_that_died_is_not_listening(self):
         self.start()
-        live.set_agent_status("listening", pid=2 ** 22 + 12345)
-        self.assertEqual(live.agent_status()["state"], "away")
+        live.set_listener(2 ** 22 + 12345)
+        self.assertFalse(live.agent_status()["listening"])
+
+    def test_the_status_quotes_the_message_not_an_info_note_after_it(self):
+        self.start()
+        live.post("open help")
+        live.post("UI_OTP was already typed", info=True)
+        self.ok("say", "x")
+        live.post("log out")
+        live.post("UI_PIN was already typed", info=True)
+        tnazar("tap", "Login")
+        self.assertEqual(live.agent_status()["text"], "log out")
 
 
 class LeftoverStateTest(CliTestCase):
-    def test_a_typing_marker_left_by_a_killed_dashboard_does_not_hold_commands(self):
-        self.start()
-        live.typing_file().write_text("")
-        old = time.time() - live.TYPING_WAIT - 1
-        os.utime(live.typing_file(), (old, old))
-        began = time.monotonic()
-        self.ok("tap", "Login")
-        self.assertLess(time.monotonic() - began, 2)
-
-    def test_start_clears_the_typing_marker_and_the_last_status(self):
-        live.typing_file().parent.mkdir(parents=True, exist_ok=True)
-        live.typing_file().write_text("")
+    def test_start_clears_the_previous_runs_status(self):
+        live.device_lock_file().parent.mkdir(parents=True, exist_ok=True)
         live.set_agent_status("working", "the previous run's step")
         self.start()
-        self.assertFalse(live.typing_file().exists())
-        self.assertEqual(live.agent_status()["state"], "away")
+        st = live.agent_status()
+        self.assertEqual((st["state"], st["listening"]), ("idle", False))
 
 
 class WaitMessageRulesTest(CliTestCase):
@@ -213,9 +236,25 @@ class WaitMessageRulesTest(CliTestCase):
         self.assertEqual(code, live.EXIT_HELD)
         self.assertIn("now log out", out)
 
-    def test_waits_until_the_run_ends_by_default(self):
-        args = cli.build_parser().parse_args(["wait-message"])
-        self.assertIsNone(args.timeout)
+    def test_without_a_timeout_it_waits_until_the_run_ends(self):
+        self.start()
+        timer = threading.Timer(0.6, clear_active)
+        timer.start()
+        self.addCleanup(timer.join)
+        began = time.monotonic()
+        code, out, _ = tnazar("wait-message")
+        self.assertGreaterEqual(time.monotonic() - began, 0.5)
+        self.assertEqual(code, 0)
+        self.assertIn("no active run", out)
+
+    def test_a_replaced_run_says_so_instead_of_no_active_run(self):
+        self.start()
+        timer = threading.Timer(0.3, lambda: set_active(Run.create("next", {"package": "com.example.app"}), "fake-1"))
+        timer.start()
+        self.addCleanup(timer.join)
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, 0)
+        self.assertIn("a new run started", out)
 
     def test_is_in_the_command_registry(self):
         from teesri_nazar import commands
@@ -501,42 +540,66 @@ class ServerTest(unittest.TestCase):
         with mock.patch.object(ui, "Adb", return_value=adb):
             status, body = self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
         self.assertEqual(status, 400)
-        self.assertIn("device offline", json.loads(body)["error"])
+        self.assertIn("offline", json.loads(body)["error"])
         self.assertEqual(json.loads(self.call("GET", "/api/secret/UI_OTP")[1]), {"value": "0000"})
 
-    def test_a_typing_failure_never_reveals_the_value(self):
-        self.active_run()
-        adb = mock.MagicMock()
-        adb.shell.side_effect = ui.AdbError("adb shell input text 7 failed (1): error: closed")
-        with mock.patch.object(ui, "Adb", return_value=adb):
-            status, body = self.call("POST", "/api/secret", {"name": "mpin", "value": "7531", "type_now": True})
-        self.assertEqual(status, 400)
-        error = json.loads(body)["error"]
-        self.assertIn("error: closed", error)
-        for text in [error] + [m["text"] for m in live.unread()]:
-            self.assertNotIn("input text", text)
-
-    def test_a_typing_timeout_never_reveals_the_value(self):
-        self.active_run()
-        adb = mock.MagicMock()
-        adb.shell.side_effect = ui.AdbError("adb timed out after 60s: shell input text Zq9pass")
-        with mock.patch.object(ui, "Adb", return_value=adb):
-            status, body = self.call("POST", "/api/secret", {"name": "pw", "value": "Zq9pass", "type_now": True})
-        self.assertEqual(status, 400)
-        self.assertIn("timed out", json.loads(body)["error"])
-        on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
-        self.assertNotIn("Zq9pass", body.decode() + on_disk)
-
-    def test_typing_waits_for_an_agent_command_already_running(self):
+    def test_a_typing_failure_never_reveals_any_part_of_the_value(self):
         run = self.active_run()
-        live.busy_file().write_text(str(os.getpid()))
-        timer = threading.Timer(0.4, live.busy_file().unlink)
-        timer.start()
-        self.addCleanup(timer.join)
+        adb = mock.MagicMock()
+        for err in ("adb shell input text 7 failed (1): error: closed",
+                    "adb timed out after 60s: shell input text Zq9pass",
+                    "adb shell input text Z failed (1): bad char near 'q9pa'"):
+            adb.shell.side_effect = ui.AdbError(err)
+            with mock.patch.object(ui, "Adb", return_value=adb):
+                status, body = self.call("POST", "/api/secret", {"name": "pw", "value": "Zq9pass", "type_now": True})
+            self.assertEqual(status, 400)
+        on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
+        for leak in ("Zq9pass", "q9pa", "input text"):
+            self.assertNotIn(leak, body.decode() + on_disk)
+        self.assertIn("timed out", on_disk)
+
+    def test_a_typing_failure_is_a_red_row_in_the_timeline(self):
+        run = self.active_run()
+        adb = mock.MagicMock()
+        adb.shell.side_effect = ui.AdbError("adb shell input text 7 failed (1): error: device offline")
+        with mock.patch.object(ui, "Adb", return_value=adb):
+            self.call("POST", "/api/secret", {"name": "mpin", "value": "7531", "type_now": True})
+        [typed] = events(run, "type")
+        self.assertEqual((typed["ok"], typed["by"], typed["env"]), (False, "dashboard", "UI_MPIN"))
+        self.assertIn("offline", typed["error"])
+
+    def test_two_secrets_sent_at_once_are_typed_one_after_the_other(self):
+        self.active_run()
+        typed = []
+        adb = mock.MagicMock()
+        adb.shell.side_effect = lambda *a, **k: (typed.append(a[-1]), time.sleep(0.01))
+        with mock.patch.object(ui, "Adb", return_value=adb), mock.patch.object(ui.dev, "KEY_GAP", 0.02):
+            threads = [threading.Thread(target=self.call, args=("POST", "/api/secret",
+                                                                {"name": n, "value": v, "type_now": True}))
+                       for n, v in (("otp", "1111"), ("pin", "2222"))]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        self.assertIn("".join(typed), ("11112222", "22221111"))
+
+    def test_typing_waits_for_an_agent_step_in_progress(self):
+        self.active_run()
+        hold_device(self, 0.4)
         began = time.monotonic()
         with mock.patch.object(ui, "Adb"), mock.patch.object(ui.dev.time, "sleep"):
             self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
-        self.assertGreaterEqual(time.monotonic() - began, 0.4)
+        self.assertGreaterEqual(time.monotonic() - began, 0.35)
+
+    def test_typing_gives_up_politely_when_the_agent_keeps_the_device(self):
+        self.active_run()
+        hold_device(self, 0.6)
+        with mock.patch.object(live, "DEVICE_WAIT", 0.2), mock.patch.object(ui, "Adb") as adb:
+            status, body = self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        self.assertEqual(status, 400)
+        self.assertIn("try again", json.loads(body)["error"])
+        adb.assert_not_called()
+        self.assertEqual(json.loads(self.call("GET", "/api/secret/UI_OTP")[1]), {"value": "0000"})
 
     def test_the_already_typed_note_does_not_stop_the_agent(self):
         self.active_run()

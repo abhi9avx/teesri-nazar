@@ -267,3 +267,24 @@ class KeyboardBackTest(ReplayTestCase):
         self.assertEqual(self.adb.current, "launcher")
         self.assertEqual(self.statuses(run), {"TC-01": "pass"})
         self.assertIn("extra back", out)
+
+
+class SkippedStepsTest(ReplayTestCase):
+    def test_a_failed_tap_and_a_dashboard_typed_secret_are_not_replayed_as_steps(self):
+        self.ok("start", "demo", "--package", PACKAGE)
+        self.ok("case", "start", "TC-01", "Login")
+        tnazar("tap", "Nowhere", "--wait", "0.3")  # a miss: a red row, not a step
+        run = Run.load("demo")
+        run.log({"type": "type", "text": None, "secret": True, "env": "UI_OTP", "by": "dashboard", "case": "TC-01"})
+        self.ok("type", "9876543210", "--into", "id=phone_input")
+        self.ok("tap", "Login")
+        self.ok("check", "Hi Asha")
+        self.ok("case", "end")
+        self.ok("stop")
+        self.fresh_device()
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("UI_OTP", None)
+            code, out, replayed = self.replay("--step-timeout", "1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.statuses(replayed), {"TC-01": "pass"})
+        self.assertIn("typed live from the dashboard", out)

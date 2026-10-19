@@ -137,7 +137,7 @@ def cmd_start(args) -> int:
     run = Run.create(args.name, meta)
     set_active(run, serial)
     live.mark_all_read()  # messages typed before this run are not instructions for it
-    live.clear_leftovers()
+    live.clear_agent_status()
     live.set_paused(False)
     dev.logcat_clear(adb)
     print(f"run: {run.name}  device: {serial} {model}".rstrip())
@@ -250,9 +250,18 @@ def cmd_observe(args) -> int:
     return 0
 
 
+def _missed(ctx: "Ctx", event: dict, exc: NotFound) -> NotFound:
+    """A step that found nothing is still a timeline row, red, with the reason."""
+    ctx.log({**event, "ok": False, "error": str(exc).split("\n", 1)[0]})
+    return exc
+
+
 def cmd_tap(args) -> int:
     ctx = Ctx.from_args(args.device)
-    t = resolve(ctx, args.target, args, timeout=args.wait)
+    try:
+        t = resolve(ctx, args.target, args, timeout=args.wait)
+    except NotFound as exc:
+        raise _missed(ctx, {"type": "tap", "target": args.target, "long": args.long}, exc)
     x, y = t["xy"]
     if args.long:
         dev.long_press(ctx.adb, x, y)
@@ -280,7 +289,11 @@ def cmd_type(args) -> int:
     if args.into:
         opts = argparse.Namespace(id=args.id, desc=args.desc, text=None,
                                   contains=args.contains, nth=args.nth)
-        target = resolve(ctx, args.into, opts, timeout=args.wait)
+        try:
+            target = resolve(ctx, args.into, opts, timeout=args.wait)
+        except NotFound as exc:
+            raise _missed(ctx, {"type": "type", "target": args.into, "text": None if secret else text,
+                                "secret": secret, "env": args.env}, exc)
         el = target["element"]
         secret = secret or bool(el and el.password)
         dev.tap(ctx.adb, *target["xy"])
@@ -489,8 +502,15 @@ def cmd_adb(args) -> int:
     ctx = Ctx.from_args(args.device)
     if not args.args:
         raise UserError("usage: tnazar adb <adb args...>")
-    proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args])
-    ctx.log({"type": "adb", "args": redact(args.args), "exit": proc.returncode})
+    proc = subprocess.run([adb_binary(), "-s", ctx.adb.serial, *args.args],
+                          capture_output=True, encoding="utf-8", errors="replace")
+    sys.stdout.write(proc.stdout or "")
+    sys.stderr.write(proc.stderr or "")
+    event = {"type": "adb", "args": redact(args.args), "exit": proc.returncode}
+    if proc.returncode:
+        why = next((ln.strip() for ln in (proc.stderr or proc.stdout or "").splitlines() if ln.strip()), "")
+        event["error"] = redact([why])[0]
+    ctx.log(event)
     # adb's own code could collide with tnazar's (3 held, 5 paused) and make a plan runner retry forever.
     return EXIT_FAIL if proc.returncode else 0
 
@@ -523,13 +543,18 @@ def cmd_wait_message(args) -> int:
         now = get_active()
         return now is not None and now[0].path == run.path
 
-    live.set_agent_status("listening", pid=os.getpid())
+    live.set_listener(os.getpid())
     while live.wait_message(args.timeout, same_run):
         # The agent's own command may have delivered it first: then keep listening.
         if live.needs_agent(live.deliver(run.log)):
             print("Read the user's message above and act on it now.")
             return live.EXIT_HELD
-    print("no active run" if not same_run() else f"no message in {args.timeout:g}s")
+    if same_run():
+        print(f"no message in {args.timeout:g}s")
+    elif get_active():
+        print("a new run started: run `./tnazar wait-message` again to listen to it")
+    else:
+        print("no active run")
     return 0
 
 
@@ -763,8 +788,11 @@ def main(argv: list[str] | None = None) -> int:
             return held
         try:
             if active and args.cmd in MOVES_FOCUS:
-                with live.agent_busy():
-                    return args.fn(args) or 0
+                try:
+                    with live.device_lock():
+                        return args.fn(args) or 0
+                except live.DeviceBusy:
+                    raise UserError("the dashboard is still typing on the device; run the step again") from None
             return args.fn(args) or 0
         finally:
             # Shown, not consumed: the next device command is still held until the agent re-plans.
@@ -794,7 +822,6 @@ def _hold(run: Run) -> int | None:
             print(f"PAUSED: the user paused this run. Command NOT run. {live.PAUSED_HINT}")
             return live.EXIT_HELD if live.needs_agent(told) else live.EXIT_PAUSED
         print("resumed")
-    live.wait_typing()
     if live.needs_agent(live.deliver(run.log)):
         print("Command NOT run: read the user's message above and decide the next step "
               "(re-run the command if it still applies).")

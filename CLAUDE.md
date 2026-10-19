@@ -77,7 +77,7 @@ conversation.
 help chat", "go to settings"), run `./tnazar flows`: it lists the saved routes for the run's
 app (the `flow`s in `plans/*.plan`). If one fits, `./tnazar flow <name>` runs it in one
 command (each step logged as usual; exit codes as for any device command: 1 a step or check
-failed, 2 no such flow or a bad map file, 3 a dashboard message stopped it, 4 a `wait --or`
+failed, 2 no such flow or a bad `--plan` file, 3 a dashboard message stopped it, 4 a `wait --or`
 saw the other screen, 5 paused). After finding a new route by hand, save it as a
 `flow` in `plans/<app>.plan` (a file of `app <package>` plus flows; no case needed) with the
 selectors you used and a `wait` for the screen it ends on, so the next request is one command.

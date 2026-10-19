@@ -1,6 +1,8 @@
 """Fast screen reads through the UiAutomator2 server, with `uiautomator dump` as the fallback."""
 
+import os
 import unittest
+from pathlib import Path
 
 from fakedevice import PACKAGE, server_xml, tnazar, login_app
 from teesri_nazar import screen as scr
@@ -114,8 +116,6 @@ class NoServerTest(CliTestCase):
         self.assertIn("installed but did not answer", out)
 
     def put_apks(self, rel, version, fresh_dir=False):
-        import os
-        from pathlib import Path
         base = Path(os.environ["APPIUM_HOME"]) / ("x" if fresh_dir else "") / rel / "apks"
         base.mkdir(parents=True)
         for name in (f"appium-uiautomator2-server-v{version}.apk", "appium-uiautomator2-server-debug-androidTest.apk"):

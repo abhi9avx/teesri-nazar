@@ -171,14 +171,17 @@ the panes stack.
   device step is held back (not run) so it can change course. The list shows *"waiting for
   the agent…"* until then, and *"✓ delivered"* after (*"✓ typed on the device"* for a PIN
   or OTP the dashboard typed itself).
-- **What the agent is doing.** A line above the message box: *Listening*, *Got your
-  message*, *Thinking about your message* (no step for 5 s), *Working: …* (its last
-  narration), or *Not listening right now* (the message waits for its next step).
+- **What the agent is doing.** A line above the message box: *Got your message* (just
+  delivered), *Thinking about your message* (5 s after delivery, until it narrates its next
+  step), *Working: …* (its last narration, for a minute), *Listening* or *Not listening right
+  now* (the message waits for its next step). If a message gets no reply for 2 minutes, the
+  line says the agent may have stopped. A step that could not run shows as a red row with
+  the reason.
 - **Pause.** The agent's next device step waits. If you are still paused after 60 s, the
   agent is told to wait (`./tnazar wait-resume`) until you press **Resume**.
 - **OTP / PIN.** Enter a name (e.g. `OTP`), the value and, optionally, where to use it.
-  With **Type it now** (on by default) the dashboard types it at once into the field that
-  has focus, because PIN and OTP screens expire; the agent is told afterwards and checks
+  With **Type it now** (on by default) the dashboard types it into the field that has focus
+  as soon as the agent's step in progress ends, because PIN and OTP screens expire; the agent is told afterwards and checks
   the screen. Untick it to let the agent type it with `--env UI_OTP` into a field it picks.
   Either way the value never reaches the chat. It is kept
   only in the dashboard's memory, never written to disk, shown as `••••` (*"🔒 OTP sent

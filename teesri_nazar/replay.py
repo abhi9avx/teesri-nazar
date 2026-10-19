@@ -67,8 +67,6 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
             text = os.environ[e["env"]]
         else:
             hint = f"set ${e['env']}" if e.get("env") else "record it with --env VAR"
-            if e.get("by") == "dashboard":
-                hint += "; it was typed live from the dashboard into the focused field"
             raise StepFailed(f"type: secret value was not recorded ({hint})")
         if e.get("selector") or e.get("xy"):
             dev.tap(adb, *_locate(ctx, e, size, timeout))
@@ -199,6 +197,11 @@ def run(args) -> int:
                 ctx.log({"type": "shot", "label": e.get("label", ""), "file": target.rel(path)})
                 if args.visual:
                     pairs.append((str(source.path / e["file"]), str(path)))
+                continue
+            if e.get("ok") is False:
+                continue  # a step that did not run when it was recorded
+            if e.get("by") == "dashboard" and e.get("env") not in os.environ:
+                print(f"  skipped: {e['env']} was typed live from the dashboard (set ${e['env']} to replay it)")
                 continue
             step += 1
             try:

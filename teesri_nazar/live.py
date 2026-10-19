@@ -23,7 +23,8 @@ EXIT_HELD = 3    # a device command was not run: the user sent a message
 EXIT_PAUSED = 5  # a device command was not run: the user still has the run paused
 PAUSE_WAIT = 60.0  # stays under the agent's 2-minute command timeout
 POLL = 0.5
-TYPING_WAIT = 15.0  # an 8-digit code takes ~2 s; a crashed dashboard must not hold the agent forever
+DEVICE_WAIT = 30.0  # the longest turn on the device: a `tap --wait` / `scroll --to` step, or an 8-digit code
+PAUSED_HINT = "Run `./tnazar wait-resume` until it prints `resumed`, then continue."
 
 
 def inbox_file() -> Path:
@@ -42,12 +43,8 @@ def ui_file() -> Path:
     return state_dir() / "ui.json"
 
 
-def typing_file() -> Path:
-    return state_dir() / "typing"
-
-
-def busy_file() -> Path:
-    return state_dir() / "busy"
+def device_lock_file() -> Path:
+    return state_dir() / "device.lock"
 
 
 # ---------------------------------------------------------------- inbox
@@ -97,7 +94,7 @@ def deliver(log) -> list[dict]:
             log({"type": "user_msg", "text": m["text"], "id": m["id"], "sent": m["t"],
                  "secret": m.get("secret"), "note": m.get("note")})
         if needs_agent(msgs):
-            set_agent_status("got_message", msgs[-1]["text"])
+            set_agent_status("got_message", [m for m in msgs if not m.get("info")][-1]["text"])
         if msgs:
             # Only what was printed: a message that lands meanwhile stays unread for the next step.
             _cursor_file().write_text(str(seen + len(msgs)))
@@ -128,63 +125,31 @@ class Since:
         return msgs
 
 
-@contextlib.contextmanager
-def dashboard_typing():
-    """While the dashboard types a secret, agent commands wait instead of moving focus mid-PIN."""
-    typing_file().write_text(now_iso() + "\n")
-    try:
-        yield
-    finally:
-        typing_file().unlink(missing_ok=True)
-
-
-def _fresh(f: Path) -> bool:
-    """A marker older than TYPING_WAIT was left by a process that died mid-way: ignore it."""
-    try:
-        written = f.stat().st_mtime
-    except FileNotFoundError:
-        return False
-    return time.time() - written < TYPING_WAIT
-
-
-def wait_typing() -> None:
-    if not _fresh(typing_file()):
-        return
-    deadline = time.monotonic() + TYPING_WAIT
-    while _fresh(typing_file()) and time.monotonic() < deadline:
-        time.sleep(POLL / 5)
+class DeviceBusy(Exception):
+    pass
 
 
 @contextlib.contextmanager
-def agent_busy():
-    """While a device command runs, the dashboard does not start typing into a field it may move."""
-    busy_file().write_text(f"{os.getpid()}\n")
-    try:
-        yield
-    finally:
-        busy_file().unlink(missing_ok=True)
-
-
-def wait_agent_idle() -> None:
-    deadline = time.monotonic() + TYPING_WAIT
-    while _fresh(busy_file()) and _alive(_pid(busy_file())) and time.monotonic() < deadline:
-        time.sleep(POLL / 5)
-
-
-def _pid(f: Path):
-    try:
-        return int(f.read_text().strip() or 0) or None
-    except (FileNotFoundError, ValueError):
-        return None
-
-
-def clear_leftovers() -> None:
-    """A new run starts with no typing marker and no status from the previous run."""
-    for f in (typing_file(), busy_file(), _status_file()):
-        f.unlink(missing_ok=True)
-
-
-PAUSED_HINT = "Run `./tnazar wait-resume` until it prints `resumed`, then continue."
+def device_lock(wait: float | None = None):
+    """One turn on the device: the dashboard typing a secret, or an agent step that can move
+    focus. An flock, so two dashboard requests, the dashboard and the agent, never interleave,
+    and a holder that dies releases it at once."""
+    deadline = None
+    with device_lock_file().open("a") as f:
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                now = time.monotonic()
+                deadline = deadline or now + (DEVICE_WAIT if wait is None else wait)
+                if now >= deadline:
+                    raise DeviceBusy() from None
+                time.sleep(POLL / 10)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------- agent status
@@ -193,20 +158,38 @@ def _status_file() -> Path:
     return state_dir() / "agent.json"
 
 
-def set_agent_status(state: str, text: str = "", pid: int | None = None) -> None:
-    """listening (wait-message is running) | got_message | working (the last `say`)."""
-    _status_file().write_text(json.dumps({"state": state, "text": text, "t": now_iso(), "pid": pid}) + "\n")
+def _listener_file() -> Path:
+    return state_dir() / "listener.json"
+
+
+def set_agent_status(state: str, text: str = "") -> None:
+    """What the agent last did: got_message (a message was delivered) | working (its last `say`)."""
+    _status_file().write_text(json.dumps({"state": state, "text": text, "t": now_iso()}) + "\n")
+
+
+def set_listener(pid: int) -> None:
+    _listener_file().write_text(json.dumps({"pid": pid}) + "\n")
+
+
+def clear_agent_status() -> None:
+    """A new run starts without the previous run's status."""
+    _status_file().unlink(missing_ok=True)
+    _listener_file().unlink(missing_ok=True)
+
+
+def _read(f: Path) -> dict:
+    try:
+        return json.loads(f.read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
 
 
 def agent_status() -> dict:
-    f = _status_file()
-    try:
-        st = json.loads(f.read_text()) if f.exists() else {}
-    except ValueError:
-        st = {}
-    if st.get("state") == "listening" and not _alive(st.get("pid")):
-        st["state"] = "away"  # the listener was stopped: messages wait for the agent's next step
-    return st or {"state": "away", "text": "", "t": None}
+    """{state: idle|got_message|working, text, t, listening}: listening while a `wait-message`
+    process is alive, whatever the agent is doing meanwhile."""
+    st = {"state": "idle", "text": "", "t": None, **_read(_status_file())}
+    st["listening"] = _alive(_read(_listener_file()).get("pid"))
+    return st
 
 
 def _alive(pid) -> bool:
