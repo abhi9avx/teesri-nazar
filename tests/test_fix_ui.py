@@ -158,7 +158,7 @@ class TimelineWordingTest(unittest.TestCase):
         a = HTML.index("const fmtDur")
         script = (HTML[a:HTML.index("\n", a)] + "\n" + HTML[HTML.index("// Ids are written"):
                   HTML.index("// ------------------------------------------------------------------ timeline")]
-                  + f"\nconsole.log(agentLine({json.dumps(status)}, {age_ms}));")
+                  + f"\nconsole.log(agentLine({json.dumps(status)}, {age_ms})[0]);")
         return subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout.strip()
 
     def test_a_wait_that_found_the_other_screen_says_so(self):
@@ -219,6 +219,27 @@ class TimelineWordingTest(unittest.TestCase):
         self.assertEqual(rows, [["Open the app", "com.example.app"], ["Swipe", "from 1,2 to 3,4"],
                                 ["Screenshot: login", ""],
                                 ["Paused by you for 1m 0s", "the agent was told to wait until you resume"]])
+
+    def js(self, expr: str):
+        a = HTML.index("const fmtDur")
+        script = (HTML[a:HTML.index("\n", a)] + "\n" + HTML[HTML.index("// Ids are written"):
+                  HTML.index("// ------------------------------------------------------------------ timeline")]
+                  + f"\nconsole.log(JSON.stringify({expr}));")
+        return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+    def test_your_message_is_never_shown_below_steps_that_came_after_it(self):
+        events = [{"type": "say", "text": "Opening search"}, {"type": "tap", "label": "Search"},
+                  {"type": "user_msg", "text": "now go back"}, {"type": "key", "key": "back"},
+                  {"type": "say", "text": "Going back"}, {"type": "key", "key": "back"}]
+        blocks = self.js(f"layout({json.dumps(events)}).map((b) => [b.kind, b.steps ? b.steps.map((e) => e.type) : b.e.type])")
+        self.assertEqual(blocks, [["group", ["tap"]], ["user", "user_msg"], ["step", "key"], ["group", ["key"]]])
+
+    def test_the_time_shows_only_on_lines_it_belongs_to(self):
+        timed = lambda st, age: self.js(f"agentLine({json.dumps(st)}, {age})")[1]
+        self.assertTrue(timed({"state": "got_message", "text": "x", "listening": True}, 1000))
+        self.assertTrue(timed({"state": "working", "text": "x", "listening": True}, 1000))
+        self.assertFalse(timed({"state": "working", "text": "x", "listening": True}, 120000))
+        self.assertFalse(timed({"state": "idle", "text": "", "listening": False}, 0))
 
     def test_the_status_line_never_gets_stuck(self):
         listening = {"state": "idle", "text": "", "listening": True}

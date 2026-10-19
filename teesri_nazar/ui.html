@@ -287,13 +287,32 @@ const GOT_FOR = 5000, THINKING_FOR = 120000, WORKING_FOR = 60000;
 function agentLine(a, age) {
   const quote = a.text ? `: “${a.text.length > 80 ? a.text.slice(0, 80) + "…" : a.text}”` : "";
   if (a.state === "got_message") {
-    if (age < GOT_FOR) return `📨 Got your message${quote}`;
-    if (age < THINKING_FOR) return `🤔 Thinking about your message${quote}`;
-    return `⚠️ No reply to your message for ${fmtDur(age)}${quote}: the agent may have stopped; check Claude Code`;
+    if (age < GOT_FOR) return [`📨 Got your message${quote}`, true];
+    if (age < THINKING_FOR) return [`🤔 Thinking about your message${quote}`, true];
+    return [`⚠️ No reply to your message for ${fmtDur(age)}${quote}: the agent may have stopped; check Claude Code`, false];
   }
-  if (a.state === "working" && age < WORKING_FOR) return `⚙️ Working${quote}`;
-  return a.listening ? "🟢 Listening: your message reaches the agent in about a second"
-                     : "⚪ Not listening right now: your message waits for the agent's next step";
+  if (a.state === "working" && age < WORKING_FOR) return [`⚙️ Working${quote}`, true];
+  return [a.listening ? "🟢 Listening: your message reaches the agent in about a second"
+                      : "⚪ Not listening right now: your message waits for the agent's next step", false];
+}
+
+// The timeline's blocks in order: a `say` opens a group its steps go under; your message, a
+// case boundary or the next `say` closes it, so nothing that came later is drawn above it.
+function layout(events) {
+  const blocks = [];
+  let group = null;
+  for (const e of events) {
+    if (e.type === "io") continue;  // older runs: output size per command, now shown per case
+    if (e.type === "say") { group = { kind: "group", e, steps: [] }; blocks.push(group); continue; }
+    if (["user_msg", "case_start", "case_end"].includes(e.type)) {
+      group = null;
+      blocks.push({ kind: e.type === "user_msg" ? "user" : e.type, e });
+      continue;
+    }
+    if (group) group.steps.push(e);
+    else blocks.push({ kind: "step", e });
+  }
+  return blocks;
 }
 
 // ------------------------------------------------------------------ timeline
@@ -341,50 +360,37 @@ function render() {
     return;
   }
   const t0 = meta && meta.started_at ? Date.parse(meta.started_at) : null;
-  let group = null, steps = 0, total = 0, lastRow = null;
-  const closeGroup = () => {
-    if (!group) return;
-    group.querySelector(".gmeta").textContent = steps ? `${steps} step${steps > 1 ? "s" : ""} · ${fmtDur(total)}` : "";
-    group = null; steps = 0; total = 0;
-  };
-  for (const e of events) {
-    if (e.type === "case_start") {
-      closeGroup();
+  for (const b of layout(events)) {
+    const e = b.e;
+    if (b.kind === "case_start") {
       const c = el("div", "case");
       c.append(el("span", "id", e.case), el("span", null, e.title || ""));
       const cost = usageLabel(caseUsage[e.case]);
       if (cost) { const s = el("span", "case-cost", `🪙 ${cost}`); s.title = "model usage for this test case (from the Claude Code session log)"; c.append(s); }
       tl.append(c);
-    } else if (e.type === "case_end") {
-      closeGroup();
+    } else if (b.kind === "case_end") {
       const c = el("div", "case-end");
       c.append(el("span", `pill ${e.status}`, e.status.toUpperCase()), document.createTextNode(e.reason ? `  ${e.reason}` : ""));
       const cost = usageLabel(caseUsage[e.case]);
       if (cost) { const s = el("span", "case-cost", `🪙 ${cost}`); s.title = "model usage for this case (from the Claude Code session log)"; c.append(s); }
       tl.append(c);
-    } else if (e.type === "io") {
-      // Older runs logged per-command output size; token cost is shown per test case instead.
-    } else if (e.type === "say") {
-      closeGroup();
-      group = el("div", "group");
-      const h = el("div", "ghead");
-      h.append(el("span", "when", clock(e.t)), el("span", "txt", `» ${e.text}`), el("span", "dur gmeta", ""));
-      group.append(h, el("div", "gbody"));
+    } else if (b.kind === "group") {
+      const group = el("div", "group"), h = el("div", "ghead"), body = el("div", "gbody");
+      const total = b.steps.reduce((sum, s) => sum + (s.dur_ms || 0), 0);
+      const n = b.steps.length;
+      h.append(el("span", "when", clock(e.t)), el("span", "txt", `» ${e.text}`),
+               el("span", "dur gmeta", n ? `${n} step${n > 1 ? "s" : ""} · ${fmtDur(total)}` : ""));
+      for (const s of b.steps) body.append(row(s, t0));
+      group.append(h, body);
       tl.append(group);
-    } else if (e.type === "user_msg") {
+    } else if (b.kind === "user") {
       const r = el("div", "row user");
       r.append(el("span", "when", clock(e.t)), el("span", "ico", "📨"), el("span", "what", `You: ${userText(e)}`), el("span"));
       tl.append(r);
     } else {
-      const r = row(e, t0);
-      lastRow = r;
-      if (group) {
-        group.querySelector(".gbody").append(r);
-        steps++; total += e.dur_ms || 0;
-      } else tl.append(r);
+      tl.append(row(e, t0));
     }
   }
-  closeGroup();
   if (stick) tl.scrollTop = tl.scrollHeight;
 }
 $("timeline").addEventListener("scroll", () => {
@@ -469,8 +475,9 @@ function renderAgent() {
   if (!a || !(state && state.active)) { bar.textContent = ""; bar.hidden = true; return; }
   bar.hidden = false;
   const age = a.t ? Date.now() - Date.parse(a.t) : 0;
-  bar.replaceChildren(document.createTextNode(agentLine(a, age) + " "));
-  if (a.t && a.state !== "idle") bar.append(el("span", "age", `· ${fmtDur(age)} ago`));
+  const [line, timed] = agentLine(a, age);
+  bar.replaceChildren(document.createTextNode(line + " "));
+  if (timed && a.t) bar.append(el("span", "age", `· ${fmtDur(age)} ago`));
 }
 function renderControl() {
   renderAgent();
