@@ -160,7 +160,7 @@ def run(args) -> int:
     try:
         meta["animations_before"] = dev.animations_off(adb)
         target.update_meta(animations_before=meta["animations_before"])
-        print("screen reads: " + ("fast (UiAutomator2 server)" if uia2.start(adb) else "uiautomator dump"))
+        print(uia2.start_line(adb))
         if args.fresh and meta["package"]:
             dev.force_stop(adb, meta["package"])
             dev.clear_data(adb, meta["package"])

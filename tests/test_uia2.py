@@ -87,9 +87,40 @@ class NoServerTest(CliTestCase):
         self.ok("observe")
         self.assertEqual(dumps(self.adb, since), 1)
 
+    def test_says_why_reads_are_slow_and_how_to_get_the_server(self):
+        out = self.ok("start", "demo", "--package", PACKAGE)
+        self.assertIn("the UiAutomator2 server is not installed on fake-1", out)
+        self.assertIn("appium driver install uiautomator2", out)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_points_at_the_server_apks_appium_already_downloaded(self):
+        old = self.put_apks("node_modules/appium-uiautomator2-driver/node_modules/appium-uiautomator2-server", "8.1.2")
+        new = self.put_apks("node_modules/appium-uiautomator2-driver/node_modules/appium-uiautomator2-server", "9.11.1",
+                            fresh_dir=True)
+        out = self.ok("start", "demo", "--package", PACKAGE)
+        self.assertIn(f"adb -s fake-1 install -r -g {new / 'appium-uiautomator2-server-v9.11.1.apk'}", out)
+        self.assertIn(f"adb -s fake-1 install -r -g {new / 'appium-uiautomator2-server-debug-androidTest.apk'}", out)
+        self.assertNotIn(str(old), out)
+
+    def test_never_installs_anything_itself(self):
+        self.put_apks("node_modules/appium-uiautomator2-server", "9.11.1")
+        self.ok("start", "demo", "--package", PACKAGE)
+        self.assertFalse([c for c in self.adb.calls if "install" in c])
+
+    def test_an_installed_server_that_does_not_answer_is_named_as_the_cause(self):
+        self.adb.uia2_installed = True
+        self.adb.uia2_broken = True
+        out = self.ok("start", "demo", "--package", PACKAGE)
+        self.assertIn("screen reads: uiautomator dump", out)
+        self.assertIn("installed but did not answer", out)
+
+    def put_apks(self, rel, version, fresh_dir=False):
+        import os
+        from pathlib import Path
+        base = Path(os.environ["APPIUM_HOME"]) / ("x" if fresh_dir else "") / rel / "apks"
+        base.mkdir(parents=True)
+        for name in (f"appium-uiautomator2-server-v{version}.apk", "appium-uiautomator2-server-debug-androidTest.apk"):
+            (base / name).write_bytes(b"")
+        return base
 
 
 class ServerErrorBodyTest(unittest.TestCase):
@@ -107,3 +138,7 @@ class ServerErrorBodyTest(unittest.TestCase):
                 pass
         err = urllib.error.HTTPError("/source", 500, "Internal Server Error", {}, Unreadable())
         self.assertEqual(uia2._error_message(err), "")
+
+
+if __name__ == "__main__":
+    unittest.main()
