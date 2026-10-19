@@ -1,6 +1,6 @@
-/* Teesri Nazar: "Saffron fire". The hero colour is sampled from the Ravana art so the two read as one. */
+/* Teesri Nazar: "Saffron fire". True saffron, deepening to dusk in the hero like a Dussehra evening. */
 :root {
-  --saffron: #FD9B14;
+  --saffron: #F27A1A;
   --vermilion: #C42A1E;
   --peacock: #0F7B78;
   --ink: #1A1208;
@@ -14,17 +14,42 @@
   --wrap: 72rem;
   --gutter: clamp(1rem, 0.4rem + 2.6vw, 2.5rem);
   --space: clamp(4rem, 2.5rem + 6vw, 8rem);
+  /* Theme roles: light is the saffron brand, dark is ink with a saffron glow. */
+  --bg: var(--paper);
+  --fg: var(--ink);
+  --chip: var(--cream);
+  --band: var(--saffron);
+  --band-fg: var(--ink);
+  --hero-bg: linear-gradient(180deg, var(--saffron) 0%, #EC6E1A 55%, #DD5C1B 100%);
+  --hero-fg: var(--ink);
+  --btn-bg: var(--ink);
+  --btn-fg: var(--cream);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #140E07;
+  --fg: #FFF4E0;
+  --muted: #CBBFAE;
+  --line: #3A2C1C;
+  --chip: #2A1E10;
+  --band: #1A1208;
+  --band-fg: #FFF4E0;
+  --hero-bg: radial-gradient(90% 60% at 50% 105%, #6B2A0A 0%, #3A1A0A 38%, #1A1208 72%);
+  --hero-fg: #FFF4E0;
+  --btn-bg: var(--saffron);
+  --btn-fg: var(--ink);
+  color-scheme: dark;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1.0625rem/1.6 var(--sans); overflow-wrap: break-word; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 400 1.0625rem/1.6 var(--sans); overflow-wrap: break-word; }
 img, svg { display: block; max-width: 100%; height: auto; }
-a { color: var(--ink); text-decoration-color: var(--saffron); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
-a:hover { text-decoration-color: var(--ink); }
-:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; border-radius: 4px; }
+a { color: var(--fg); text-decoration-color: var(--saffron); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+a:hover { text-decoration-color: currentColor; }
+:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; border-radius: 4px; }
 code { font-family: var(--mono); font-size: 0.9em; }
-p code, li code, td code { background: var(--cream); padding: 0.1em 0.35em; border-radius: 4px; }
+p code, li code, td code { background: var(--chip); padding: 0.1em 0.35em; border-radius: 4px; }
 h1, h2, h3 { font-family: var(--display); font-weight: 400; line-height: 1.05; margin: 0; text-wrap: balance; }
 h2 { font-size: clamp(2.1rem, 1.4rem + 2.6vw, 3.4rem); }
 h3 { font-size: 1.6rem; }
@@ -34,51 +59,136 @@ p { margin: 0; }
 .skip:focus { top: 0.75rem; }
 
 /* Header and footer share the saffron band, so every page opens and closes on the brand. */
-.site-header, .site-footer { background: var(--saffron); }
+.site-header, .site-footer { background: var(--band); color: var(--band-fg); }
+:root[data-theme="dark"] .site-header { box-shadow: inset 0 -2px var(--saffron); }
 .site-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 1rem var(--gutter); }
 @media (min-width: 76rem) { .site-header { padding-inline: calc((100% - var(--wrap)) / 2 + var(--gutter)); } }
-.brand { display: flex; align-items: center; gap: 0.65rem; color: var(--ink); text-decoration: none; }
+.brand { display: flex; align-items: center; gap: 0.65rem; color: inherit; text-decoration: none; }
 .brand-name { font-family: var(--display); font-size: 1.5rem; line-height: 1; }
+/* The mark's ink outline would vanish on the dark band: invert it to cream, keeping the saffron iris. */
+:root[data-theme="dark"] :is(.brand, .footer-brand) img { filter: invert(1) hue-rotate(180deg); }
 .brand-hi { font-family: var(--display); font-size: 1.05rem; line-height: 1; opacity: 0.75; }
 .site-header ul { display: flex; gap: clamp(1rem, 0.5rem + 1.5vw, 2rem); list-style: none; margin: 0; padding: 0; }
-.site-header nav a { color: var(--ink); text-decoration: none; font-weight: 600; padding-block: 0.3rem; }
-.site-header nav a:hover, .site-header nav a[aria-current="page"] { box-shadow: inset 0 -2px var(--ink); }
+.site-header nav a { color: inherit; text-decoration: none; font-weight: 600; padding-block: 0.3rem; }
+.site-header nav a:hover, .site-header nav a[aria-current="page"] { box-shadow: inset 0 -2px currentColor; }
+.site-header nav { display: flex; align-items: center; gap: clamp(1rem, 0.5rem + 1.5vw, 2rem); }
+.theme-toggle { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; border: 2px solid currentColor; background: transparent; color: inherit; cursor: pointer; }
+.theme-toggle svg { width: 1.1rem; height: 1.1rem; }
+.theme-toggle .moon, :root[data-theme="dark"] .theme-toggle .sun { display: none; }
+:root[data-theme="dark"] .theme-toggle .moon { display: block; }
 
 .site-footer { margin-top: var(--space); }
 .footer-inner { max-width: var(--wrap); margin: 0 auto; padding: 2rem var(--gutter); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem 2rem; font-size: 0.95rem; }
 .footer-brand img { display: inline-block; vertical-align: -0.3em; margin-right: 0.45rem; }
-.site-footer a { text-decoration-color: var(--ink); }
+.site-footer a { color: inherit; text-decoration-color: currentColor; }
 
 /* Buttons */
 .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2.25rem; }
-.btn { display: inline-flex; align-items: center; min-height: 3.25rem; padding: 0 1.6rem; border-radius: 999px; font: 600 1.02rem/1 var(--sans); text-decoration: none; border: 2px solid var(--ink); }
-.btn-ink { background: var(--ink); color: var(--cream); }
-.btn-ink:hover { background: #3A2A18; }
-.btn-line { color: var(--ink); background: transparent; }
-.btn-line:hover { background: rgb(26 18 8 / 0.08); }
+.btn { display: inline-flex; align-items: center; min-height: 3.25rem; padding: 0 1.6rem; border-radius: 999px; font: 600 1.02rem/1 var(--sans); text-decoration: none; border: 2px solid var(--btn-bg); }
+.btn-ink { background: var(--btn-bg); color: var(--btn-fg); }
+.btn-ink:hover { filter: brightness(1.15); }
+.btn-line { color: inherit; background: transparent; border-color: currentColor; }
+.btn-line:hover { background: rgb(128 100 60 / 0.15); }
 .link-button { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; text-decoration-color: var(--saffron); text-decoration-thickness: 2px; text-underline-offset: 0.2em; cursor: pointer; }
 
-/* Hero: saffron field, Ravana on the right */
-.hero { background: var(--saffron); overflow: hidden; }
-.hero-inner { max-width: var(--wrap); margin: 0 auto; padding: clamp(1.5rem, 1rem + 3vw, 3rem) var(--gutter) 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: center; }
-@media (min-width: 64rem) { .hero-inner { grid-template-columns: minmax(0, 1fr) 31rem; } }
-.hero h1 { font-size: clamp(2.7rem, 1.6rem + 3.8vw, 4.6rem); line-height: 1; }
-.hero .lede { font-size: clamp(1.15rem, 1rem + 0.5vw, 1.35rem); margin-top: 1.5rem; max-width: 28em; }
-.hero-copy { padding-bottom: clamp(1rem, 0.5rem + 3vw, 4rem); }
-.fineprint { margin-top: 1.25rem; font-size: 0.95rem; font-weight: 500; }
-.hero-art { margin: 0; align-self: end; }
-.hero-art img {
-  width: 100%; margin-bottom: -1px;
-  /* The art has a paper grain the flat saffron lacks: fade its edges so no rectangle shows. */
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent), linear-gradient(to bottom, transparent, #000 3%);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent), linear-gradient(to bottom, transparent, #000 3%);
-  mask-composite: intersect;
+/* Hero: a poster. Ram bottom-left, Ravana bottom-right, the headline above the arrow's flight. */
+.hero { background: var(--hero-bg); color: var(--hero-fg); overflow: hidden; }
+.hero-inner { max-width: 84rem; margin: 0 auto; padding: clamp(1.5rem, 1rem + 2vw, 2.5rem) var(--gutter) clamp(2rem, 1rem + 3vw, 3rem); }
+.poster { position: relative; }
+.hero-copy { position: relative; z-index: 2; }
+.hero h1 { font-size: clamp(2.6rem, 1.5rem + 3.6vw, 4.6rem); line-height: 1; }
+.hero .lede { font-size: clamp(1.1rem, 1rem + 0.4vw, 1.3rem); margin-top: 1.25rem; max-width: 34em; }
+.scene { position: relative; z-index: 1; display: block; width: 100%; aspect-ratio: 1600 / 620; margin-top: 1rem; overflow: hidden; }
+@media (min-width: 64rem) {
+  .poster { aspect-ratio: 1600 / 1000; }
+  .hero-copy { position: absolute; top: 0; left: 50%; translate: -50% 0; width: min(100%, 52rem); text-align: center; }
+  .hero-copy .lede { margin-inline: auto; }
+  .hero-copy .actions { justify-content: center; }
+  .scene { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; margin: 0; }
 }
+
+.shot-path { fill: none; }
+.bowstring { fill: none; stroke: #F6DDA4; stroke-width: 1.8; stroke-linejoin: round; }
+.trail { fill: none; stroke: #FFF4E0; stroke-width: 3; stroke-linecap: round; opacity: 0.6; }
+.arrow-shaft { stroke: #F7D27A; stroke-width: 4; stroke-linecap: round; }
+.arrow-head, .arrow-feather { fill: #F7D27A; stroke: #1A1208; stroke-width: 1.5; stroke-linejoin: round; }
+.arrow { filter: drop-shadow(0 0 6px rgb(255 214 120 / 0.95)); }
+.third-eye-lid { fill: #FFF4C2; stroke: #8A5300; stroke-width: 0.8; }
+.third-eye-pupil { fill: #C42A1E; }
+.third-eye-glow { transform-box: fill-box; transform-origin: center; }
+.burst { fill: rgb(255 244 224 / 0.9); opacity: 0; }
+.cut { stroke: #FFF4E0; stroke-width: 4; stroke-linecap: round; opacity: 0; }
+.hit-bug .cut { stroke: #FF5A4E; }
+.head-down { filter: url(#spent); opacity: 0; transform-box: view-box; }
+.badge circle { stroke: #1A1208; stroke-width: 2; }
+.badge text { font: 700 16px/1 var(--sans); fill: #FFFFFF; text-anchor: middle; }
+.badge { transform-box: fill-box; transform-origin: center; }
+.hit-pass .badge circle { fill: var(--peacock); }
+.hit-bug .badge circle { fill: var(--vermilion); }
+/* The finished state is the default (no JS, reduced motion); JS arms the shot before it plays. */
+.shot:not(.is-done) .hit:not(.is-hit) :is(.badge, .cut, .head-down) { opacity: 0; }
+.shot.is-done .hit :is(.badge, .cut), .hit.is-hit :is(.badge, .cut) { opacity: 1; }
+.shot.is-done .head-down, .hit.is-hit .head-down { opacity: 1; }
+.shot:not(.is-done):not(.is-firing) .trail { opacity: 0; }
+.shot.is-done .arrow-rest, .shot.is-firing .arrow-rest { opacity: 0; }
 @media (prefers-reduced-motion: no-preference) {
-  .hero-art img { animation: rise 0.9s 0.1s cubic-bezier(.2, .7, .2, 1) both; }
+  .third-eye-glow { animation: glow 2.4s ease-in-out infinite; }
+  .hit.is-hit .badge { animation: pop 0.4s cubic-bezier(.2, 1.6, .4, 1) both; }
+  .hit.is-hit .burst { animation: burst 0.55s ease-out both; }
+  .hit.is-hit .head-down { animation: knock 0.5s cubic-bezier(.3, .6, .3, 1) both; }
+  .hit.is-hit .cut { animation: slash 0.25s ease-out both; }
+  .ram { transform-box: fill-box; transform-origin: 30% 100%; }
+  .shot:not(.is-firing):not(.is-done) .third-eye-glow { animation-duration: 1.2s; }
+  .shot.is-firing .ram { animation: recoil 0.5s cubic-bezier(.2, .8, .3, 1); }
+  .ravana { transform-box: fill-box; transform-origin: 50% 100%; }
+  .shot.is-struck .ravana { animation: shudder 0.35s ease-out; }
 }
-@keyframes rise { from { translate: 0 2.5rem; opacity: 0; } }
+@keyframes glow { 50% { scale: 1.5; opacity: 0.7; } }
+@keyframes pop { from { scale: 0.2; } }
+@keyframes burst { 0% { opacity: 0.95; r: 6; } 100% { opacity: 0; r: 40; } }
+@keyframes knock { 0% { translate: 0 0; rotate: 0deg; } 35% { translate: 6px -10px; rotate: 7deg; } 100% { translate: 0 0; rotate: 0deg; } }
+@keyframes slash { from { stroke-dasharray: 0 80; } to { stroke-dasharray: 80 0; } }
+@keyframes recoil { 30% { translate: -8px 0; } }
+@keyframes shudder { 25% { translate: 3px 0; } 50% { translate: -3px 0; } 75% { translate: 2px 0; } }
+
+/* Embers rising behind the scene: the one ambient motion on the page. */
+.embers { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.embers i { position: absolute; bottom: -10px; width: 5px; height: 5px; border-radius: 50%; background: #FFF1C2; opacity: 0; box-shadow: 0 0 8px 2px rgb(255 190 80 / 0.8); }
+.embers i:nth-child(odd) { width: 3px; height: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  .embers i { animation: ember 7s linear infinite; }
+  .embers i:nth-child(1) { left: 34%; animation-delay: 0s; }
+  .embers i:nth-child(2) { left: 41%; animation-delay: 1.2s; animation-duration: 8s; }
+  .embers i:nth-child(3) { left: 47%; animation-delay: 2.6s; }
+  .embers i:nth-child(4) { left: 53%; animation-delay: 0.6s; animation-duration: 9s; }
+  .embers i:nth-child(5) { left: 58%; animation-delay: 3.4s; }
+  .embers i:nth-child(6) { left: 63%; animation-delay: 4.8s; animation-duration: 6s; }
+  .embers i:nth-child(7) { left: 70%; animation-delay: 1.8s; }
+  .embers i:nth-child(8) { left: 76%; animation-delay: 5.6s; animation-duration: 8s; }
+  .embers i:nth-child(9) { left: 82%; animation-delay: 2.2s; }
+  .embers i:nth-child(10) { left: 88%; animation-delay: 6.2s; animation-duration: 9s; }
+  .embers i:nth-child(11) { left: 28%; animation-delay: 4.1s; }
+  .embers i:nth-child(12) { left: 66%; animation-delay: 3s; animation-duration: 7.5s; }
+}
+@keyframes ember { 0% { translate: 0 0; opacity: 0; } 10% { opacity: 0.9; } 100% { translate: 30px -520px; opacity: 0; } }
+:root:not([data-theme="dark"]) .embers i { background: #FFF4E0; box-shadow: 0 0 6px 1px rgb(196 42 30 / 0.5); }
+
+/* The live caption under the flight: what the last head turned out to be */
+.callout { position: absolute; z-index: 2; left: 50%; bottom: 6%; translate: -50% 0; margin: 0; padding: 0.55rem 1.1rem; border-radius: 999px; font-weight: 700; font-size: clamp(0.9rem, 0.7rem + 0.6vw, 1.15rem); white-space: nowrap; background: var(--cream); color: var(--ink); box-shadow: 0 10px 30px -10px rgb(0 0 0 / 0.4); opacity: 0; transition: opacity 0.2s; }
+.callout.is-bug { background: var(--vermilion); color: #FFFFFF; }
+.callout.is-pass { background: var(--peacock); color: #FFFFFF; }
+.callout.is-shown { opacity: 1; }
+@media (max-width: 63.99rem) { .callout { display: none; } }
+
+.checks { list-style: none; margin: 1.25rem 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+.checks li { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.92rem; font-weight: 600; border: 1.5px solid currentColor; transition: background-color 0.25s, color 0.25s, opacity 0.25s; }
+.shot.is-done .check-pass, .checks .check-pass.is-hit { background: var(--peacock); border-color: var(--peacock); color: #FFFFFF; }
+.shot.is-done .check-bug, .checks .check-bug.is-hit { background: var(--vermilion); border-color: var(--vermilion); color: #FFFFFF; }
+.shot:not(.is-done) .checks li:not(.is-hit) { opacity: 0.55; }
+.shot-foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0.5rem 1.25rem; margin-top: 1rem; }
+.shot-summary { font-weight: 600; min-height: 1.6em; }
+.shot:not(.is-done) .shot-summary { visibility: hidden; }
+.hero .link-button { text-decoration-color: currentColor; }
 
 /* Sections */
 .demo, .steps, .why, .start, .shipped { max-width: var(--wrap); margin: 0 auto; padding: var(--space) var(--gutter) 0; }
@@ -105,27 +215,30 @@ p { margin: 0; }
 .stage.is-playing .log li.is-current::after { content: ""; position: absolute; left: -0.7rem; top: 0.2em; bottom: 0.2em; width: 3px; border-radius: 2px; background: var(--saffron); }
 
 .stage-phone { justify-self: center; }
-.phone { position: relative; width: 13.5rem; aspect-ratio: 9 / 18.5; border-radius: 2rem; overflow: hidden; background: #FFFDF8; color: var(--ink); border: 7px solid #000; box-shadow: 0 0 0 2px var(--saffron), 0 30px 60px -20px rgb(253 155 20 / 0.45); font-size: 0.72rem; line-height: 1.3; }
+.phone { position: relative; width: 13.5rem; aspect-ratio: 9 / 18.5; border-radius: 2rem; overflow: hidden; background: #FFFDF8; color: var(--ink); border: 7px solid #000; box-shadow: 0 0 0 2px var(--saffron), 0 30px 60px -20px rgb(242 122 26 / 0.45); font-size: 0.72rem; line-height: 1.3; }
 .phone-screen { position: absolute; inset: 0; padding: 1.3rem 0.85rem 0.8rem; display: none; }
 .phone-screen[data-name="home"] { display: block; }
 .stage.is-ready .phone-screen { display: none; }
 .stage.is-ready .phone-screen.is-active { display: block; }
 .ph-title { font-size: 1.35rem; font-weight: 500; margin: 0.4rem 0 0.8rem; }
 .ph-back { font-size: 1.2em; margin-right: 0.15rem; }
-.ph-search, .ph-field { background: #F4ECDE; border-radius: 999px; padding: 0.55rem 0.8rem; margin-bottom: 0.7rem; color: var(--muted); }
+.ph-search, .ph-field { background: #F4ECDE; border-radius: 999px; padding: 0.55rem 0.8rem; margin-bottom: 0.7rem; color: #5C4A3A; }
 .ph-field { color: var(--ink); }
 .ph-caret::after { content: ""; display: inline-block; width: 1px; height: 1em; background: var(--ink); margin-left: 2px; vertical-align: -0.15em; animation: caret 1s steps(1) infinite; }
 @keyframes caret { 50% { opacity: 0; } }
 .ph-list { list-style: none; margin: 0; padding: 0; }
 .ph-list li { padding: 0.55rem 0.2rem; border-bottom: 1px solid #EFE6D6; }
 .ph-list b { display: block; font-weight: 500; }
-.ph-list small { color: var(--muted); font-size: 0.9em; }
-.tap-ring { position: absolute; width: 2rem; height: 2rem; margin: -1rem 0 0 -1rem; border-radius: 50%; border: 2px solid var(--saffron); background: rgb(253 155 20 / 0.3); pointer-events: none; left: var(--x, 50%); top: var(--y, 50%); animation: tap 0.6s ease-out both; }
+.ph-list small { color: #5C4A3A; font-size: 0.9em; }
+.tap-ring { position: absolute; width: 2rem; height: 2rem; margin: -1rem 0 0 -1rem; border-radius: 50%; border: 2px solid var(--saffron); background: rgb(242 122 26 / 0.3); pointer-events: none; left: var(--x, 50%); top: var(--y, 50%); animation: tap 0.6s ease-out both; }
 @keyframes tap { from { scale: 0.3; opacity: 1; } to { scale: 1.4; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .ph-caret::after { animation: none; }
   .tap-ring { animation: none; opacity: 0.6; }
 }
+
+/* In dark mode the ink panels need an edge to stand off the page. */
+:root[data-theme="dark"] :is(.stage, .terminal, .tile-ink, .prose pre) { box-shadow: inset 0 0 0 1px var(--line); }
 
 /* Four colour tiles: the steps are a sequence, so they read left to right */
 .tiles { list-style: none; margin: 2.5rem 0 0; padding: 0; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
@@ -136,18 +249,6 @@ p { margin: 0; }
 .tile-vermilion { background: var(--vermilion); color: #FFFFFF; }
 .tile-peacock { background: var(--peacock); color: #FFFFFF; }
 .tile-ink { background: var(--ink); color: var(--cream); }
-
-/* Ten heads: each bug struck through by the same saffron arrow line */
-.heads { margin-top: var(--space); background: var(--ink); color: var(--cream); }
-.heads-inner { max-width: var(--wrap); margin: 0 auto; padding: var(--space) var(--gutter); text-align: center; }
-.heads .lede { margin: 1.25rem auto 0; max-width: 32em; font-size: 1.2rem; color: #E7DCCB; }
-.bugs { list-style: none; margin: 3rem auto 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; max-width: 52rem; }
-.bugs li { position: relative; padding: 0.7rem 1.2rem; border: 1.5px solid #4A3A28; border-radius: 999px; font-weight: 500; }
-.bugs li::after { content: ""; position: absolute; left: 0.6rem; right: 0.6rem; top: 50%; height: 2px; background: var(--saffron); transform-origin: left; }
-@media (prefers-reduced-motion: no-preference) {
-  .bugs.will-strike li::after { scale: 0 1; transition: scale 0.5s cubic-bezier(.3, 0, .2, 1); transition-delay: calc(var(--i, 0) * 70ms); }
-  .bugs.will-strike.is-struck li::after { scale: 1 1; }
-}
 
 /* Why: three short claims */
 .why-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2.5rem 3rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); }
@@ -168,8 +269,9 @@ p { margin: 0; }
 .releases { list-style: none; margin: 1.5rem 0 0; padding: 0; border-top: 1px solid var(--line); }
 .releases li { border-bottom: 1px solid var(--line); }
 .releases a { display: flex; gap: 1.25rem; align-items: baseline; padding: 1.1rem 0; text-decoration: none; font-size: 1.2rem; }
-.releases a:hover { color: var(--vermilion); }
-.releases strong { font-family: var(--display); font-weight: 400; font-size: 1.8rem; color: var(--vermilion); min-width: 2.8rem; }
+.releases a:hover { color: var(--saffron); }
+.releases strong { font-family: var(--display); font-weight: 400; font-size: 1.8rem; color: var(--accent, var(--vermilion)); min-width: 2.8rem; }
+:root[data-theme="dark"] { --accent: var(--saffron); }
 
 /* Docs, about and changelog pages */
 .prose { max-width: 46rem; margin: 0 auto; padding: clamp(2.5rem, 1.5rem + 3vw, 4.5rem) var(--gutter) 0; }
@@ -179,7 +281,7 @@ p { margin: 0; }
 .prose p, .prose ul, .prose ol, .prose pre, .prose table { margin-top: 1rem; }
 .prose ul, .prose ol { padding-left: 1.3rem; }
 .prose li + li { margin-top: 0.4rem; }
-.prose li::marker { color: var(--vermilion); }
+.prose li::marker { color: var(--accent, var(--vermilion)); }
 .prose .lede { font-size: 1.2rem; color: var(--muted); }
 .prose pre { background: var(--ink); color: var(--cream); border-radius: 14px; padding: 1.1rem 1.25rem; overflow-x: auto; font-size: 0.9rem; line-height: 1.65; }
 .prose pre code { background: none; padding: 0; }
@@ -195,7 +297,7 @@ p { margin: 0; }
 .release { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--line); }
 .release h2 { margin-top: 0; }
 .release h2 a { text-decoration: none; }
-.release h2 a:hover { color: var(--vermilion); }
+.release h2 a:hover { color: var(--accent, var(--vermilion)); }
 article.release.prose { border-top: 0; margin-top: 0; }
 article.release.prose h1 { margin-top: 0.75rem; }
 .release-meta { color: var(--muted); font-size: 0.95rem; }

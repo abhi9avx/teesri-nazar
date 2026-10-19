@@ -37,3 +37,4 @@ __pycache__/
 
 # Built website (site/build.py output).
 site/_site/
+site/hero-motion.mp4
