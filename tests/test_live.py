@@ -183,6 +183,45 @@ class AgentStatusTest(CliTestCase):
         self.assertEqual(live.agent_status()["state"], "away")
 
 
+class LeftoverStateTest(CliTestCase):
+    def test_a_typing_marker_left_by_a_killed_dashboard_does_not_hold_commands(self):
+        self.start()
+        live.typing_file().write_text("")
+        old = time.time() - live.TYPING_WAIT - 1
+        os.utime(live.typing_file(), (old, old))
+        began = time.monotonic()
+        self.ok("tap", "Login")
+        self.assertLess(time.monotonic() - began, 2)
+
+    def test_start_clears_the_typing_marker_and_the_last_status(self):
+        live.typing_file().parent.mkdir(parents=True, exist_ok=True)
+        live.typing_file().write_text("")
+        live.set_agent_status("working", "the previous run's step")
+        self.start()
+        self.assertFalse(live.typing_file().exists())
+        self.assertEqual(live.agent_status()["state"], "away")
+
+
+class WaitMessageRulesTest(CliTestCase):
+    def test_an_info_note_does_not_wake_the_agent(self):
+        self.start()
+        live.post("UI_OTP was already typed", info=True)
+        timer = threading.Timer(0.3, live.post, ["now log out"])
+        timer.start()
+        self.addCleanup(timer.join)
+        code, out, _ = tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn("now log out", out)
+
+    def test_waits_until_the_run_ends_by_default(self):
+        args = cli.build_parser().parse_args(["wait-message"])
+        self.assertIsNone(args.timeout)
+
+    def test_is_in_the_command_registry(self):
+        from teesri_nazar import commands
+        self.assertIn("wait-message", {c.name for c in commands.COMMANDS})
+
+
 class SteeringUnderLoadTest(CliTestCase):
     def test_a_burst_of_messages_is_delivered_once_each_in_order(self):
         run = self.start()
@@ -247,6 +286,14 @@ class PauseTest(CliTestCase):
         live.set_paused(False)
         self.assertIn("resumed", self.ok("wait-resume"))
         self.ok("tap", "Login")
+
+    def test_paused_with_only_an_info_note_is_still_a_pause(self):
+        self.start()
+        live.set_paused(True)
+        live.post("UI_OTP was already typed", info=True)
+        code, out, _ = tnazar("tap", "Login")
+        self.assertEqual(code, live.EXIT_PAUSED)
+        self.assertEqual(self.adb.taps, [])
 
     def test_resume_within_the_wait_runs_the_command(self):
         self.start()
@@ -468,6 +515,28 @@ class ServerTest(unittest.TestCase):
         self.assertIn("error: closed", error)
         for text in [error] + [m["text"] for m in live.unread()]:
             self.assertNotIn("input text", text)
+
+    def test_a_typing_timeout_never_reveals_the_value(self):
+        self.active_run()
+        adb = mock.MagicMock()
+        adb.shell.side_effect = ui.AdbError("adb timed out after 60s: shell input text Zq9pass")
+        with mock.patch.object(ui, "Adb", return_value=adb):
+            status, body = self.call("POST", "/api/secret", {"name": "pw", "value": "Zq9pass", "type_now": True})
+        self.assertEqual(status, 400)
+        self.assertIn("timed out", json.loads(body)["error"])
+        on_disk = "".join(p.read_text(errors="ignore") for p in Path(self.home).rglob("*") if p.is_file())
+        self.assertNotIn("Zq9pass", body.decode() + on_disk)
+
+    def test_typing_waits_for_an_agent_command_already_running(self):
+        run = self.active_run()
+        live.busy_file().write_text(str(os.getpid()))
+        timer = threading.Timer(0.4, live.busy_file().unlink)
+        timer.start()
+        self.addCleanup(timer.join)
+        began = time.monotonic()
+        with mock.patch.object(ui, "Adb"), mock.patch.object(ui.dev.time, "sleep"):
+            self.call("POST", "/api/secret", {"name": "otp", "value": "0000", "type_now": True})
+        self.assertGreaterEqual(time.monotonic() - began, 0.4)
 
     def test_the_already_typed_note_does_not_stop_the_agent(self):
         self.active_run()

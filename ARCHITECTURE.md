@@ -749,11 +749,14 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
 - **Narration and timings.** `./tnazar say "…"` records a `say` event, the timeline heading
   for the steps after it. Every action event carries `dur_ms`; `wait` and `check` add
   `polls` (screen dumps it took). Steps over 5 s are highlighted.
-- **Listening while idle.** `./tnazar wait-message` blocks until a message arrives (exit 3,
-  after delivering it) or the run ends (exit 0). Claude keeps one running in the background
-  while a run is open, so a message reaches it in about a second even between steps.
-  Delivery takes a lock (`.tnazar/inbox.lock`), so the listener and a command never print
-  the same message twice.
+- **Listening while idle.** `./tnazar wait-message` blocks until a message the agent must
+  act on arrives (exit 3, after delivering it) or the run ends (exit 0; `--timeout N` gives
+  up sooner). Info notes don't wake it. Claude keeps one running in the background while a
+  run is open, so a message reaches it in about a second even between steps. Delivery takes
+  a lock (`.tnazar/inbox.lock`), so the listener and a command never print the same message
+  twice; if a command delivered it first, the listener keeps waiting. A `tnazar run` plan or
+  `tnazar flow` also stops before its next step for a message the listener delivered
+  (`live.Since`), so the plan and the agent never drive the device at the same time.
 - **Agent status.** `.tnazar/agent.json` holds what the agent is doing: `listening` (set by
   `wait-message`, with its pid; a dead pid reads as `away`), `got_message` (set on delivery),
   `working` (the last `say`). The control pane shows it as one line, and *Thinking…* when
@@ -763,9 +766,11 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
   PIN and OTP screens expire; the step is logged as a `type` event with `"by": "dashboard"`
   and no value, and Claude gets an *info* message ("already typed: check the screen") that
   is shown but does not stop its next command. While the server types, `.tnazar/typing`
-  exists and device commands wait for it (up to 15 s), so a tap cannot move focus mid-PIN.
-  If typing fails, only adb's reason is kept: its message quotes the command, which carries
-  the value. Without *Type it now*, Claude is told
+  exists and device commands wait for it (up to 15 s), so a tap cannot move focus mid-PIN;
+  the other way round, the server waits for a focus-moving command already running
+  (`.tnazar/busy`, up to 15 s). A marker older than 15 s was left by a killed process and is
+  ignored; `start` removes both, and the previous run's status line. If typing fails, adb's
+  message is kept without the command it quotes, which carries the value. Without *Type it now*, Claude is told
   the name (`UI_OTP`) and types it with `--env UI_OTP`; `type` fetches it from the server
   with a per-session token (in `.tnazar/ui.json`, mode 600). `tnazar adb` arguments that
   contain any `.env` value or dashboard secret are logged as `••••`. Masking covers printed output

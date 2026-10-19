@@ -82,12 +82,13 @@ def run(args) -> int:
     print(f"plan {p.name}: {len(cases)} case(s) on {p.app}")
 
     failed = False
+    since = live.Since()
     for case in cases:
         began = time.monotonic()
         # "--": a title (or id) starting with "-" is not an option.
         call(["case", "start", "--", case.id] + ([case.title] if case.title else []))
         try:
-            result = Executor(p, the_run, case).body(case.body)
+            result = Executor(p, the_run, case, since).body(case.body)
         except Exception as exc:  # noqa: BLE001 - whatever broke, the run must not stay open
             call(["case", "end", "blocked", "--reason", f"error: {exc}"])
             print(f"{case.id:8} BLOCKED  error: {exc}")
@@ -95,7 +96,7 @@ def run(args) -> int:
             return cli.EXIT_ERROR
         if isinstance(result, HandedBack):
             call(["case", "end", "blocked", "--reason", "stopped: a message from the dashboard"])
-            print(_tail(result.output))
+            print(tail(result.output))
             print(f"{case.id}: stopped by your message. The run is still open; act on the message, then continue "
                   f"with: ./tnazar run {args.plan} --from {case.id}")
             return live.EXIT_HELD
@@ -103,7 +104,7 @@ def run(args) -> int:
         status = _last_status(the_run, case.id)
         print(f"{case.id:8} {status.upper():7} {time.monotonic() - began:5.1f}s  {case.title}")
         if isinstance(result, Failed):
-            print(_indent(result.detail))
+            print(indent(result.detail))
         if status != "pass":
             failed = True
             if args.stop_on_fail:
@@ -119,11 +120,17 @@ def _stop() -> None:
 
 
 class Executor:
-    def __init__(self, plan: Plan, the_run: Run, case: Case, wait_paused: bool = True):
-        self.plan, self.run, self.case = plan, the_run, case
-        # False (`tnazar flow`): give a long pause back to the agent like any device command (exit 5).
-        self.wait_paused = wait_paused
+    """Runs plan items through the CLI; `tnazar run` waits out a pause as long as the user keeps it."""
+
+    def __init__(self, plan: Plan, the_run: Run, case: Case, since: live.Since):
+        self.plan, self.run, self.case, self.since = plan, the_run, case, since
         self.failed_checks = 0
+
+    def long_pause(self, out: str) -> Paused | None:
+        """The user kept the run paused past PAUSE_WAIT: keep waiting (None) or give the turn back."""
+        while not live.wait_resume():
+            pass  # no model timeout here: wait as long as the user keeps it paused
+        return None
 
     def body(self, items: list, record: bool = True):
         for item in items:
@@ -153,36 +160,46 @@ class Executor:
 
     def hold(self) -> HandedBack | Paused | None:
         """What the CLI does before a device command, for the screen read an `if` makes itself."""
-        while live.paused():
-            if not live.wait_resume() and not self.wait_paused:
-                if not live.unread():
-                    return Paused("")
-                break  # paused and a message: hand back with the message
+        if live.paused() and not live.wait_resume() and not live.needs_agent(live.unread()):
+            paused = self.long_pause("")
+            if paused:
+                return paused
         live.wait_typing()
         if live.needs_agent(live.unread()):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 live.deliver(self.run.log)
+            self.since.take()
             return HandedBack(out.getvalue())
-        return None
+        return self.already_told()
+
+    def already_told(self) -> HandedBack | None:
+        """A message the background `wait-message` delivered: the agent is acting on it, so stop."""
+        told = self.since.take()
+        if not live.needs_agent(told):
+            return None
+        return HandedBack("".join(f">> USER (dashboard): {m['text']}\n" for m in told))
 
     def step(self, step: Step, record: bool):
+        told = self.already_told()
+        if told:
+            return told
         while True:
             code, out = call(step.argv)
             if code == live.EXIT_HELD:
+                self.since.take()
                 return HandedBack(out)
             if code != live.EXIT_PAUSED:
                 break
-            if not self.wait_paused:
-                return Paused(out)
-            while not live.wait_resume():
-                pass  # no model timeout here: wait as long as the user keeps it paused
+            paused = self.long_pause(out)
+            if paused:
+                return paused
         if step.argv[0] == "check" and code == cli.EXIT_FAIL:
             self.failed_checks += 1
             return None  # a failed check is already recorded; the case goes on
         if code == 0:
             return None
-        return self.fail(step.line, " ".join(_quote(a) for a in step.argv), _tail(out), record, code)
+        return self.fail(step.line, " ".join(_quote(a) for a in step.argv), tail(out), record, code)
 
     def fail(self, line: int, what: str, detail: str, record: bool, code: int = cli.EXIT_FAIL) -> Failed:
         first = next((ln for ln in detail.splitlines() if ln.strip()), "failed")
@@ -220,12 +237,12 @@ def _last_status(the_run: Run, case_id: str) -> str:
     return ends[-1]["status"] if ends else "blocked"
 
 
-def _tail(text: str) -> str:
+def tail(text: str) -> str:
     lines = [ln for ln in text.rstrip().splitlines() if ln.strip()]
     return "\n".join(lines[-DETAIL_LINES:])
 
 
-def _indent(text: str) -> str:
+def indent(text: str) -> str:
     return "\n".join("    " + ln for ln in text.splitlines())
 
 

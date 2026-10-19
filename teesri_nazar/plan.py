@@ -61,11 +61,19 @@ class Step:
     line: int
     argv: list[str]
 
+    def summary(self) -> str:
+        head, *rest = self.argv
+        arg = next((a for a in rest if not a.startswith("-")), "")
+        return f'{head} "{arg}"' if " " in arg else f"{head} {arg}".rstrip()
+
 
 @dataclass
 class RunFlow:
     line: int
     flow: str
+
+    def summary(self) -> str:
+        return f"run {self.flow}"
 
 
 @dataclass
@@ -73,6 +81,9 @@ class Retry:
     line: int
     times: int
     body: list = field(default_factory=list)
+
+    def summary(self) -> str:
+        return f"retry {self.times} [{' → '.join(i.summary() for i in self.body)}]"
 
 
 @dataclass
@@ -83,6 +94,9 @@ class If:
     other: list = field(default_factory=list)
     alts: list = field(default_factory=list)  # --or: screens that may show up instead
     wait: float = 0.0                          # --wait: seconds to wait for target or an --or
+
+    def summary(self) -> str:
+        return f'if "{self.target}"'
 
 
 @dataclass

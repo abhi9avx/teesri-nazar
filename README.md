@@ -194,7 +194,7 @@ the panes stack.
 | *Waiting for the device…* | No device: check `adb devices`. |
 | *Screen hidden by the app* | The screen blocks capture (`FLAG_SECURE`, e.g. a PIN screen). The test goes on; only the picture is hidden. |
 | `screen reads: uiautomator dump` at `start` | Works, just slower (~2 s per read). The next line says why; when the server is missing it prints the `adb install` commands for the APKs Appium downloaded (`$APPIUM_HOME`, default `~/.appium`). Run them once for ~0.05 s reads. |
-| A message stays *waiting* | The agent is idle (its turn ended). Ask it to continue in Claude Code. |
+| A message stays *waiting* | The status line says *Not listening right now*: the agent's `wait-message` is not running, or its turn ended. Ask it to continue in Claude Code. |
 | Controls are greyed out | There is no active run. |
 
 ### Safety

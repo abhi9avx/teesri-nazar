@@ -32,6 +32,7 @@ EXIT_INSTEAD = 4  # `wait A --or B`: B showed up, so A is not coming
 TARGET_WAIT = 3.0
 TIMED = commands.TIMED_EVENTS
 HELD = commands.DEVICE_COMMANDS
+MOVES_FOCUS = commands.ACTION_COMMANDS
 
 
 # ---------------------------------------------------------------- context
@@ -136,6 +137,7 @@ def cmd_start(args) -> int:
     run = Run.create(args.name, meta)
     set_active(run, serial)
     live.mark_all_read()  # messages typed before this run are not instructions for it
+    live.clear_leftovers()
     live.set_paused(False)
     dev.logcat_clear(adb)
     print(f"run: {run.name}  device: {serial} {model}".rstrip())
@@ -516,17 +518,19 @@ def cmd_wait_message(args) -> int:
         print("no active run")
         return 0
     run = active[0]
+
     def same_run() -> bool:
-        active = get_active()
-        return active is not None and active[0].path == run.path
+        now = get_active()
+        return now is not None and now[0].path == run.path
 
     live.set_agent_status("listening", pid=os.getpid())
-    if not live.wait_message(args.timeout, same_run):
-        print(f"no message in {args.timeout:g}s" if same_run() else "no active run")
-        return 0
-    live.deliver(run.log)
-    print("Read the user's message above and act on it now.")
-    return live.EXIT_HELD
+    while live.wait_message(args.timeout, same_run):
+        # The agent's own command may have delivered it first: then keep listening.
+        if live.needs_agent(live.deliver(run.log)):
+            print("Read the user's message above and act on it now.")
+            return live.EXIT_HELD
+    print("no active run" if not same_run() else f"no message in {args.timeout:g}s")
+    return 0
 
 
 def cmd_ui(args) -> int:
@@ -709,7 +713,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("text")
     p = add("wait-message", cmd_wait_message,
             "block until the user sends a dashboard message (run it in the background while idle)")
-    p.add_argument("--timeout", type=float, default=live.MESSAGE_WAIT)
+    p.add_argument("--timeout", type=float, default=None, help="give up after N seconds (default: until the run ends)")
     add("wait-resume", cmd_wait_resume, f"wait up to {int(live.PAUSE_WAIT)}s for the user to resume a paused run")
     p = add("ui", cmd_ui, "live dashboard on localhost: screen, timeline, messages to the agent")
     p.add_argument("--port", type=int, default=8765)
@@ -758,6 +762,9 @@ def main(argv: list[str] | None = None) -> int:
         if active and (held := _hold(active[0])) is not None:
             return held
         try:
+            if active and args.cmd in MOVES_FOCUS:
+                with live.agent_busy():
+                    return args.fn(args) or 0
             return args.fn(args) or 0
         finally:
             # Shown, not consumed: the next device command is still held until the agent re-plans.
@@ -784,9 +791,8 @@ def _hold(run: Run) -> int | None:
                  "waited_ms": round((time.monotonic() - began) * 1000)})
         if not resumed:
             told = live.deliver(run.log)
-            print("PAUSED: the user paused this run. Command NOT run. "
-                  "Run `./tnazar wait-resume` until it prints `resumed`, then continue.")
-            return live.EXIT_HELD if told else live.EXIT_PAUSED
+            print(f"PAUSED: the user paused this run. Command NOT run. {live.PAUSED_HINT}")
+            return live.EXIT_HELD if live.needs_agent(told) else live.EXIT_PAUSED
         print("resumed")
     live.wait_typing()
     if live.needs_agent(live.deliver(run.log)):

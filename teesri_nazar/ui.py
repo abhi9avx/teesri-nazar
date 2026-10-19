@@ -173,12 +173,14 @@ class Dashboard:
             return {"ok": True, "name": name, "typed": False}
         # PIN and OTP screens expire: typing waits for nobody, the agent hears about it afterwards.
         run, serial = active
+        live.wait_agent_idle()
         try:
             with live.dashboard_typing():
                 dev.type_text(Adb(serial), value)
         except (AdbError, ValueError) as exc:
             # adb's message quotes the command it ran, and that command carries the value.
-            reason = str(exc).rsplit("): ", 1)[-1]
+            reason = re.sub(r"input text \S+", "input text ••••", str(exc).rsplit("): ", 1)[-1])
+            reason = reason.replace(value, "••••").replace(dev.escape_input_text(value) if value.isascii() else value, "••••")
             tell(f"Secret value provided as {name}; typing it from the dashboard failed ({reason}): type it with {how}")
             raise ValueError(f"{name} saved for the agent, but typing it failed: {reason}") from exc
         run.log({"type": "type", "text": None, "secret": True, "env": name, "by": "dashboard"})

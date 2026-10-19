@@ -204,7 +204,7 @@ const clock = (t) => new Date(t).toLocaleTimeString([], { hour12: false });
 const userText = (m) => m.secret
   ? `🔒 ${m.secret.replace(/^UI_/, "")} sent (value hidden)${m.note ? ` — ${m.note}` : ""}`
   : m.text;
-// Ids are written for code ("pin_entry_input_field"); the timeline names them like a person would ("pin entry").
+// Ids are written for code ("pin_input_field"); the timeline names them like a person would ("pin").
 const NOISE = new Set(["id", "btn", "button", "tag", "iv", "tv", "view", "field", "input", "layout", "container", "text"]);
 function human(raw) {
   raw = String(raw).replace(/^[\w.]+:id\//, "");  // "com.app:id/btn_pay" → "btn_pay"

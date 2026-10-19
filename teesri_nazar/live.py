@@ -24,7 +24,6 @@ EXIT_PAUSED = 5  # a device command was not run: the user still has the run paus
 PAUSE_WAIT = 60.0  # stays under the agent's 2-minute command timeout
 POLL = 0.5
 TYPING_WAIT = 15.0  # an 8-digit code takes ~2 s; a crashed dashboard must not hold the agent forever
-MESSAGE_WAIT = 1800.0  # one idle stretch of the agent; it starts another when this ends
 
 
 def inbox_file() -> Path:
@@ -45,6 +44,10 @@ def ui_file() -> Path:
 
 def typing_file() -> Path:
     return state_dir() / "typing"
+
+
+def busy_file() -> Path:
+    return state_dir() / "busy"
 
 
 # ---------------------------------------------------------------- inbox
@@ -101,14 +104,28 @@ def deliver(log) -> list[dict]:
     return msgs
 
 
-def wait_message(limit: float, running) -> bool:
-    """Block until the user sends a message, up to `limit` seconds or while `running()` holds."""
-    deadline = time.monotonic() + limit
-    while not unread():
-        if time.monotonic() >= deadline or not running():
+def wait_message(limit: float | None, running) -> bool:
+    """Block until the user sends a message the agent must act on, while `running()` holds
+    (and up to `limit` seconds). An info note is left for the next delivery."""
+    deadline = None if limit is None else time.monotonic() + limit
+    while not needs_agent(unread()):
+        if (deadline is not None and time.monotonic() >= deadline) or not running():
             return False
         time.sleep(POLL)
     return True
+
+
+class Since:
+    """Messages delivered after a point: a plan or flow must stop for one even when the
+    background `wait-message` delivered it, not the plan's own step."""
+
+    def __init__(self):
+        self.cursor = delivered()
+
+    def take(self) -> list[dict]:
+        upto = delivered()
+        msgs, self.cursor = messages()[self.cursor:upto], upto
+        return msgs
 
 
 @contextlib.contextmanager
@@ -121,12 +138,53 @@ def dashboard_typing():
         typing_file().unlink(missing_ok=True)
 
 
-def wait_typing(limit: float = TYPING_WAIT) -> None:
-    if not typing_file().exists():
+def _fresh(f: Path) -> bool:
+    """A marker older than TYPING_WAIT was left by a process that died mid-way: ignore it."""
+    try:
+        written = f.stat().st_mtime
+    except FileNotFoundError:
+        return False
+    return time.time() - written < TYPING_WAIT
+
+
+def wait_typing() -> None:
+    if not _fresh(typing_file()):
         return
-    deadline = time.monotonic() + limit
-    while typing_file().exists() and time.monotonic() < deadline:
+    deadline = time.monotonic() + TYPING_WAIT
+    while _fresh(typing_file()) and time.monotonic() < deadline:
         time.sleep(POLL / 5)
+
+
+@contextlib.contextmanager
+def agent_busy():
+    """While a device command runs, the dashboard does not start typing into a field it may move."""
+    busy_file().write_text(f"{os.getpid()}\n")
+    try:
+        yield
+    finally:
+        busy_file().unlink(missing_ok=True)
+
+
+def wait_agent_idle() -> None:
+    deadline = time.monotonic() + TYPING_WAIT
+    while _fresh(busy_file()) and _alive(_pid(busy_file())) and time.monotonic() < deadline:
+        time.sleep(POLL / 5)
+
+
+def _pid(f: Path):
+    try:
+        return int(f.read_text().strip() or 0) or None
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def clear_leftovers() -> None:
+    """A new run starts with no typing marker and no status from the previous run."""
+    for f in (typing_file(), busy_file(), _status_file()):
+        f.unlink(missing_ok=True)
+
+
+PAUSED_HINT = "Run `./tnazar wait-resume` until it prints `resumed`, then continue."
 
 
 # ---------------------------------------------------------------- agent status

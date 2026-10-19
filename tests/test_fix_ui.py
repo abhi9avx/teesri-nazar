@@ -152,23 +152,23 @@ class TimelineWordingTest(unittest.TestCase):
         self.assertEqual(line, 'Expected "get started", but "Something went wrong" showed instead')
 
     def test_a_real_timeout_names_the_time(self):
-        [line] = self.describe({"type": "wait", "ok": False, "selector": {"desc": "homeScreenTag"}, "timeout": 20})
-        self.assertEqual(line, '"home screen" did not appear within 20s')
+        [line] = self.describe({"type": "wait", "ok": False, "selector": {"desc": "homeTag"}, "timeout": 20})
+        self.assertEqual(line, '"home" did not appear within 20s')
 
     def test_ids_read_like_words_and_labels_stay_as_written(self):
-        lines = self.describe({"type": "tap", "selector": {"id": "HOME_TOOLBAR_PROFILE_BTN_ID"}, "label": "HOME_TOOLBAR_PROFILE_BTN_ID"},
+        lines = self.describe({"type": "tap", "selector": {"id": "PROFILE_BTN_ID"}, "label": "PROFILE_BTN_ID"},
                               {"type": "tap", "selector": {"desc": "App settings"}, "label": "App settings"},
-                              {"type": "type", "secret": True, "env": "UI_MPIN", "selector": {"id": "pin_entry_input_field"}},
+                              {"type": "type", "secret": True, "env": "UI_MPIN", "selector": {"id": "pin_input_field"}},
                               {"type": "type", "secret": True, "env": "UI_MPIN", "by": "dashboard"},
                               {"type": "launch", "restart": True})
-        self.assertEqual(lines, ['Tap "home toolbar profile"', 'Tap "App settings"',
-                                 'Type the MPIN (hidden) into "pin entry"',
+        self.assertEqual(lines, ['Tap "profile"', 'Tap "App settings"',
+                                 'Type the MPIN (hidden) into "pin"',
                                  "You typed the MPIN from the dashboard (hidden)", "Restart the app"])
 
     def test_check_and_if_lines_name_the_element_in_words(self):
-        lines = self.describe({"type": "check", "ok": False, "what": "id=pin_entry_input_field is visible"},
+        lines = self.describe({"type": "check", "ok": False, "what": "id=pin_input_field is visible"},
                               {"type": "check", "ok": True, "what": '"Check balance" is visible'},
                               {"type": "if", "target": "id=btn_continue", "found": True},
                               {"type": "tap", "selector": {"id": "com.example.app:id/btn_pay"}})
-        self.assertEqual(lines, ['"pin entry" is visible', '"Check balance" is visible',
+        self.assertEqual(lines, ['"pin" is visible', '"Check balance" is visible',
                                  'Is "continue" on screen? Yes', 'Tap "pay"'])

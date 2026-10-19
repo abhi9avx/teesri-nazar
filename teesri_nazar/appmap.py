@@ -22,14 +22,14 @@ from pathlib import Path
 
 from . import cli, live
 from .errors import UserError
-from .plan import Case, If, Plan, PlanError, Retry, RunFlow, load
-from .runner import Executor, Failed, HandedBack, Paused, _indent, _tail, call
+from .plan import Case, Plan, PlanError, load
+from .runner import Executor, Failed, HandedBack, Paused, call, indent, tail
 from .session import get_active, home
 
 SUMMARY_CHARS = 90
 
 
-def maps(app: str | None) -> tuple[list[tuple[Path, Plan]], list[str]]:
+def route_files(app: str | None) -> tuple[list[tuple[Path, Plan]], list[str]]:
     """Every plans/*.plan for `app` (any app when None), and the errors of files that did not parse."""
     found, broken = [], []
     for f in sorted((home() / "plans").glob("*.plan")):
@@ -47,15 +47,25 @@ def _rel(f: Path) -> str:
     return os.path.relpath(f, home())
 
 
-def _run_app() -> str | None:
-    active = get_active()
+def _app_of(active) -> str | None:
     return (active[0].meta().get("package") or None) if active else None
+
+
+def _label(f: Path, args) -> str:
+    return args.plan or _rel(f)
+
+
+class FlowExecutor(Executor):
+    """A flow gives a long pause back to the agent, like any device command (exit 5)."""
+
+    def long_pause(self, out: str) -> Paused:
+        return Paused(out)
 
 
 def _sources(args, app: str | None) -> list[tuple[Path, Plan]]:
     if args.plan:
         return [(Path(args.plan), load(args.plan, flows_only=True))]
-    found, broken = maps(app)
+    found, broken = route_files(app)
     for b in broken:
         print(f"warning: skipped {b}", file=sys.stderr)
     return found
@@ -66,7 +76,7 @@ def run_flow(args) -> int:
     if not active:
         raise UserError("no active run: `./tnazar start <name> --package <app>` first")
     the_run = active[0]
-    app = _run_app()
+    app = _app_of(active)
     sources = _sources(args, app)
     hits = [(f, p) for f, p in sources if args.name in p.flows]
     if not hits:
@@ -78,25 +88,27 @@ def run_flow(args) -> int:
     if len(hits) > 1:
         raise UserError(f"flow `{args.name}` is in {', '.join(_rel(f) for f, _ in hits)}: pick one with --plan")
     f, p = hits[0]
-    source = _rel(f) if not args.plan else args.plan
+    source = _label(f, args)
 
     began = time.monotonic()
     call(["say", f"Going to {args.name} (saved route in {source})"])
-    ex = Executor(p, the_run, Case(0, the_run.current_case() or "", ""), wait_paused=False)
+    # Not a plan case: the flow's checks go to whatever case the agent has open.
+    open_case = Case(line=0, id=the_run.current_case() or "", title="")
+    ex = FlowExecutor(p, the_run, open_case, live.Since())
     result = ex.body(p.flows[args.name].body, record=False)
     took = time.monotonic() - began
     if isinstance(result, HandedBack):
-        print(_tail(result.output))
+        print(tail(result.output))
         print(f"flow {args.name}: stopped by your message before it finished. "
               "Act on the message; run the flow again only if it still applies.")
         return live.EXIT_HELD
     if isinstance(result, Paused):
         print(f"PAUSED: the user paused this run in the middle of flow {args.name} (it did not finish). "
-              "Run `./tnazar wait-resume` until it prints `resumed`, then `observe` and continue.")
+              f"{live.PAUSED_HINT} `observe` first: the flow stopped part-way.")
         return live.EXIT_PAUSED
     if isinstance(result, Failed):
         print(f"flow {args.name}: FAILED after {took:.1f}s ({source})")
-        print(_indent(result.detail))
+        print(indent(result.detail))
         return result.code
     if ex.failed_checks:
         print(f"flow {args.name}: done in {took:.1f}s, {ex.failed_checks} check(s) failed")
@@ -106,7 +118,7 @@ def run_flow(args) -> int:
 
 
 def list_flows(args) -> int:
-    app = _run_app()
+    app = _app_of(get_active())
     found = _sources(args, app)
     if not any(p.flows for _, p in found):
         print(f"no saved routes{f' for {app}' if app else ''} yet. Save each route you find by hand as a "
@@ -115,7 +127,7 @@ def list_flows(args) -> int:
     for f, p in found:
         if not p.flows:
             continue
-        print(f"{_rel(f) if not args.plan else args.plan}  ({p.app})")
+        print(f"{_label(f, args)}  ({p.app})")
         for name, fl in p.flows.items():
             print(f"  {name:24} {summary(fl.body)}")
     return 0
@@ -123,17 +135,5 @@ def list_flows(args) -> int:
 
 def summary(body: list) -> str:
     """The route at a glance: `tap Login → wait "Pay now"`."""
-    parts = []
-    for item in body:
-        if isinstance(item, RunFlow):
-            parts.append(f"run {item.flow}")
-        elif isinstance(item, If):
-            parts.append(f'if "{item.target}"')
-        elif isinstance(item, Retry):
-            parts.append(f"retry {item.times} [{summary(item.body)}]")
-        else:
-            head, *rest = item.argv
-            arg = next((a for a in rest if not a.startswith("-")), "")
-            parts.append(f'{head} "{arg}"' if " " in arg else f"{head} {arg}".rstrip())
-    text = " → ".join(parts)
+    text = " → ".join(item.summary() for item in body)
     return text if len(text) <= SUMMARY_CHARS else text[:SUMMARY_CHARS - 1] + "…"

@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from fakedevice import PACKAGE, tnazar
-from teesri_nazar import live, plan
+from teesri_nazar import live, plan, runner
 from teesri_nazar.session import get_active
 
 from test_cli import CliTestCase
@@ -217,3 +217,22 @@ class FlowsTest(FlowBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ListenerTest(FlowBase):
+    def test_a_message_the_background_listener_delivered_still_stops_the_flow(self):
+        self.write("app.plan")
+        run = self.start()
+        real = runner.call
+
+        def call(argv):
+            result = real(argv)
+            if argv[0] == "type":  # what `wait-message` does in the background mid-flow
+                live.post("stop and log out")
+                live.deliver(run.log)
+            return result
+        with mock.patch.object(runner, "call", call):
+            code, out, _ = tnazar("flow", "login")
+        self.assertEqual(code, live.EXIT_HELD)
+        self.assertIn("stop and log out", out)
+        self.assertEqual([e for e in run.events() if e["type"] == "tap"], [])
