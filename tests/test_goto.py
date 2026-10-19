@@ -584,3 +584,40 @@ class ArrivalTest(unittest.TestCase):
         del screens["dddddddd"]
         self.assertTrue(_arrival(screens, None, untitled_read, "cccccccc", "hhhhhhhh"))
         self.assertFalse(_arrival(screens, "hhhhhhhh", untitled_read, "cccccccc", "hhhhhhhh"))  # a known screen
+
+
+class SlowLoadTest(GotoBase):
+    """Found on a real app: after a tap the next page first shows only a back arrow and an empty
+    list, the same as an article page, for two seconds before its content loads."""
+
+    def test_a_nearly_empty_page_while_loading_is_not_a_wrong_turn(self):
+        sparse = [node(desc="Navigate up", bounds=(0, 80, 120, 200)),
+                  node(id="body", cls="android.widget.ScrollView", clickable=False, scrollable=True,
+                       bounds=(0, 220, 1080, 2000))]
+        self.adb.app.screens.update({"article": sparse + [node(text="Q", clickable=False, bounds=(0, 300, 900, 400))],
+                                     "profile_loading": list(sparse)})
+        self.adb.app.on_tap[("savings", "btn_fd")] = "article"
+        self.adb.app.on_key[("article", BACK)] = "savings"
+        self.start()
+        self.t("tap", "Savings")
+        self.t("tap", "Fixed deposits")
+        self.t("wait", "Q")  # the article page is now a known screen
+        self.t("key", "back")
+        self.t("key", "back")
+        self.explore_passbook()
+        self.t("key", "back")
+        self.t("key", "back")
+        real = self.adb.app.on_tap[("savings", "btn_passbook")]
+        self.adb.app.on_tap[("savings", "btn_passbook")] = "profile_loading"
+        original = self.adb._tick
+
+        def slow():  # the passbook appears five reads (two seconds) after the empty page
+            if self.adb.current == "profile_loading":
+                slow.n += 1
+                if slow.n > 5:
+                    self.adb.current = real
+            original()
+        slow.n = 0
+        with mock.patch.object(self.adb, "_tick", slow):
+            out = self.t("goto", "passbook")
+        self.assertIn("arrived in 2 step(s)", out)

@@ -333,7 +333,7 @@ def _arrive(ctx, m, app, hop, timeout):
             sid = m.where(it) if it.id else None
             if sid == hop.to or (it.id and _arrival(m.screens, sid, it, hop.to, hop.frm)):
                 return True, screen, it, ""
-            if it.id and sid != hop.frm:
+            if it.id and sid != hop.frm and not ident.sparse(it):  # a nearly empty page may still be loading
                 now = time.monotonic()
                 if other != it.id:
                     other, other_since = it.id, now

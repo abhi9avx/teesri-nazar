@@ -149,6 +149,12 @@ def _menu_overlap(a: Ident, b: Ident) -> float:
     return shared / len(a.menu | b.menu)
 
 
+def sparse(it: Ident) -> bool:
+    """Too little on screen to say which page it is: no title, no menu, a frame of a back arrow and
+    an empty list. Many pages look like this for a moment while their content loads."""
+    return not it.title and not it.menu and len(it.tokens) < SMALL_FRAME
+
+
 def compatible(expected: Ident, read: Ident) -> bool:
     """Could `read` be a visit to `expected`? Looser than `same`, for checking a goto step's
     arrival when the map holds the page twice (once with a title, once without): no conflicting
