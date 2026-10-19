@@ -1,8 +1,30 @@
+# Test runs, app maps and device state: hold app screens, labels and screenshots.
 runs/
 plans/
 .tnazar/
+maps/
+bench/
+shots/
+dumps/
+events.jsonl
+screens.jsonl
+last-screen.xml
+*.log
+
+# Secrets and test accounts: only the examples are shared.
 .env
+.env.*
+!.env.example
 testdata.yaml
+testdata.*.yaml
+!testdata.example.yaml
+*.pem
+*.key
+
+# Local Claude Code state.
+.claude/settings.local.json
+.claude/worktrees/
+
 __pycache__/
 *.egg-info/
 .DS_Store
