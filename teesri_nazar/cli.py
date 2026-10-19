@@ -497,6 +497,7 @@ def cmd_say(args) -> int:
     ctx_run = get_active()
     if ctx_run:
         ctx_run[0].log({"type": "say", "text": args.text})
+    live.set_agent_status("working", args.text)
     print(f"» {args.text}")
     return 0
 
@@ -519,6 +520,7 @@ def cmd_wait_message(args) -> int:
         active = get_active()
         return active is not None and active[0].path == run.path
 
+    live.set_agent_status("listening", pid=os.getpid())
     if not live.wait_message(args.timeout, same_run):
         print(f"no message in {args.timeout:g}s" if same_run() else "no active run")
         return 0

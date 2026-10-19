@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import json
+import os
 import secrets
 import time
 import urllib.error
@@ -92,6 +93,8 @@ def deliver(log) -> list[dict]:
             print(f">> USER (dashboard): {m['text']}")
             log({"type": "user_msg", "text": m["text"], "id": m["id"], "sent": m["t"],
                  "secret": m.get("secret"), "note": m.get("note")})
+        if needs_agent(msgs):
+            set_agent_status("got_message", msgs[-1]["text"])
         if msgs:
             # Only what was printed: a message that lands meanwhile stays unread for the next step.
             _cursor_file().write_text(str(seen + len(msgs)))
@@ -124,6 +127,38 @@ def wait_typing(limit: float = TYPING_WAIT) -> None:
     deadline = time.monotonic() + limit
     while typing_file().exists() and time.monotonic() < deadline:
         time.sleep(POLL / 5)
+
+
+# ---------------------------------------------------------------- agent status
+
+def _status_file() -> Path:
+    return state_dir() / "agent.json"
+
+
+def set_agent_status(state: str, text: str = "", pid: int | None = None) -> None:
+    """listening (wait-message is running) | got_message | working (the last `say`)."""
+    _status_file().write_text(json.dumps({"state": state, "text": text, "t": now_iso(), "pid": pid}) + "\n")
+
+
+def agent_status() -> dict:
+    f = _status_file()
+    try:
+        st = json.loads(f.read_text()) if f.exists() else {}
+    except ValueError:
+        st = {}
+    if st.get("state") == "listening" and not _alive(st.get("pid")):
+        st["state"] = "away"  # the listener was stopped: messages wait for the agent's next step
+    return st or {"state": "away", "text": "", "t": None}
+
+
+def _alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+    except (TypeError, ValueError, ProcessLookupError):
+        return False
+    except PermissionError:
+        pass
+    return True
 
 
 # ---------------------------------------------------------------- pause

@@ -93,7 +93,7 @@ class Dashboard:
     def state(self) -> dict:
         active = get_active()
         out: dict = {"active": None, "paused": live.paused(), "secrets": sorted(self.secrets),
-                     "slow_ms": rpt.SLOW_MS}
+                     "slow_ms": rpt.SLOW_MS, "agent": live.agent_status()}
         if active:
             run, serial = active
             meta = run.meta()

@@ -157,6 +157,32 @@ class DashboardTypingTest(CliTestCase):
         self.assertEqual(len(self.adb.taps), 1)
 
 
+class AgentStatusTest(CliTestCase):
+    """The dashboard always says what the agent is doing: listening, got the message, or working on a step."""
+
+    def test_say_shows_what_the_agent_is_working_on(self):
+        self.start()
+        self.ok("say", "Opening the leaderboard")
+        st = live.agent_status()
+        self.assertEqual((st["state"], st["text"]), ("working", "Opening the leaderboard"))
+
+    def test_wait_message_shows_listening_then_got_your_message(self):
+        self.start()
+        seen = []
+        timer = threading.Timer(0.3, lambda: (seen.append(live.agent_status()["state"]), live.post("open the chatbot")))
+        timer.start()
+        self.addCleanup(timer.join)
+        tnazar("wait-message", "--timeout", "10")
+        self.assertEqual(seen, ["listening"])
+        st = live.agent_status()
+        self.assertEqual((st["state"], st["text"]), ("got_message", "open the chatbot"))
+
+    def test_a_listener_that_died_is_not_shown_as_listening(self):
+        self.start()
+        live.set_agent_status("listening", pid=2 ** 22 + 12345)
+        self.assertEqual(live.agent_status()["state"], "away")
+
+
 class SteeringUnderLoadTest(CliTestCase):
     def test_a_burst_of_messages_is_delivered_once_each_in_order(self):
         run = self.start()
