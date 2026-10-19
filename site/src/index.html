@@ -1,26 +1,33 @@
 <!--
 title: Teesri Nazar: the AI tester for Android apps
-description: An open-source AI agent that tests your Android feature like your best QA: it plans the test cases, taps through the app on a real phone and reports pass or fail with screenshots.
+description: An open-source AI agent that tests your Android feature on a real phone and hands you pass or fail, with a screenshot for every check.
 -->
 <section class="hero" aria-labelledby="hero-title">
-  <h1 id="hero-title">Every release, someone taps through the same forty screens by&nbsp;hand.</h1>
-  <div class="hero-copy">
-    <p class="lede">Scripts break when the UI moves, so new features get tested by hand or not at all.
-      Teesri Nazar is an AI agent that tests your Android feature the way your best QA would. It plans the
-      cases, taps through the app on a real phone and hands you a pass/fail report with proof.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="/docs/#quick-start">Quick start</a>
-      <a class="btn" href="https://github.com/abhi9avx/teesri-nazar">Star on GitHub</a>
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <h1 id="hero-title">Stop tapping through every release by&nbsp;hand.</h1>
+      <p class="lede">Teesri Nazar is an AI agent that tests your Android feature on a real phone and hands you pass or fail, with proof.</p>
+      <div class="actions">
+        <a class="btn btn-ink" href="/docs/#quick-start">Quick start</a>
+        <a class="btn btn-line" href="https://github.com/abhi9avx/teesri-nazar">View on GitHub</a>
+      </div>
+      <p class="fineprint">Free and open source. Runs on your own machine.</p>
     </div>
-    <p class="fineprint">Open source. Runs on your machine with Claude Code, adb and Python. Your app needs no changes.</p>
+    <figure class="hero-art">
+      <img src="/assets/ravana-600.webp" srcset="/assets/ravana-600.webp 600w, /assets/ravana-1180.webp 1180w"
+        sizes="(min-width: 64rem) 31rem, 90vw" width="1180" height="1280" fetchpriority="high"
+        alt="The ten-headed Ravana, a golden arrow passing through all ten heads">
+    </figure>
   </div>
+</section>
 
-  <figure class="stage" id="stage" aria-label="A replay of a real test run on the Android Settings app">
+<section class="demo" aria-labelledby="demo-title">
+  <h2 id="demo-title">Watch it test a feature</h2>
+  <figure class="stage" id="stage">
     <div class="stage-log">
-      <p class="log-title">Claude Code, driving <code>tnazar</code></p>
       <ol class="log" id="log">
         <li class="log-you" data-screen="home">Test that Settings search finds Wi‑Fi, and that Back always comes home.</li>
-        <li class="log-agent" data-screen="home">Plan: 3 cases. TC‑01 Network &amp; internet opens. TC‑02 Search finds Wi‑Fi. TC‑03 Back returns to Settings.</li>
+        <li class="log-agent" data-screen="home">Plan: 3 cases. Network &amp; internet opens. Search finds Wi‑Fi. Back returns to Settings.</li>
         <li class="log-cmd" data-screen="network" data-tap="net"><code>tap "Network &amp; internet"</code></li>
         <li class="log-check" data-screen="network"><code>check "Internet"</code> <span class="pass">passed</span></li>
         <li class="log-cmd" data-screen="home"><code>key back</code></li>
@@ -29,14 +36,10 @@ description: An open-source AI agent that tests your Android feature like your b
         <li class="log-check" data-screen="results"><code>check "~Wi‑Fi"</code> <span class="pass">passed</span></li>
         <li class="log-cmd" data-screen="home"><code>key back</code>, <code>key back</code></li>
         <li class="log-check" data-screen="home"><code>check "Search Settings"</code> <span class="pass">passed</span></li>
-        <li class="log-agent" data-screen="home">Report ready: 3 of 3 cases passed, with a screenshot for every check.</li>
+        <li class="log-agent" data-screen="home">Report ready: 3 of 3 passed, with a screenshot for every check.</li>
       </ol>
     </div>
-
     <div class="stage-phone">
-      <svg class="stage-eye" viewBox="0 0 240 420" aria-hidden="true" focusable="false">
-        <path d="M120 4C268 92 268 328 120 416C-28 328 -28 92 120 4Z"/>
-      </svg>
       <div class="phone" aria-hidden="true">
         <div class="phone-screen" data-name="home">
           <p class="ph-title">Settings</p>
@@ -74,160 +77,62 @@ description: An open-source AI agent that tests your Android feature like your b
         <span class="tap-ring" hidden></span>
       </div>
     </div>
-
     <figcaption>
-      <span>A shortened replay based on the example plan in the repo, on the Android Settings app.</span>
-      <button type="button" class="link-button" id="stage-toggle" hidden>Pause</button>
+      <span>Claude Code driving the Android Settings app, based on the example plan in the repo.</span>
+      <button type="button" class="link-button" id="stage-toggle" aria-controls="log" hidden>Pause replay</button>
     </figcaption>
   </figure>
 </section>
 
-<section class="band" aria-labelledby="problem-title">
-  <div class="band-inner">
-    <h2 id="problem-title">Two ways to test a feature today. Both leave gaps.</h2>
-    <p class="section-lede">Manual testing doesn’t repeat. Scripted automation arrives after the feature ships and breaks when the
-      screen changes. An agent can do what the manual tester does, and leave behind something you can run again.</p>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="Comparison of testing approaches">
-      <table class="compare">
-        <thead>
-          <tr><th scope="col"><span class="visually-hidden">Question</span></th><th scope="col">Manual testing</th><th scope="col">Scripted automation</th><th scope="col">Teesri Nazar</th></tr>
-        </thead>
-        <tbody>
-          <tr><th scope="row">Is the new feature tested the day it lands?</th><td>Yes, by hand</td><td>Only after someone writes the scripts</td><td>Yes, from a description, test cases, a PRD or Figma</td></tr>
-          <tr><th scope="row">What happens when the layout changes?</th><td>Nothing breaks, someone looks again</td><td>Selectors break and the run goes red</td><td>Finds elements by id, then label, then text, on any screen size</td></tr>
-          <tr><th scope="row">What proof do you get?</th><td>Screenshots, if someone took them</td><td>Logs</td><td>A screenshot for every check, in an HTML report</td></tr>
-          <tr><th scope="row">Next release?</th><td>Start again</td><td>Re-run, if the scripts survived</td><td><code>replay</code> or a plan file runs it again</td></tr>
-          <tr><th scope="row">Edge cases?</th><td>When someone remembers</td><td>Only the ones scripted</td><td>Adds the ones you missed: empty input, back mid-flow, kill and reopen</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<section class="section" aria-labelledby="loop-title">
-  <h2 id="loop-title">How the agent works a feature</h2>
-  <p class="section-lede">Claude Code is the tester’s judgement. <code>tnazar</code>, a small Python tool, gives it eyes and hands on the
-    phone and writes down everything it does.</p>
-  <ol class="loop">
-    <li>
-      <h3>Look</h3>
-      <p>Reads the screen’s element tree: ids, labels, text, positions. About 0.05 seconds through the UiAutomator2 server.</p>
-      <code>observe</code>
-    </li>
-    <li>
-      <h3>Act</h3>
-      <p>Taps, types and scrolls on the right element, found by its id, then its label, then its text. Never by guessing from a picture.</p>
-      <code>tap "Pay now"</code>
-    </li>
-    <li>
-      <h3>Check</h3>
-      <p>Verifies every expected result on screen, and in the database or against Figma when you give it access.</p>
-      <code>check "Payment successful"</code>
-    </li>
-    <li>
-      <h3>Record</h3>
-      <p>Saves each step with a screenshot, so the session becomes a report and a test you can replay.</p>
-      <code>replay my-run</code>
-    </li>
+<section class="steps" aria-labelledby="steps-title">
+  <h2 id="steps-title">Plan, tap, check, prove</h2>
+  <ol class="tiles">
+    <li class="tile tile-saffron"><h3>Plans</h3><p>Turns your feature into test cases, plus the edge cases you missed.</p></li>
+    <li class="tile tile-vermilion"><h3>Taps</h3><p>Drives a real phone or emulator by ids, labels and text, not by guessing from screenshots.</p></li>
+    <li class="tile tile-peacock"><h3>Checks</h3><p>Verifies every expected result on screen, and in your DB or Figma.</p></li>
+    <li class="tile tile-ink"><h3>Proves</h3><p>Hands you pass or fail with a screenshot for every check.</p></li>
   </ol>
 </section>
 
-<section class="section split" aria-labelledby="team-title">
-  <div>
-    <h2 id="team-title">One agent plays the whole team</h2>
-    <p class="section-lede">You say what to test. It switches hats as the work needs.</p>
+<section class="heads" aria-labelledby="heads-title">
+  <div class="heads-inner">
+    <h2 id="heads-title">Ten heads. One arrow.</h2>
+    <p class="lede">Every release hides its own Ravana. The third eye goes looking for every head.</p>
+    <ul class="bugs">
+      <li>Crash on empty input</li>
+      <li>App not responding</li>
+      <li>Copy drifts from Figma</li>
+      <li>Back skips a screen</li>
+      <li>State lost after reopen</li>
+      <li>Double submit</li>
+    </ul>
   </div>
-  <dl class="roles">
-    <div><dt>Senior QA</dt><dd>Turns your input into test cases and adds the edge cases nobody wrote down.</dd></div>
-    <div><dt>End user</dt><dd>Taps through the app on a real phone or emulator, like a customer would.</dd></div>
-    <div><dt>Developer</dt><dd>Catches crashes and ANRs as they happen and gives exact repro steps.</dd></div>
-    <div><dt>Product manager</dt><dd>Checks the build against the PRD and the Figma frame: is it what we promised?</dd></div>
-    <div><dt>Test lead</dt><dd>Hands you one report: what passed, what failed, what it saw, what it couldn’t test.</dd></div>
-  </dl>
 </section>
 
-<section class="section split" aria-labelledby="learn-title">
-  <div>
-    <h2 id="learn-title">It learns your app as it tests</h2>
-    <p class="section-lede">Every run maps the screens it walks through and the taps between them. Ask for a screen it has seen and it
-      goes straight there, checking each step on the way. Money-moving steps are never replayed.</p>
-    <p><a href="/changelog/v3/">What the learned map does</a></p>
-  </div>
-  <figure class="terminal">
-    <pre tabindex="0"><code><span class="t-prompt">$</span> ./tnazar goto "internet"
-goto internet: arrived in 2 step(s), 1.2s (tap "Network &amp; internet" → tap "Internet")</code></pre>
-    <figcaption>Shortened: it also narrates the step and prints the screen it arrived on. The first run explores; every run after that takes the learned route.</figcaption>
-  </figure>
-</section>
-
-<section class="section split" aria-labelledby="steer-title">
-  <div>
-    <h2 id="steer-title">Watch it, and steer it while it runs</h2>
-    <p class="section-lede"><code>./tnazar ui</code> opens a live dashboard on your own machine: the phone screen, every step as it happens and
-      a box to talk to the agent.</p>
-  </div>
-  <ul class="facts">
-    <li><strong>Send a message mid-run.</strong> The agent hears it within a second and changes course before its next tap.</li>
-    <li><strong>Pause and resume.</strong> The next device step waits until you say so.</li>
-    <li><strong>Hand over an OTP.</strong> The dashboard types it into the field itself. The value never reaches the chat, a log or the disk.</li>
-    <li><strong>Stays local.</strong> It listens on 127.0.0.1 only. Nothing is uploaded.</li>
+<section class="why" aria-labelledby="why-title">
+  <h2 id="why-title" class="visually-hidden">Why teams use it</h2>
+  <ul class="why-list">
+    <li><h3>Learns your app</h3><p>Every run maps the screens. Next time, <code>goto</code> takes it straight there.</p></li>
+    <li><h3>You steer it live</h3><p>Watch the phone, message the agent, pause it, hand over an OTP.</p></li>
+    <li><h3>Stays on your machine</h3><p>Open source, no telemetry, no SDK in your app.</p></li>
   </ul>
 </section>
 
-<section class="ravana" aria-labelledby="ravana-title">
-  <div class="ravana-inner">
-    <h2 id="ravana-title">Ten heads, one arrow</h2>
-    <p class="section-lede">On Dussehra, the ten-headed Ravana burns. Every release has ten heads of its own, and two eyes rarely catch them
-      all. The third eye looks at every screen, every time.</p>
-    <svg width="0" height="0" class="defs" aria-hidden="true" focusable="false">
-      <symbol id="head" viewBox="0 0 60 84">
-        <path fill="var(--h-crown)" d="M10 32 15 14 22 25 30 3 38 25 45 14 50 32Z"/>
-        <ellipse fill="var(--h-face)" stroke="var(--h-ink)" stroke-width="2" cx="30" cy="54" rx="19" ry="25"/>
-        <path fill="none" stroke="var(--h-ink)" stroke-width="2" stroke-linecap="round" d="M17 45q6-4 11 0M32 45q5-4 11 0M30 33v8"/>
-        <path fill="var(--h-ink)" d="M18 51q5-4 9 0q-4 3-9 0ZM33 51q5-4 9 0q-4 3-9 0ZM19 66q11-7 22 0q-11 3-22 0Z"/>
-      </symbol>
-    </svg>
-    <ol class="heads" id="heads">
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Crash at ₹0</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>ANR on a slow network</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Copy drifts from Figma</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Back skips a screen</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Double tap pays twice</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Spinner never ends</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Error says nothing</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Keyboard hides the button</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Dark mode unreadable</span></li>
-      <li><svg viewBox="0 0 60 84" aria-hidden="true"><use href="#head"/></svg><span>Breaks on a small screen</span></li>
-    </ol>
-    <div class="arrow-row">
-      <span class="arrow" aria-hidden="true"></span>
-      <button type="button" class="btn btn-primary" id="release-arrow" hidden>Shoot the arrow</button>
-      <p class="arrow-result" id="arrow-result" role="status"></p>
-    </div>
+<section class="start" aria-labelledby="start-title">
+  <div class="start-copy">
+    <h2 id="start-title">Try it on your phone</h2>
+    <p>You need adb, Python 3.9+ and Claude Code.</p>
+    <a class="btn btn-ink" href="/docs/">Read the docs</a>
   </div>
+  <pre class="terminal" tabindex="0"><code><span class="t-prompt">$</span> git clone https://github.com/abhi9avx/teesri-nazar.git
+<span class="t-prompt">$</span> cd teesri-nazar &amp;&amp; claude
+<span class="t-say">› Check that Settings search finds Wi‑Fi.</span></code></pre>
 </section>
 
-<section class="section split" aria-labelledby="start-title" id="start">
-  <div>
-    <h2 id="start-title">Run your first test in five minutes</h2>
-    <p class="section-lede">You need adb, a phone with USB debugging or a running emulator, Python 3.9 or newer and Claude Code.</p>
-    <p><a href="/docs/">Read the docs</a></p>
-  </div>
-  <figure class="terminal">
-    <pre tabindex="0"><code><span class="t-prompt">$</span> git clone https://github.com/abhi9avx/teesri-nazar.git
-<span class="t-prompt">$</span> cd teesri-nazar &amp;&amp; cp .env.example .env
-<span class="t-prompt">$</span> claude
-<span class="t-say">› Open Settings and check that search finds Wi‑Fi.</span></code></pre>
-  </figure>
-</section>
-
-<section class="section split releases-section" aria-labelledby="releases-title">
-  <div>
-    <h2 id="releases-title">Shipped so far</h2>
-    <p class="section-lede">The newest versions. Each one lists what it added and the pull request it came from.</p>
-    <p><a href="/changelog/">Full changelog</a></p>
-  </div>
+<section class="shipped" aria-labelledby="shipped-title">
+  <h2 id="shipped-title">Shipped</h2>
   <ol class="releases">{{releases}}</ol>
+  <a href="/changelog/">Full changelog</a>
 </section>
 
 <script type="application/ld+json">
@@ -236,7 +141,7 @@ goto internet: arrived in 2 step(s), 1.2s (tap "Network &amp; internet" → tap 
   "@type": "SoftwareApplication",
   "name": "Teesri Nazar",
   "alternateName": "तीसरी नज़र",
-  "description": "An open-source AI agent that tests Android app features on a real device and reports pass or fail with screenshots.",
+  "description": "An open-source AI agent that tests Android app features on a real device and reports pass or fail, with a screenshot for every check.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux",
   "url": "https://teesrinazar.github.io/",

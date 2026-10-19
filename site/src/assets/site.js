@@ -1,4 +1,4 @@
-// Two moments on the home page: the run replay in the hero, and the arrow in the Dussehra section.
+// Two moments on the home page: the run replay, and the ten bugs struck through.
 // Without JavaScript, or with reduced motion, both show their finished state.
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -50,7 +50,8 @@ function replay(stage) {
     if (running) return;
     running = true;
     stage.classList.add("is-playing");
-    toggle.textContent = "Pause";
+    toggle.textContent = "Pause replay";
+    if (i > 0) show(lines[i - 1].dataset.screen);
     later(step, 400);
   }
 
@@ -58,7 +59,7 @@ function replay(stage) {
     timers.forEach(clearTimeout);
     timers = [];
     running = false;
-    toggle.textContent = "Play";
+    toggle.textContent = "Play replay";
   }
 
   stage.classList.add("is-ready");
@@ -70,38 +71,26 @@ function replay(stage) {
     if (running) stop();
     else start();
   });
-  // Runs only while the hero is on screen, and stays paused once the reader pauses it.
+  // Runs only while the replay is on screen, and stays paused once the reader pauses it.
   new IntersectionObserver(([entry]) => {
     if (!entry.isIntersecting) stop();
     else if (!heldByUser) start();
   }).observe(stage);
 }
 
-function arrow(section) {
-  const button = section.querySelector("#release-arrow");
-  const shaft = section.querySelector(".arrow");
-  const heads = [...section.querySelectorAll(".heads li")];
-  const result = section.querySelector("#arrow-result");
-  let shots = 0;
-  button.hidden = false;
-  button.addEventListener("click", () => {
-    shots += 1;
-    button.disabled = true;
-    shaft.classList.remove("is-flying");
-    heads.forEach((h) => h.classList.remove("is-caught"));
-    void shaft.offsetWidth;
-    shaft.classList.add("is-flying");
-    const gap = reduceMotion ? 0 : 110;
-    heads.forEach((h, n) => setTimeout(() => h.classList.add("is-caught"), gap * (n + 1)));
-    setTimeout(() => {
-      result.textContent = shots === 1 ? "All ten caught before release." : `All ten caught again, run ${shots}.`;
-      button.textContent = "Shoot again";
-      button.disabled = false;
-    }, gap * (heads.length + 1));
-  });
+// The ten bugs get struck through once, when they scroll into view.
+function strike(list) {
+  [...list.children].forEach((li, n) => li.style.setProperty("--i", n));
+  list.classList.add("will-strike");
+  const io = new IntersectionObserver(([entry]) => {
+    if (!entry.isIntersecting) return;
+    list.classList.add("is-struck");
+    io.disconnect();
+  }, { threshold: 0.5 });
+  io.observe(list);
 }
 
 const stage = document.getElementById("stage");
 if (stage) replay(stage);
-const ravana = document.querySelector(".ravana");
-if (ravana) arrow(ravana);
+const bugs = document.querySelector(".bugs");
+if (bugs) strike(bugs);
