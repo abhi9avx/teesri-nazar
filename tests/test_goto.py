@@ -638,3 +638,26 @@ class IndexTapTest(GotoBase):
         tap = [e for e in run.events() if e["type"] == "tap"][-1]
         self.assertEqual(tap["selector"], {"text": "Rewards"})
         self.assertEqual(self.adb.current, "loans")
+
+
+class IndexTapChoiceTest(GotoBase):
+    def row(self, *children):
+        self.adb.app.screens["home"].append(node(cls="android.widget.LinearLayout", bounds=(0, 1000, 1080, 1150)))
+        self.adb.app.screens["home"].extend(children)
+
+    def index_of_row(self):
+        out = self.t("observe")
+        return [ln for ln in out.splitlines() if "LinearLayout" in ln][0].split("]")[0].strip("[")
+
+    def test_a_clickable_avatar_inside_the_row_is_never_used_for_the_row(self):
+        self.row(node(desc="Quick contact for Asha", bounds=(20, 1010, 120, 1140)),
+                 node(text="Rewards", clickable=False, bounds=(140, 1030, 600, 1120)))
+        run = self.start()
+        self.t("tap", "#" + self.index_of_row())
+        self.assertEqual([e for e in run.events() if e["type"] == "tap"][-1]["selector"], {"text": "Rewards"})
+
+    def test_a_label_that_is_not_unique_is_not_used(self):
+        self.row(node(text="Pay", clickable=False, bounds=(140, 1030, 600, 1120)))  # "Pay" is also the nav button
+        run = self.start()
+        self.t("tap", "#" + self.index_of_row())
+        self.assertIsNone([e for e in run.events() if e["type"] == "tap"][-1]["selector"])

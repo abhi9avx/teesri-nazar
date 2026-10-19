@@ -88,11 +88,20 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
 
 
 def _label_inside(screen: scr.Screen, box: scr.Element) -> scr.Element | None:
+    """The row's own label: a plain (not clickable) text inside it whose selector is unique. A
+    clickable child is another control (an avatar, a checkbox); a list or the whole screen is not
+    a row."""
     l, t, r, b = box.bounds
+    w, h = screen.size
+    if box.scrollable or (r - l) * (b - t) > w * h / 2:
+        return None
     for e in screen.elements:
         el_, et, er, eb = e.bounds
-        if e is not box and (e.text or e.desc) and not e.password and l <= el_ and t <= et and er <= r and eb <= b:
-            if not scr.stable_selector(screen, e).is_empty():
+        if e is box or e.clickable or e.password or not (e.text or e.desc):
+            continue
+        if l <= el_ and t <= et and er <= r and eb <= b:
+            sel = scr.stable_selector(screen, e)
+            if not sel.is_empty() and not sel.nth:
                 return e
     return None
 

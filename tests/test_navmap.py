@@ -220,6 +220,13 @@ class EpisodeTest(unittest.TestCase):
             .add(type="check", kind="ui", sid="SAV", ok=True, selector={"text": "Savings"})
         self.assertEqual(self.names(learn(log)), [])
 
+    def test_a_new_shorter_request_is_learned_and_never_lends_its_screen_to_the_bigger_one(self):
+        log = self.miss(Log(), "card settings", "HOME") \
+            .add(type="nav", phrase="settings", outcome="unknown", sid="HOME", episode=True) \
+            .tap("HOME", text="Settings").add(type="check", kind="ui", sid="SET", ok=True,
+                                              selector={"text": "Settings"})
+        self.assertEqual(self.names(learn(log)), [("settings", "SET")])
+
     def test_a_goto_for_part_of_the_request_keeps_the_bigger_search_open(self):
         log = self.miss(Log(), "contact us page in faqs", "HOME") \
             .add(type="nav", phrase="faqs", outcome="unknown", sid="HOME", episode=True) \

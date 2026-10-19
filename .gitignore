@@ -17,9 +17,15 @@ last-screen.xml
 !.env.example
 testdata.yaml
 testdata.*.yaml
+testdata.yml
+testdata.*.yml
 !testdata.example.yaml
 *.pem
 *.key
+*.p12
+*.jks
+*.keystore
+bench-*.json
 
 # Local Claude Code state.
 .claude/settings.local.json

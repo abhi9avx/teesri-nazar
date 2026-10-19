@@ -66,9 +66,14 @@ class Bench:
         self.ui = None
 
     def tn(self, *argv, env=None, timeout=180) -> tuple[int, str]:
-        dev = ["-s", self.args.device] if argv[0] == "start" and self.args.device else []
-        p = subprocess.run([TNAZAR, *dev, *argv], env=env or self.env, capture_output=True, text=True,
-                           timeout=timeout, cwd=ROOT)
+        # Every call names the device: the project's SessionEnd hook stops the run when the agent's
+        # session ends, so the final check runs without an active run to take the device from.
+        dev = ["-s", self.args.device] if self.args.device else []
+        try:
+            p = subprocess.run([TNAZAR, *dev, *argv], env=env or self.env, capture_output=True, text=True,
+                               timeout=timeout, cwd=ROOT)
+        except subprocess.TimeoutExpired:
+            return 124, f"timed out after {timeout}s: tnazar {' '.join(argv)}"
         return p.returncode, p.stdout + p.stderr
 
     def dashboard(self) -> None:
@@ -96,12 +101,15 @@ class Bench:
 
     def agent(self, task: dict, env: dict) -> dict:
         began = time.monotonic()
-        p = subprocess.run(
+        try:
+            p = subprocess.run(
             ["claude", "-p", PROMPT.format(**task), "--output-format", "json", "--no-session-persistence",
              "--strict-mcp-config", "--setting-sources", "project,local", "--max-turns", str(self.args.max_turns),
              "--allowedTools", "Bash(./tnazar *)", "--disallowedTools", "Edit", "Write", "NotebookEdit"],
             env=env, cwd=ROOT, capture_output=True, text=True, timeout=self.args.agent_timeout,
             stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            return {"error": f"agent timed out after {self.args.agent_timeout}s", "seconds": self.args.agent_timeout}
         took = time.monotonic() - began
         try:
             d = json.loads(p.stdout)
@@ -113,15 +121,16 @@ class Bench:
                 "said": str(d.get("result", ""))[-120:]}
 
     def one(self, task: dict, mode: str, n: int) -> dict:
-        env = dict(self.env)
+        # Each task learns into its own map: "cold" is empty, "warm" has only what "cold" taught.
+        env = dict(self.env, TNAZAR_MAP_DIR=os.path.join(self.home, "maps", f"task-{n:02d}"))
         if mode == "off":
             env["TNAZAR_MAP"] = "off"
         run = f"bench-{n:02d}-{mode}"
         self.prepare(task, run, env)
         r = self.agent(task, env)
         ok = self.tn("check", *task["expect"], "--timeout", "5", env=env)[0] == 0
-        events = [json.loads(x) for x in (Path(self.home) / "runs" / run / "events.jsonl").read_text().splitlines()
-                  if x.strip()]
+        log = Path(self.home) / "runs" / run / "events.jsonl"
+        events = [json.loads(x) for x in log.read_text().splitlines() if x.strip()] if log.exists() else []
         navs = [e for e in events if e.get("type") == "nav"]
         self.tn("stop", env=env)
         r.update({"task": task["phrase"], "app": task["app"], "mode": mode, "on_target": ok,
@@ -137,6 +146,8 @@ class Bench:
             tasks += json.loads(Path(self.args.tasks).read_text())
         if self.args.only:
             tasks = [t for t in tasks if t["app"] in self.args.only.split(",")]
+            if not tasks:
+                sys.exit(f"no task for --only {self.args.only}")
         self.dashboard()
         try:
             for n, task in enumerate(tasks, 1):
@@ -165,7 +176,9 @@ class Bench:
             rs = [r for r in self.results if r["mode"] == mode]
             if not rs:
                 continue
-            avg = lambda k: round(sum(r.get(k) or 0 for r in rs) / len(rs), 1)
+            def avg(k):
+                vals = [r[k] for r in rs if r.get(k) is not None]  # a run that errored has no turns
+                return round(sum(vals) / len(vals), 1) if vals else None
             lines.append(f"| {mode} | {sum(r['on_target'] for r in rs)}/{len(rs)} | {avg('turns')} | "
                          f"{avg('seconds')} | {round(sum(r.get('cost_usd') or 0 for r in rs), 2)} |")
         for t in {r["task"] for r in self.results}:

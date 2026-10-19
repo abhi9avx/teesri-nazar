@@ -333,7 +333,7 @@ def _arrive(ctx, m, app, hop, timeout):
             sid = m.where(it) if it.id else None
             if sid == hop.to or (it.id and _arrival(m.screens, sid, it, hop.to, hop.frm)):
                 return True, screen, it, ""
-            if it.id and sid != hop.frm and not ident.sparse(it):  # a nearly empty page may still be loading
+            if it.id and sid != hop.frm:  # (a nearly empty page has no id: it may still be loading)
                 now = time.monotonic()
                 if other != it.id:
                     other, other_since = it.id, now
@@ -457,7 +457,8 @@ def _map_name(app, active, args) -> int:
         ctx = cli.Ctx.from_args(args.device)
         sid = ctx.stamp(ctx.capture())
         if not sid:
-            raise UserError("this screen cannot be named (a loading, web or system screen)")
+            raise UserError("this screen cannot be named: too little on it to recognise it again (a page still "
+                            "loading or nearly empty), a web view, or another app's screen")
         rec = navmap.run_screens(active[0]).get(sid)
         if rec:
             lines.append(dict(rec, k="screen"))

@@ -294,57 +294,67 @@ def _check_label(e: dict) -> str:
 
 def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
     """After `goto <phrase>` missed, which screen did the agent go looking for? A passing check
-    that says every word of the phrase ends the search there. Otherwise the check saying most of
-    it, the latest of equals. A check that says none of it never names a screen (synonyms are
-    taught with `map name`), and a goto for part of the phrase does not end the search."""
-    names, ep = [], None
+    that says every word of the phrase ends the search there; otherwise the check saying most of
+    it wins, the latest of equals. A check that says none of it never names a screen (synonyms are
+    taught with `map name`). A goto for part of an open request ("settings" while looking for
+    "card settings") opens a search of its own inside it; the screen it names is never given to
+    the bigger one."""
+    names, open_, claimed = [], [], set()
+    last_tap, here, entered = None, None, {}  # entered: screen -> the tap that opened it
 
-    def close():
-        nonlocal ep
-        if ep and ep["best"]:
+    def close(ep):
+        if ep["best"] and ep["best"][2] not in claimed:
             _, _, sid, t, via = ep["best"]
             names.append(dict(name_line(ep["phrase"], sid, explicit=False, run=run, via=via), t=_ts(t)))
-        ep = None
+            claimed.add(sid)
+        open_.remove(ep)
 
-    last_tap, here, entered = None, None, {}  # entered: screen -> the tap that opened it
+    def close_all():
+        for ep in reversed(list(open_)):
+            close(ep)
 
     for n, e in enumerate(events):
         typ = e.get("type")
         seen = settled_sid(e)
         if seen and seen != here:
             entered[seen], here = last_tap, seen
+        if typ == "tap" and e.get("ok") is not False:
+            last_tap = scrub_selector(e.get("stable") or e.get("selector"), secrets)
         if typ == "nav":
-            if ep and e.get("phrase") and _words(e["phrase"]) and _words(e["phrase"]) < ep["words"]:
-                continue  # a goto for part of the request ("faqs" on the way to "contact us in faqs")
-            close()
+            words = _words(e.get("phrase") or "")
+            inside = bool(open_) and bool(words) and words < open_[-1]["words"]
+            if not inside:
+                close_all()
             try:
                 ok_phrase = bool(e.get("episode") and e.get("phrase") and check_phrase(e["phrase"]))
             except UserError:
                 ok_phrase = False  # never stored: a phrase holding an account number or an email
             if ok_phrase:
-                ep = {"phrase": e["phrase"], "words": _words(e["phrase"]), "start": e.get("sid"),
-                      "best": None, "actions": 0}
-        elif typ in ("case_start", "case_end") or (typ == "launch" and (e.get("fresh") or e.get("restart"))):
-            close()
-        if typ == "tap" and e.get("ok") is not False:
-            last_tap = scrub_selector(e.get("stable") or e.get("selector"), secrets)
-        if typ in ("nav", "case_start", "case_end") or ep is None:
+                open_.append({"phrase": e["phrase"], "words": words, "start": e.get("sid"), "best": None,
+                              "actions": 0})
+            continue
+        if typ in ("case_start", "case_end") or (typ == "launch" and (e.get("fresh") or e.get("restart"))):
+            close_all()
             continue
         if typ in ("tap", "type", "key", "swipe", "scroll", "adb", "launch", "open_url"):
-            ep["actions"] += 1
-            if typ == "key" and e.get("key") in _BACK_KEYS and ep["best"] and ep["best"][0] == 0:
-                ep["best"] = None  # left the unrelated screen it checked: not what it was looking for
-            if ep["actions"] > EPISODE_ACTIONS:
-                close()
+            for ep in list(open_):
+                ep["actions"] += 1
+                if ep["actions"] > EPISODE_ACTIONS:
+                    close(ep)
         elif typ == "check" and e.get("ok") and e.get("kind", "ui") == "ui" and e.get("selector") \
-                and not e.get("gone") and e.get("sid") and e["sid"] != ep["start"]:
+                and not e.get("gone") and e.get("sid"):
             said = _words(_check_label(e))
-            score = len(ep["words"] & said) / max(len(ep["words"]), 1)
-            if score > 0 and (ep["best"] is None or score >= ep["best"][0]):
-                ep["best"] = (score, n, e["sid"], e.get("t", ""), entered.get(e["sid"]))
-            if score >= 1:
-                close()
-    close()
+            for ep in reversed(list(open_)):  # the innermost search first
+                if e["sid"] == ep["start"]:
+                    continue
+                score = len(ep["words"] & said) / max(len(ep["words"]), 1)
+                if score > 0 and (ep["best"] is None or score >= ep["best"][0]):
+                    ep["best"] = (score, n, e["sid"], e.get("t", ""), entered.get(e["sid"]))
+                if score >= 1:
+                    for inner in [x for x in open_ if open_.index(x) >= open_.index(ep)][::-1]:
+                        close(inner)
+                    break
+    close_all()
     return names
 
 
