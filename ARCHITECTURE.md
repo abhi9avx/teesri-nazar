@@ -26,7 +26,7 @@ an engineer can use it as the design reference.
 12. [The brain — how Claude decides](#12-the-brain--how-claude-decides)
 13. [One request, end to end](#13-one-request-end-to-end)
 14. [Replay — running a recording again](#14-replay--running-a-recording-again)
-15. [The live dashboard](#15-the-live-dashboard) (15.1 running a whole plan, 15.2 the app map)
+15. [The live dashboard](#15-the-live-dashboard) (15.1 running a whole plan, 15.2 the app map, 15.3 the learned map)
 16. [Design decisions and trade-offs](#16-design-decisions-and-trade-offs)
 17. [How the tool itself is tested](#17-how-the-tool-itself-is-tested)
 18. [Limits](#18-limits)
@@ -831,6 +831,7 @@ on a real device.
 | DA-10 | keep a paused run paused: an info note does not turn a pause into a message | |
 | DA-11 | stop a plan or flow before its next step for a message the agent got, even through the listener | |
 | DA-12 | run a saved route in one command, and name the existing ones when asked for a missing one | live |
+| DA-13 | show a `goto` as one plain line, a broken learned route as a red row saying what it expected, and no row for the map's screen reads | live |
 
 ### 15.1 Running a whole plan
 
@@ -892,8 +893,97 @@ model turn per step, every time. The app map remembers routes instead: each one 
 - **Lookup.** A name found in two maps of the same app is an error (pick one with `--plan`);
   a map that does not parse is skipped with a warning, so one typo never hides the others.
 
-The agent is told (CLAUDE.md) to check `flows` before exploring and to save each route it
-finds by hand, so the map grows as the app is tested.
+The agent is told (CLAUDE.md) to try `goto` before exploring; flows are the hand-written,
+reviewed routes, and the learned map (15.3) covers everything else.
+
+### 15.3 The learned map — routes nobody writes
+
+*Files: `teesri_nazar/ident.py`, `teesri_nazar/navmap.py`, `goto` and `map` in `appmap.py`.
+Design: `docs/prd-nav-map.md`; tests: `docs/test-plan-nav-map.md`.*
+
+Hand-written flows only cover the routes someone saved. The learned map remembers every
+route the agent walks, so the second time anyone asks for a screen it is one command.
+
+**Which screen is this?** `ident.identify(screen, app)` keeps what stays put on a screen:
+element ids, the labels of buttons outside scrolling lists, and the title (a toolbar's text
+or description, a `*title` id, or the top label). It drops digits, typed values, list rows,
+and other apps' windows (the keyboard, a permission dialog), then hashes every token. Two
+reads are the same screen when their titles match and their tokens overlap ≥ 60 %, or when
+an untitled screen matches exactly (settings pages share every row id, so only a title can
+anchor a fuzzy match). Loading, WebView/Flutter-canvas and other apps' screens are
+*transparent*: never stored. `Screen.signature()` is unchanged (scroll and the report use it).
+
+**Learning costs no screen reads.** Commands stamp the screen they already read on their
+event (`sid`: `tap`/`type --into` before acting, `wait`/`check` when they pass, `scroll --to`
+after its last swipe; `observe` logs a hidden `seen` event) and keep its hashed tokens in
+`runs/<run>/screens.jsonl`. At `stop` (or the next `start` for an unstopped run),
+`navmap.learn()` reads the run's events:
+
+| Between two reads of different screens | Learned |
+|---|---|
+| exactly one `tap` with a selector (the element's id when it has a unique one) | a step X → Y; a `scroll --to` that found it is remembered with it |
+| a pixel tap; `back` | knowledge only: never replayed |
+| two actions, typing (also from the dashboard), a swipe, `adb`, a gap > 60 s | nothing |
+| `launch --fresh/--restart` | a step from the start node `@cold` |
+| plain `launch`, `open-url` | nothing: the chain breaks |
+
+A step counts once per run however often it is walked, so asking for Passbook ten times adds
+no rows. Names come from `goto <phrase>` that missed: the search ends at the passing `check`
+that says every word of the phrase; otherwise the check saying most of it wins, and one that
+says none of it counts only if the agent did not press Back after it. `map name` binds a
+phrase by hand and overrides learned bindings; `map forget` drops anything older than it.
+
+**Untitled pages and templates.** An untitled page is recognised by its menu (hashed short
+labels of buttons in its lists, no digits); a read that lacks the title its screen had matches
+on the menu only when exactly one stored screen fits. When several buttons of one screen open
+the same screen (FAQ articles, order details), it is a template: a name remembers the tap that
+opened it, `goto` must end with that tap and is never "already there" on it.
+
+**The store** is `${TNAZAR_MAP_DIR:-~/.tnazar/maps}/<package>/map.jsonl`: append-only JSON
+lines, a run learned once, appends under a file lock, a torn last line kept apart, unreadable
+lines skipped with a warning. Nothing in it is screen text: tokens are hashed, and selectors or
+labels with digits, `@`, currency or a `.env` value are not stored (the step stays as
+knowledge). `TNAZAR_MAP=off` turns learning and `goto` off; `start` says which.
+
+**`goto <phrase>`** (exit codes in `tnazar goto --help`; a phrase with an account number, email
+or amount is never stored):
+
+1. A saved flow whose name matches the phrase runs instead.
+2. One read; the screen is found in the map plus what this run learned so far.
+3. Miss → exit 2 with "did you mean" for close names (never used on its own) and the screen
+   listing, so exploring from there costs no extra read or turn. Unknown or transparent
+   start screen → exit 2, no `back` presses. A phrase bound to two screens → exit 2.
+4. Fewest steps from the current screen over usable steps: a selector, not money-moving
+   (pay, transfer, confirm, delete, log out … in its label, recomputed on every load; or into a
+   password screen or one titled confirm / checkout / enter PIN, decided when the screen is
+   read), not failed in this run, not retired (its last two results on this app version
+   failed). `--dry-run` prints the route.
+5. Each step taps on the screen just read, then polls until the screen *is* the step's
+   target, or fits it without fitting the screen it left (a page the map holds twice, with
+   and without its title). The screen it started from means "still on the way"; another screen holding for
+   1.5 s means the step went wrong. A wrong step stops with exit 1, prints the screen, and is
+   not tried again in this run; the way the agent then finds is learned and preferred.
+6. On arrival it prints the screen like `observe` (and refreshes `last-screen.xml`), so the
+   agent's next step needs no `observe`. Each step is an ordinary `tap` event (replay re-runs
+   it); a `nav` event records the outcome; the dashboard holds it between steps (3, 5).
+
+**Observability.** Every `goto` is a `nav` event (asked for, outcome, steps, time, why it
+broke); the run report has a *Navigation map* section listing them with "N of M arrived by
+the map" and what the run taught; `stop` prints the same line.
+
+`tnazar map` lists the screens, names and usable steps (`--edges` every step and why one is
+not used); `map audit` prints every readable string stored; `map compact` folds the file.
+
+### 15.4 One driver per device, across homes and machines
+
+Two teams, a smoke script beside an agent, or two laptops on one device farm each have their
+own `TNAZAR_HOME`, so the per-home `active.json` cannot see each other. `start` therefore
+writes the owner on the device itself (`/data/local/tmp/tnazar-owner`: host, home, run,
+time) and refuses while another home's run still holds it: on the same machine, while that
+home still tracks the run as active; from another machine, for 12 hours. `stop` clears it.
+An abandoned owner is taken over with a line saying whose run it was; `--take-over` forces
+it; `replay` checks and claims it too. Found when a smoke script started on an emulator another
+run was driving.
 
 ## 16. Design decisions and trade-offs
 
@@ -982,8 +1072,10 @@ teesri_nazar/
 ├── ui.py / ui.html         `tnazar ui`: localhost server + the three-pane page
 ├── usage.py                token cost per test case, from the Claude Code session log
 ├── plan.py                 plan files: parse and validate (`tnazar run`)
+├── ident.py                screen identity for the learned map (same screen across data and scroll)
+├── navmap.py               the learned map: learn from a run's events, store, fold, route
 ├── runner.py               run every case of a plan; hand back on a dashboard message
-├── appmap.py               `tnazar flow` / `flows`: run one saved route on the active run
+├── appmap.py               `tnazar flow` / `flows` (saved routes), `goto` / `map` (learned routes)
 └── visual.py               optional screenshot comparison via headless Claude
 CLAUDE.md                   the tester playbook Claude follows
 .claude/skills/test-feature the "test a feature" skill

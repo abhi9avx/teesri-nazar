@@ -5,7 +5,7 @@ dashboard acceptance list (ARCHITECTURE.md). Run it before calling a dashboard c
     python3 scripts/smoke_dashboard.py [--device emulator-5554]
 
 It drives the system Settings app (on every Android device; nothing app-specific), in a
-throwaway TNAZAR_HOME, so it never touches your runs or `.tnazar/`. Needs `node` to render
+throwaway TNAZAR_HOME and TNAZAR_MAP_DIR, so it never touches your runs, `.tnazar/` or your maps. Needs `node` to render
 the timeline the way the page does. Exit 0 when every check passed.
 """
 
@@ -40,7 +40,8 @@ end
 class Smoke:
     def __init__(self, device: str | None):
         self.home = tempfile.mkdtemp(prefix="tnazar-smoke-")
-        self.env = {**os.environ, "TNAZAR_HOME": self.home, **({"ANDROID_SERIAL": device} if device else {})}
+        self.env = {**os.environ, "TNAZAR_HOME": self.home, "TNAZAR_MAP_DIR": os.path.join(self.home, "maps"),
+                    **({"ANDROID_SERIAL": device} if device else {})}
         self.results: list[tuple[str, bool, str]] = []
         self.procs: list[subprocess.Popen] = []
 

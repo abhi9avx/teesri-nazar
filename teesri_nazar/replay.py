@@ -16,8 +16,9 @@ from . import uia2
 from . import report as rpt
 from . import screen as scr
 from . import visual
-from .adb import Adb, adb_binary, pick_serial
-from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, evidence_shot
+from .adb import Adb, AdbError, adb_binary, pick_serial
+from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, check_device_owner, device_owner_of, evidence_shot
+from .errors import UserError
 from .session import Run, get_active, now_iso, stamp
 
 SETTLE = 0.3
@@ -143,6 +144,13 @@ def run(args) -> int:
         return EXIT_ERROR
     smeta = source.meta()
     adb = Adb(pick_serial(args.device))
+    try:
+        took_over = check_device_owner(adb, adb.serial, False)  # another home's live run: not ours to drive
+    except UserError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if took_over:
+        print(took_over)
     meta = {"replay_of": source.name, "device": adb.serial, "prompt": smeta.get("prompt", ""),
             "package": smeta.get("package", ""), "model": "", "fresh": args.fresh,
             "android": adb.shell("getprop", "ro.build.version.release").strip()}
@@ -152,6 +160,11 @@ def run(args) -> int:
             print(f"note: recorded on {smeta['app_version']}, replaying on {meta['app_version']}")
     meta["animations_before"] = None
     target = Run.create(f"{source.name}-replay-{stamp()}", meta)
+    owner = device_owner_of(target)
+    try:
+        dev.claim_device(adb, owner)
+    except AdbError as exc:
+        print(f"warning: could not mark the device as in use: {exc}", file=sys.stderr)
     ctx = Ctx(adb, target)
     print(f"replaying {source.name} on {adb.serial} -> {target.name}")
     skipping = False
@@ -220,6 +233,10 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
+        try:
+            dev.release_device(adb, owner)
+        except AdbError as exc:  # never at the cost of restoring the device or writing the report
+            print(f"warning: could not clear the device's in-use mark: {exc}", file=sys.stderr)
         uia2.stop(adb)
         if meta["animations_before"] is not None:
             dev.animations_restore(adb, meta["animations_before"])

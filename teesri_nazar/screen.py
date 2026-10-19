@@ -30,6 +30,7 @@ class Element:
     scrollable: bool = False
     password: bool = False
     package: str = ""
+    selected: bool = False  # the current tab; not shown by `observe` (its output is pinned)
 
     @property
     def center(self) -> tuple[int, int]:
@@ -72,7 +73,7 @@ def _quote(s: str, limit: int = 60) -> str:
 _QUOTES = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})
 
 
-def _norm(s: str) -> str:
+def norm(s: str) -> str:
     return " ".join(s.translate(_QUOTES).split()).casefold()
 
 
@@ -122,6 +123,7 @@ def parse(xml: str) -> Screen:
             scrollable=a("scrollable") == "true",
             password=a("password") == "true",
             package=a("package", ""),
+            selected=a("selected") == "true",
         ))
     package = elements[0].package if elements else ""
     return Screen(elements, xml, (width, height), package)
@@ -195,7 +197,7 @@ class Selector:
 
 
 def _text_match(wanted: str, actual: str, contains: bool) -> bool:
-    w, a = _norm(wanted), _norm(actual)
+    w, a = norm(wanted), norm(actual)
     return bool(a) and (w in a if contains else w == a)
 
 

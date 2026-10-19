@@ -45,6 +45,8 @@ COMMANDS = (
     Command("run", None),
     Command("flow", None, device=True),  # its steps record their own events
     Command("flows", None),
+    Command("goto", None, device=True),  # like flow: its taps record their own events
+    Command("map", None),
     Command("ui", None),
     Command("devices", None),
     Command("packages", None),
@@ -64,4 +66,5 @@ ACTION_EVENTS = frozenset(c.event for c in COMMANDS if c.action)
 PLAN_STEPS = frozenset(c.name for c in COMMANDS if c.in_plans)
 NOT_IN_PLANS = frozenset(c.name for c in COMMANDS if not c.in_plans)
 # Events that only narrate or record the user's input: replay skips them.
-NARRATION_EVENTS = frozenset({"note", "say", "user_msg", "hold", "if", "io"})  # "io": logged by older runs
+NARRATION_EVENTS = frozenset({"note", "say", "user_msg", "hold", "if", "io",  # "io": logged by older runs
+                              "seen", "nav"})  # the navigation map's: a screen read, a goto's outcome

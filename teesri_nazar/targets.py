@@ -52,7 +52,8 @@ def selector_of(raw: str | None, contains: bool = False) -> scr.Selector:
 
 
 def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
-    """Find where to act. Returns {xy, selector, label, element, screen}."""
+    """Find where to act. Returns {xy, selector, label, element, screen}; `screen` is None unless
+    it was read just now (an `#index` resolves against the last `observe`)."""
     kind, value = parse_target(raw, args)
     if kind == "xy":
         return {"xy": value, "selector": None, "label": raw, "element": None, "screen": None}
@@ -61,12 +62,17 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
         width, height = ctx.adb.screen_size()
         xy = (round(width * value[0] / 100), round(height * value[1] / 100))
         return {"xy": xy, "selector": None, "label": raw, "element": None, "screen": None}
+    fresh = kind != "index"  # an index points into the last `observe`, which may be old
     if kind == "index":
         screen = ctx.last_screen()
         if value >= len(screen.elements):
             raise NotFound(f"#{value} is not on the last observed screen")
         el = screen.elements[value]
         sel = scr.stable_selector(screen, el)
+        if sel.is_empty() and (inner := _label_inside(screen, el)) is not None:
+            # A list row is often an unlabelled container with its label on a text inside it:
+            # tapping that text is the same tap, and it can be found again (replay, the map).
+            el, sel = inner, scr.stable_selector(screen, inner)
     else:
         sel = value
         if timeout:
@@ -78,7 +84,26 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
             raise NotFound(_not_found_msg(sel, screen))
     label = env.mask(el.text or el.desc) or el.short_id or el.short_cls
     return {"xy": el.center, "selector": sel.to_dict() or None, "label": label,
-            "element": el, "screen": screen}
+            "element": el, "screen": screen if fresh else None}
+
+
+def _label_inside(screen: scr.Screen, box: scr.Element) -> scr.Element | None:
+    """The row's own label: a plain (not clickable) text inside it whose selector is unique. A
+    clickable child is another control (an avatar, a checkbox); a list or the whole screen is not
+    a row."""
+    l, t, r, b = box.bounds
+    w, h = screen.size
+    if box.scrollable or (r - l) * (b - t) > w * h / 2:
+        return None
+    for e in screen.elements:
+        el_, et, er, eb = e.bounds
+        if e is box or e.clickable or e.password or not (e.text or e.desc):
+            continue
+        if l <= el_ and t <= et and er <= r and eb <= b:
+            sel = scr.stable_selector(screen, e)
+            if not sel.is_empty() and not sel.nth:
+                return e
+    return None
 
 
 def _not_found_msg(sel: scr.Selector, screen: scr.Screen) -> str:

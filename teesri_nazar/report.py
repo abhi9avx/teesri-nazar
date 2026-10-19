@@ -168,11 +168,53 @@ def to_markdown(run: Run, s: dict) -> str:
         out.append("")
     if s["bugs"]:
         out += ["## Bugs found", ""] + [f"- {b['text']} (case {b.get('case') or '-'})" for b in s["bugs"]] + [""]
+    out += _nav_markdown(run, m)
     if s["slow"]:
         out += [f"## Slow steps (> {SLOW_MS / 1000:g} s)", "", "| Case | Step | Took | Why |", "|---|---|---|---|"]
         out += [f"| {_case_of(s, e) or '-'} | {step_label(e)} | {e['dur_ms'] / 1000:.1f}s | {slow_reason(e)} |"
                 for e in s["slow"]] + [""]
     return "\n".join(out)
+
+
+NAV_OUTCOMES = {"arrived": "arrived", "failed": "a step broke", "unknown": "not in the map",
+                "start_unknown": "start screen unknown", "no_route": "no usable route", "conflict": "two screens",
+                "stopped": "stopped by you", "flow": "saved flow"}
+
+
+def nav_rows(run: Run) -> list[dict]:
+    return [e for e in run.events() if e["type"] == "nav"]
+
+
+def _nav_table(run: Run, m: dict) -> tuple[list[list[str]], list[str]]:
+    """What the navigation map did in this run: a row per goto, and the summary lines."""
+    rows, notes = [], []
+    for e in nav_rows(run):
+        took = f"{e['took_ms'] / 1000:.1f}s" if e.get("took_ms") is not None else ""
+        detail = f"expected {e.get('expected')}: {e.get('why')}" if e["outcome"] == "failed" else e.get("flow") or ""
+        rows.append([" ".join(str(e["phrase"]).split()), NAV_OUTCOMES.get(e["outcome"], e["outcome"]),
+                     str(e.get("hops", "")), took, " ".join(str(detail).split())])
+    if rows:
+        hits = sum(1 for r in rows if r[1] == "arrived")
+        notes.append(f"{hits} of {len(rows)} goto(s) arrived by the map.")
+    if m.get("map_learned"):
+        notes.append(m["map_learned"])
+    return rows, notes
+
+
+NAV_HEAD = ["Asked for", "Outcome", "Steps", "Took", "Detail"]
+
+
+def _nav_markdown(run: Run, m: dict) -> list[str]:
+    rows, notes = _nav_table(run, m)
+    if not rows and not notes:
+        return []
+    out = ["## Navigation map", ""]
+    if rows:
+        out += ["| " + " | ".join(NAV_HEAD) + " |", "|---|---|---|---|---|"]
+        out += ["| " + " | ".join(c.replace("|", "\\|") for c in r) + " |" for r in rows] + [""]
+    for n in notes:
+        out += [n, ""]
+    return out
 
 
 def _case_of(s: dict, e: dict) -> str | None:
@@ -243,7 +285,7 @@ def to_html(run: Run, s: dict) -> str:
 {prompt}<div class="tiles">{tiles}</div>
 <p class="muted">checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed</p>
 <table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th>{'<th>Tokens</th>' if tokens else ''}<th>Reason</th></tr>{''.join(rows)}</table>
-<h2>Details</h2>{''.join(cards)}{_slow_html(s)}
+<h2>Details</h2>{''.join(cards)}{_nav_html(run, m)}{_slow_html(s)}
 </main></body></html>
 """
 
@@ -270,6 +312,17 @@ def _figure(path: str, caption: str, tooltip: str, cls: str) -> str:
     e = html.escape
     return (f"<figure class='{cls}'><a href='{e(path)}'><img loading='lazy' src='{e(path)}' alt='{e(caption)}'></a>"
             f"<figcaption title='{e(tooltip)}'>{e(caption)}</figcaption></figure>")
+
+
+def _nav_html(run: Run, m: dict) -> str:
+    rows, notes = _nav_table(run, m)
+    if not rows and not notes:
+        return ""
+    e = html.escape
+    head = "<tr>" + "".join(f"<th>{h}</th>" for h in NAV_HEAD) + "</tr>"
+    table = "".join("<tr>" + "".join(f"<td>{e(c)}</td>" for c in r) + "</tr>" for r in rows)
+    return ("<h2>Navigation map</h2>" + (f"<table>{head}{table}</table>" if rows else "")
+            + "".join(f"<p class='muted'>{e(n)}</p>" for n in notes))
 
 
 def _slow_html(s: dict) -> str:

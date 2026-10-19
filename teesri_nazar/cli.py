@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -14,6 +16,7 @@ from . import __version__
 from . import commands
 from . import device as dev
 from . import live
+from . import navmap
 from . import uia2
 from . import report as rpt
 from . import screen as scr
@@ -21,7 +24,8 @@ from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
 from .judge import _end_case, evidence_shot
-from .session import NAME_RE, Run, active_owner, clear_active, get_active, now_iso, runs_dir, set_active, state_dir
+from .session import (NAME_RE, Run, active_owner, clear_active, get_active, home, now_iso, runs_dir, set_active,
+                      state_dir)
 from .targets import _not_found_msg, parse_target, resolve, selector_of
 
 EXIT_FAIL = 1
@@ -66,6 +70,33 @@ class Ctx:
         screen = scr.capture(self.adb)
         save_xml(state_dir() / "last-screen.xml", screen.xml)
         return screen
+
+    def stamp_target(self, t: dict) -> dict:
+        """The screen a tap acted on and, for the map, the element's most durable selector (its
+        id survives a renamed label). Empty when the screen was not read for this step."""
+        sid = self.stamp(t["screen"])
+        if not sid:
+            return {}
+        out = {"sid": sid}
+        try:
+            stable = scr.stable_selector(t["screen"], t["element"]).to_dict()
+        except Exception as exc:  # noqa: BLE001 - same rule as stamp()
+            print(f"warning: map: {exc}", file=sys.stderr)
+            return out
+        if stable and not stable.get("nth") and stable != t["selector"]:
+            out["stable"] = stable
+        return out
+
+    def stamp(self, screen: scr.Screen | None, it=None) -> str | None:
+        """The screen's identity for the navigation map, recorded on the command's event. Never
+        fails the command: learning is a by-product, not part of the step."""
+        if screen is None or self.run is None or not navmap.enabled():
+            return None
+        try:
+            return navmap.stamp(self.run, screen, it)
+        except Exception as exc:  # noqa: BLE001 - a map problem must never change a step's result
+            print(f"warning: map: {exc}", file=sys.stderr)
+            return None
 
     def last_screen(self) -> scr.Screen:
         f = state_dir() / "last-screen.xml"
@@ -119,6 +150,7 @@ def cmd_start(args) -> int:
         finish_run(quiet=True)
     serial = pick_serial(args.device)
     adb = Adb(serial)
+    took_over = check_device_owner(adb, serial, args.take_over)
     model = next((d.model for d in list_devices() if d.serial == serial), "")
     meta = {
         "device": serial,
@@ -136,11 +168,17 @@ def cmd_start(args) -> int:
         meta["animations_before"] = dev.animations_off(adb)
     run = Run.create(args.name, meta)
     set_active(run, serial)
+    try:
+        dev.claim_device(adb, device_owner_of(run))
+    except AdbError as exc:  # a locked-down device: run as before, only unguarded
+        print(f"warning: could not mark the device as in use: {exc}", file=sys.stderr)
     live.mark_all_read()  # messages typed before this run are not instructions for it
     live.clear_agent_status()
     live.set_paused(False)
     dev.logcat_clear(adb)
     print(f"run: {run.name}  device: {serial} {model}".rstrip())
+    if took_over:
+        print(took_over)
     print(f"dir: {run.path}")
     if args.package:
         print(f"app: {args.package} {meta.get('app_version', '')}".rstrip())
@@ -150,8 +188,43 @@ def cmd_start(args) -> int:
             print("app data cleared")
     if not args.keep_animations:
         print("animations: off (restored on stop)")
+    if args.package:
+        print(f"map: learning routes into {navmap.map_dir() / args.package}" if navmap.enabled() else "map: off")
     print(uia2.start_line(adb))
     return 0
+
+
+def device_owner_of(run: Run) -> dict:
+    return {"host": socket.gethostname(), "home": str(home().resolve()), "run": run.name, "t": int(time.time())}
+
+
+def check_device_owner(adb: Adb, serial: str, take_over: bool) -> str:
+    """One driver per device across every home and machine (two teams, a script beside an agent):
+    refuse while another live run holds it; take over one that is gone, and say so."""
+    other = dev.device_owner(adb)
+    if not other or (other["home"] == str(home().resolve()) and other["host"] == socket.gethostname()):
+        return ""
+    who = f"run {other['run']} from {other['home']} on {other['host']}"
+    if not take_over and _still_running(other, serial):
+        raise UserError(f"{serial} is in use by {who}. Stop that run first, or start with --take-over "
+                        f"if it is abandoned")
+    return f"took over the device from {who}"
+
+
+def _still_running(other: dict, serial: str) -> bool:
+    if other["host"] != socket.gethostname():
+        try:
+            return time.time() - float(other["t"]) < dev.OWNER_STALE_S
+        except ValueError:
+            return False
+    active = Path(other["home"]) / ".tnazar" / "active.json"
+    try:
+        data = json.loads(active.read_text())
+    except PermissionError:
+        return True  # another user's run on this machine: assume it is live; --take-over decides
+    except (OSError, ValueError):
+        return False
+    return Path(data.get("run", "")).name == other["run"] and data.get("device") == serial
 
 
 def refuse_if_owned(run: Run) -> None:
@@ -168,6 +241,7 @@ def finish_run(quiet: bool = False) -> Run | None:
     meta = run.meta()
     try:
         adb = Adb(serial)
+        dev.release_device(adb, device_owner_of(run))
         uia2.stop(adb)
         if meta.get("animations_before"):
             dev.animations_restore(adb, meta["animations_before"])
@@ -176,7 +250,8 @@ def finish_run(quiet: bool = False) -> Run | None:
                      "reason": "run stopped before the case finished"})
     except AdbError as exc:
         print(f"warning: device cleanup skipped: {exc}", file=sys.stderr)
-    run.update_meta(finished_at=now_iso())
+    learned = _learn(run, meta)
+    run.update_meta(finished_at=now_iso(), **({"map_learned": learned} if learned else {}))
     clear_active()
     live.set_paused(False)
     paths = rpt.write(run)
@@ -186,7 +261,20 @@ def finish_run(quiet: bool = False) -> Run | None:
         print(rpt.summary_line(summary))
         for p in paths:
             print(f"report: {p}")
+        if learned:
+            print(learned)
     return run
+
+
+def _learn(run: Run, meta: dict) -> str:
+    """Add what this run taught about the app to its navigation map (once per run)."""
+    if not navmap.enabled() or not meta.get("package"):
+        return ""
+    try:
+        return navmap.learn_run(run, meta["package"], meta.get("app_version", ""))
+    except Exception as exc:  # noqa: BLE001 - never block stopping a run
+        print(f"warning: map: nothing learned from this run: {exc}", file=sys.stderr)
+        return ""
 
 
 def cmd_stop(args) -> int:
@@ -235,19 +323,23 @@ def cmd_open_url(args) -> int:
 def cmd_observe(args) -> int:
     ctx = Ctx.from_args(args.device)
     screen = ctx.capture()
-    shown = screen.elements if args.all else screen.interesting()
-    fg = screen.package or "?"
-    print(f"screen: {fg}  "
-          f"{len(screen.elements)} elements ({len(shown)} shown)")
-    values = secret_values()
-    for e in shown:
-        print(describe(e, values))
+    print_screen(screen, args.all)
+    if sid := ctx.stamp(screen):
+        ctx.log({"type": "seen", "sid": sid})
     if ctx.run:
         save_xml(ctx.artifact("dumps", args.label or "observe", "xml"), screen.xml)
     if args.shot:
         path = dev.screenshot(ctx.adb, ctx.artifact("shots", args.label or "observe", "png"))
         print(f"shot: {path}")
     return 0
+
+
+def print_screen(screen: scr.Screen, everything: bool = False) -> None:
+    shown = screen.elements if everything else screen.interesting()
+    print(f"screen: {screen.package or '?'}  {len(screen.elements)} elements ({len(shown)} shown)")
+    values = secret_values()
+    for e in shown:
+        print(describe(e, values))
 
 
 def _missed(ctx: "Ctx", event: dict, exc: NotFound) -> NotFound:
@@ -267,8 +359,10 @@ def cmd_tap(args) -> int:
         dev.long_press(ctx.adb, x, y)
     else:
         dev.tap(ctx.adb, x, y)
-    ctx.log({"type": "tap", "selector": t["selector"], "xy": [x, y], "label": t["label"],
-             "long": args.long, "screen": _screen_size(ctx)})
+    event = {"type": "tap", "selector": t["selector"], "xy": [x, y], "label": t["label"],
+             "long": args.long, "screen": _screen_size(ctx)}
+    event.update(ctx.stamp_target(t))
+    ctx.log(event)
     print(f"{'long-pressed' if args.long else 'tapped'} {t['label']!r} at {x},{y}")
     return 0
 
@@ -305,7 +399,7 @@ def cmd_type(args) -> int:
     dev.type_text(ctx.adb, text)
     if args.enter:
         dev.key(ctx.adb, "enter")
-    ctx.log({
+    event = {
         "type": "type",
         "text": None if secret else text,
         "secret": secret,
@@ -315,7 +409,10 @@ def cmd_type(args) -> int:
         "screen": _screen_size(ctx) if target else None,
         "clear": args.clear,
         "enter": args.enter,
-    })
+    }
+    if target and (sid := ctx.stamp(target["screen"])):
+        event["sid"] = sid
+    ctx.log(event)
     shown = "•" * len(text) if secret else repr(text)
     where = f" into {target['label']!r}" if target else ""
     print(f"typed {shown}{where}{' + enter' if args.enter else ''}")
@@ -362,8 +459,11 @@ def cmd_scroll(args) -> int:
             break  # reached the end of the list
     if goal and not found:
         found = scr.find(screen, goal)
-    ctx.log({"type": "scroll", "direction": args.direction, "to": goal.to_dict() if goal else None,
-             "within": args.within, "times": args.times, "found": bool(found) if goal else None})
+    event = {"type": "scroll", "direction": args.direction, "to": goal.to_dict() if goal else None,
+             "within": args.within, "times": args.times, "found": bool(found) if goal else None}
+    if goal and (sid := ctx.stamp(screen)):
+        event["sid"] = sid  # the read after the last swipe; a sideways or --within read is before it
+    ctx.log(event)
     if goal:
         if not found:
             print(f"scrolled {args.direction}; {goal} not found")
@@ -390,8 +490,11 @@ def cmd_wait(args) -> int:
     stats: dict = {}
     ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, alternatives=alts)
     instead = alts[stats["alternative"]] if "alternative" in stats else None
-    ctx.log({"type": "wait", "selector": sel.to_dict(), "gone": args.gone, "timeout": args.timeout, "ok": ok,
-             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None})
+    event = {"type": "wait", "selector": sel.to_dict(), "gone": args.gone, "timeout": args.timeout, "ok": ok,
+             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None}
+    if ok and (sid := ctx.stamp(screen)):
+        event["sid"] = sid
+    ctx.log(event)
     state = "gone" if args.gone else "visible"
     if instead:
         print(f"found instead: {instead} {describe(el)}")
@@ -443,6 +546,8 @@ def cmd_check(args) -> int:
     if screen is not None:
         # Same screen, same fingerprint: the report shows one screenshot for all its checks.
         event["screen_sig"] = hashlib.sha1(screen.signature().encode()).hexdigest()[:12]
+        if ok and (sid := ctx.stamp(screen)):
+            event["sid"] = sid
     if shot := evidence_shot(ctx, f"check-{label}"):
         event["shot"] = shot
     if ctx.run and not ok:
@@ -602,6 +707,16 @@ def cmd_flows(args) -> int:
     return appmap.list_flows(args)
 
 
+def cmd_map(args) -> int:
+    from . import appmap
+    return appmap.cmd_map(args)
+
+
+def cmd_goto(args) -> int:
+    from . import appmap
+    return appmap.goto(args)
+
+
 def cmd_replay(args) -> int:
     from . import replay
     return replay.run(args)
@@ -642,6 +757,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fresh", action="store_true", help="force-stop and clear app data first")
     p.add_argument("--prompt", help="the original request, kept in the report")
     p.add_argument("--keep-animations", action="store_true", help="do not turn off system animations")
+    p.add_argument("--take-over", action="store_true",
+                   help="start even if another home's run holds the device (it was abandoned)")
 
     p = add("stop", cmd_stop, "finish the active run and write the report")
     p.add_argument("--quiet", action="store_true")
@@ -767,6 +884,20 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("flows", cmd_flows, "list the saved routes (the app map) for the active run's app")
     p.add_argument("--plan", metavar="FILE", help="list only this file's flows")
 
+    p = add("goto", cmd_goto, "go to a screen by a route learned in earlier runs (or a saved flow), in one command")
+    p.epilog = ("exit codes: 0 arrived, already there, or --dry-run; 1 a step went somewhere else (the screen is "
+                "printed); 2 not in the map, start screen unknown, no usable route, or the phrase means two "
+                "screens (the screen is printed); 3 a dashboard message; 5 paused")
+    p.add_argument("target", nargs="+", help='what the user asked for ("passbook") or a screen id from `map`')
+    p.add_argument("--dry-run", action="store_true", help="show the route without tapping")
+    p.add_argument("--timeout", type=float, default=10, help="seconds to wait for each screen on the way")
+    p = add("map", cmd_map, "what tnazar learned about the run's app: screens, routes, names")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "name", "forget", "audit", "compact"])
+    p.add_argument("args", nargs="*", help="name: <screen-id|here> <phrase>; forget: <phrase|screen-id|route-id>")
+    p.add_argument("--alias", action="append", default=[], help="name: another phrase for the same screen")
+    p.add_argument("--edges", action="store_true", help="list: also list the routes")
+    p.add_argument("--app", help="the app package (default: the active run's app)")
+
     p = add("replay", cmd_replay, "re-run a recorded run on a device and re-check every verification")
     p.add_argument("run")
     p.add_argument("--fresh", action="store_true", help="clear app data before replaying")
@@ -788,7 +919,7 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     try:
         active = get_active() if args.cmd in HELD else None
-        if active and (held := _hold(active[0])) is not None:
+        if active and (held := hold(active[0])) is not None:
             return held
         try:
             # `adb logcat` only reads, and may stream for minutes: it must not block typing.
@@ -814,7 +945,7 @@ def main(argv: list[str] | None = None) -> int:
         return 130
 
 
-def _hold(run: Run) -> int | None:
+def hold(run: Run) -> int | None:
     """Stop a device command when the user paused the run or left a message it has not seen."""
     if live.paused():
         print(f"|| paused from the dashboard; waiting up to {int(live.PAUSE_WAIT)}s for resume")

@@ -73,20 +73,41 @@ screen, add `--or <the error you would see>` so a failure is noticed in ~1 s, no
 timeout. Run several cases in one command when you can: every model turn re-reads the whole
 conversation.
 
-**App map: don't explore a route twice.** Before exploring your way to a screen ("open the
-help chat", "go to settings"), run `./tnazar flows`: it lists the saved routes for the run's
-app (the `flow`s in `plans/*.plan`). If one fits, `./tnazar flow <name>` runs it in one
-command (each step logged as usual; exit codes as for any device command: 1 a step or check
-failed, 2 no such flow or a bad `--plan` file, 3 a dashboard message stopped it, 4 a `wait --or`
-saw the other screen, 5 paused). After finding a new route by hand, save it as a
-`flow` in `plans/<app>.plan` (a file of `app <package>` plus flows; no case needed) with the
-selectors you used and a `wait` for the screen it ends on, so the next request is one command.
+**Navigation: `goto` first, explore second.** Before exploring your way to a screen the user
+named ("open my passbook", "check my active loan"), run `./tnazar goto "<what they asked>"`.
+It reaches the screen in one command when any earlier run walked there (a saved `flow` of that
+name wins), verifying each step, and prints the screen it arrived on: no `observe` needed.
+
+- Spell the phrase right first: when `tnazar map` lists a close name, use it ("pasbook" →
+  `passbook`). A miss prints `Did you mean: …?`; it never guesses.
+- Exit 2 (not in the map, unknown start screen, two screens with that name): it already printed
+  the current screen, so explore from there. Exit 1: a learned step broke (new build); explore
+  from the screen it printed.
+- When exploring, `check` the screen you were sent to with its own words (`check "Passbook"`):
+  that check is what teaches the map the name. Check something only that screen shows, such as
+  its title (`check desc="Internet"`), not a row of the same name on the screen before it. If the
+  user's word is not on the screen, `./tnazar map name here "<their word>"` after you arrive.
+- `goto` exit 2 "no route the map can run": the screen is known but the way there is not
+  replayable yet; explore as usual, tapping labelled elements (text, desc, id) so it becomes one.
+- If you named the wrong screen, fix it at once: `./tnazar map name <right screen id> "<phrase>"`
+  or `./tnazar map forget "<phrase>"`.
+- On an unknown screen try the bottom navigation and the menu/profile first; routes through a
+  search box are not replayed, so they never get fast.
+- Long multi-part asks ("statement of my active loan"): `goto` the part the map knows
+  (`active loan`), explore only the rest.
+- Money-moving steps (pay, transfer, confirm, MPIN screens) are never replayed by `goto`.
+- A route you will run in plans or share for review still belongs in a `flow` in
+  `plans/<app>.plan` (`./tnazar flows` lists them; `./tnazar flow <name>` runs one: exit 1 a
+  step or check failed, 2 no such flow, 3 a dashboard message, 4 a `wait --or` saw the other
+  screen, 5 paused).
 
 **One driver.** Only you drive the device: no planner agent hands you steps (the hand-off
 costs more than it saves, and two drivers fight over one phone). Use sub-agents only for
 work that never touches the device: writing the plan file, the report, reviewing code.
 
 ```bash
+./tnazar goto "passbook"                # learned route: one command, each step verified
+./tnazar map                            # what was learned: screens, names, usable steps
 ./tnazar flows                          # saved routes for the run's app, one line each
 ./tnazar flow open_settings             # run one against the active run
 ./tnazar flow open_settings --plan plans/other.plan   # when two files define it

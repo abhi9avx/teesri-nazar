@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from unittest import mock
 
 from fakedevice import PACKAGE, tnazar
 from teesri_nazar import cli
@@ -109,3 +110,104 @@ class OwnershipTest(PlanRunBase):
 def _started(pid):
     from teesri_nazar.session import process_started
     return process_started(pid)
+
+
+class DeviceOwnerTest(PlanRunBase):
+    """One device, many homes (teams, scripts, machines): the device itself says who drives it.
+    Found when a smoke script in its own TNAZAR_HOME started while another run was live."""
+
+    def other_home(self):
+        other = os.path.join(self.home, "other-team")
+        os.makedirs(other, exist_ok=True)
+        return mock.patch.dict(os.environ, {"TNAZAR_HOME": other})
+
+    def test_a_second_home_cannot_start_on_a_device_another_home_is_driving(self):
+        self.start()
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("is in use by run", err)
+        self.assertIn(os.path.realpath(self.home), err)
+
+    def test_after_stop_another_home_may_start(self):
+        self.start()
+        self.assertEqual(tnazar("stop")[0], 0)
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE)
+        self.assertEqual(code, 0, out + err)
+
+    def test_a_run_whose_home_stopped_tracking_it_is_taken_over_with_a_note(self):
+        self.start()
+        (state_dir() / "active.json").unlink()  # crashed, or its folder was wiped: not running any more
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("took over the device from run", out)
+
+    def test_take_over_is_explicit(self):
+        self.start()
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE, "--take-over")
+        self.assertEqual(code, 0, out + err)
+
+    def test_the_same_home_still_replaces_its_own_unstopped_run(self):
+        self.start()
+        code, out, err = tnazar("start", "again", "--package", PACKAGE)
+        self.assertEqual(code, 0, out + err)
+
+
+class DeviceOwnerHostTest(PlanRunBase):
+    def test_the_same_home_path_on_another_machine_is_another_owner(self):
+        import time
+        from teesri_nazar import device
+        device.claim_device(self.adb, {"host": "ci-runner-7", "home": os.path.realpath(self.home),
+                                       "run": "theirs", "t": int(time.time())})
+        code, out, err = tnazar("start", "mine", "--package", PACKAGE)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("is in use by run theirs", err)
+
+    def test_an_owner_whose_state_cannot_be_read_is_treated_as_running(self):
+        self.start()
+        other = os.path.join(self.home, "other-user")
+        os.makedirs(other)
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}), \
+                mock.patch("pathlib.Path.read_text", side_effect=PermissionError("not yours")):
+            from teesri_nazar import cli
+            self.assertTrue(cli._still_running({"host": cli.socket.gethostname(), "home": self.home,
+                                                "run": "demo", "t": "0"}, "fake-1"))
+
+
+class ReleaseTest(PlanRunBase):
+    def test_stop_never_removes_another_machines_claim_with_the_same_home_and_run_name(self):
+        import time
+        from teesri_nazar import device
+        self.start()
+        theirs = {"host": "ci-runner-7", "home": os.path.realpath(self.home), "run": "demo", "t": int(time.time())}
+        device.claim_device(self.adb, theirs)  # taken over from the other machine meanwhile
+        tnazar("stop")
+        self.assertEqual(device.device_owner(self.adb)["host"], "ci-runner-7")
+
+    def test_goto_help_lists_its_exit_codes(self):
+        import contextlib
+        import io
+        from teesri_nazar import cli
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            cli.main(["goto", "--help"])
+        for word in ("0 arrived", "1 a step", "2 ", "3 ", "5 "):
+            self.assertIn(word, buf.getvalue())
+
+
+class ReplayOwnerTest(PlanRunBase):
+    def test_replay_refuses_a_device_another_homes_run_is_driving(self):
+        self.start()
+        self.assertEqual(tnazar("stop")[0], 0)
+        self.start()  # live again, in this home
+        other = os.path.join(self.home, "other-team")
+        os.makedirs(other, exist_ok=True)
+        import shutil
+        shutil.copytree(os.path.join(self.home, "runs"), os.path.join(other, "runs"))
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}):
+            code, out, err = tnazar("replay", "demo")
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("is in use by run", err)
