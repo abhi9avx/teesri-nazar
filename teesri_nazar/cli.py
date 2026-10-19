@@ -553,6 +553,16 @@ def cmd_run(args) -> int:
     return runner.run(args)
 
 
+def cmd_flow(args) -> int:
+    from . import appmap
+    return appmap.run_flow(args)
+
+
+def cmd_flows(args) -> int:
+    from . import appmap
+    return appmap.list_flows(args)
+
+
 def cmd_replay(args) -> int:
     from . import replay
     return replay.run(args)
@@ -711,6 +721,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stop-on-fail", action="store_true", help="stop at the first case that does not pass")
     # Also accepted after `run`, where people type it; SUPPRESS keeps a value given before the command.
     p.add_argument("--device", "-s", default=argparse.SUPPRESS, help="device serial to run the plan on")
+
+    p = add("flow", cmd_flow, "run a saved route (a plan `flow`) on the active run, in one command")
+    p.add_argument("name")
+    p.add_argument("--plan", metavar="FILE", help="the plan file to take it from (default: plans/*.plan of the run's app)")
+    p = add("flows", cmd_flows, "list the saved routes (the app map) for the active run's app")
+    p.add_argument("--plan", metavar="FILE", help="list only this file's flows")
 
     p = add("replay", cmd_replay, "re-run a recorded run on a device and re-check every verification")
     p.add_argument("run")
