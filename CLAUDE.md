@@ -83,9 +83,12 @@ name wins), verifying each step, and prints the screen it arrived on: no `observ
 - Exit 2 (not in the map, unknown start screen, two screens with that name): it already printed
   the current screen, so explore from there. Exit 1: a learned step broke (new build); explore
   from the screen it printed.
-- When exploring, `check` the screen you were sent to with its own words
-  (`check "Passbook"`): that check is what teaches the map the name. If the user's word is not
-  on the screen, `./tnazar map name here "<their word>"` after you arrive.
+- When exploring, `check` the screen you were sent to with its own words (`check "Passbook"`):
+  that check is what teaches the map the name. Check something only that screen shows, such as
+  its title (`check desc="Internet"`), not a row of the same name on the screen before it. If the
+  user's word is not on the screen, `./tnazar map name here "<their word>"` after you arrive.
+- `goto` exit 2 "no route the map can run": the screen is known but the way there is not
+  replayable yet; explore as usual, tapping labelled elements (text, desc, id) so it becomes one.
 - If you named the wrong screen, fix it at once: `./tnazar map name <right screen id> "<phrase>"`
   or `./tnazar map forget "<phrase>"`.
 - On an unknown screen try the bottom navigation and the menu/profile first; routes through a

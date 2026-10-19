@@ -621,3 +621,20 @@ class SlowLoadTest(GotoBase):
         with mock.patch.object(self.adb, "_tick", slow):
             out = self.t("goto", "passbook")
         self.assertIn("arrived in 2 step(s)", out)
+
+
+class IndexTapTest(GotoBase):
+    """Found by the benchmark: agents tap list rows by #index, and a row is often an unlabelled
+    container whose label sits on a text inside it."""
+
+    def test_an_index_tap_on_an_unlabelled_row_records_the_label_inside_it(self):
+        self.adb.app.screens["home"].append(node(cls="android.widget.LinearLayout", bounds=(0, 1000, 1080, 1150)))
+        self.adb.app.screens["home"].append(node(text="Rewards", clickable=False, bounds=(40, 1030, 600, 1120)))
+        self.adb.app.on_tap[("home", "Rewards")] = "loans"
+        run = self.start()
+        out = self.t("observe")
+        row = [ln for ln in out.splitlines() if "LinearLayout" in ln][0].split("]")[0] + "]"
+        self.t("tap", "#" + row.strip("[]"))
+        tap = [e for e in run.events() if e["type"] == "tap"][-1]
+        self.assertEqual(tap["selector"], {"text": "Rewards"})
+        self.assertEqual(self.adb.current, "loans")

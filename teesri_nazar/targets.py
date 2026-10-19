@@ -69,6 +69,10 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
             raise NotFound(f"#{value} is not on the last observed screen")
         el = screen.elements[value]
         sel = scr.stable_selector(screen, el)
+        if sel.is_empty() and (inner := _label_inside(screen, el)) is not None:
+            # A list row is often an unlabelled container with its label on a text inside it:
+            # tapping that text is the same tap, and it can be found again (replay, the map).
+            el, sel = inner, scr.stable_selector(screen, inner)
     else:
         sel = value
         if timeout:
@@ -81,6 +85,16 @@ def resolve(ctx, raw: str | None, args, timeout: float = 0) -> dict:
     label = env.mask(el.text or el.desc) or el.short_id or el.short_cls
     return {"xy": el.center, "selector": sel.to_dict() or None, "label": label,
             "element": el, "screen": screen if fresh else None}
+
+
+def _label_inside(screen: scr.Screen, box: scr.Element) -> scr.Element | None:
+    l, t, r, b = box.bounds
+    for e in screen.elements:
+        el_, et, er, eb = e.bounds
+        if e is not box and (e.text or e.desc) and not e.password and l <= el_ and t <= et and er <= r and eb <= b:
+            if not scr.stable_selector(screen, e).is_empty():
+                return e
+    return None
 
 
 def _not_found_msg(sel: scr.Selector, screen: scr.Screen) -> str:
