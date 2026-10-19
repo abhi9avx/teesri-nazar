@@ -36,7 +36,7 @@ _BAR_IDS = ("toolbar", "action_bar", "app_bar", "appbar")
 @dataclass(frozen=True)
 class Ident:
     id: str                 # 8 hex characters; "" for a screen that is never stored
-    kind: str               # screen | loading | opaque | foreign
+    kind: str               # screen | loading | sparse | opaque | foreign
     tokens: frozenset       # the frame, hashed
     title: str              # hashed title, "" when the screen has none
     secure: bool            # never route into it: a password field, or a pay/transfer/... title
@@ -109,7 +109,12 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
     sid = hashlib.sha1((t_hash + "|" + tab + "|" + "|".join(sorted(frame)) + "|" + "|".join(sorted(content))
                         + "|" + "|".join(sorted(menu_h))).encode()).hexdigest()[:8]
     guarded = any(e.password for e in els) or (bool(title) and _unsafe_title(title))
-    return Ident(sid, "screen", frame, t_hash, guarded, content, tab, menu_h)
+    it = Ident(sid, "screen", frame, t_hash, guarded, content, tab, menu_h)
+    if sparse(it):
+        # Too little to say which page it is (a page still loading looks like this): never stored,
+        # transparent like a spinner. Better no step than one into the wrong page.
+        return Ident("", "sparse", frozenset(), "", guarded)
+    return it
 
 
 def same(a: Ident, b: Ident) -> bool:

@@ -198,6 +198,14 @@ class KindTest(unittest.TestCase):
         i = ident_of([node(text="Allow"), node(text="Don't allow")], package="com.android.permissioncontroller")
         self.assertEqual(i.kind, "foreign")
 
+    def test_a_nearly_empty_page_is_never_a_screen(self):
+        """Found by the benchmark: a page still loading (a back arrow and an empty list) looked like an
+        article and an info page, so three different pages became one node in the map."""
+        i = ident_of([node(desc="Navigate up", bounds=(0, 80, 120, 200)),
+                      node(id="body", cls="android.widget.ScrollView", clickable=False, scrollable=True,
+                           bounds=(0, 220, 1080, 2000))])
+        self.assertEqual((i.kind, i.id), ("sparse", ""))
+
     def test_transparent_kinds_have_no_id(self):
         i = ident_of([node(cls="android.widget.ProgressBar", clickable=False, bounds=(500, 1100, 580, 1180))])
         self.assertEqual(i.id, "")

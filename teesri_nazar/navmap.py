@@ -33,7 +33,7 @@ from pathlib import Path
 from . import ident
 from .errors import UserError
 
-SCHEMA = 3  # 2: screens carry their menu; 3: tab strips are not menu. An older map is moved aside and relearned
+SCHEMA = 4  # 2: screens carry their menu; 3: tab strips are not menu; 4: nearly empty pages are not screens. An older map is moved aside and relearned
 MAX_GAP = 60.0          # seconds between an action and the read that shows where it went
 EPISODE_ACTIONS = 25    # a phrase search ends after this many actions without a new goto
 MAX_SELECTOR = 24
