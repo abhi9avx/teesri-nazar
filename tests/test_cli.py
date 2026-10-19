@@ -105,7 +105,7 @@ class LifecycleTest(CliTestCase):
     def test_run_that_never_restored_animations_does_not_poison_the_next(self):
         self.start()  # device is lost before stop: animations stay at 0, nothing restores them
         with mock.patch.dict(os.environ, {"TNAZAR_HOME": os.path.join(self.home, "other")}):
-            self.ok("start", "second", "--package", PACKAGE)
+            self.ok("start", "second", "--package", PACKAGE, "--take-over")  # the first is abandoned
             self.ok("stop")
         self.assertEqual(self.adb.settings["window_animation_scale"], "1.0")
 
@@ -113,7 +113,7 @@ class LifecycleTest(CliTestCase):
         self.start()
         other = os.path.join(self.home, "other")
         with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}):
-            self.ok("start", "second", "--package", PACKAGE)
+            self.ok("start", "second", "--package", PACKAGE, "--take-over")
         self.ok("stop")
         with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}):
             self.ok("stop")

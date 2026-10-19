@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -22,7 +24,8 @@ from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
 from .judge import _end_case, evidence_shot
-from .session import NAME_RE, Run, active_owner, clear_active, get_active, now_iso, runs_dir, set_active, state_dir
+from .session import (NAME_RE, Run, active_owner, clear_active, get_active, home, now_iso, runs_dir, set_active,
+                      state_dir)
 from .targets import _not_found_msg, parse_target, resolve, selector_of
 
 EXIT_FAIL = 1
@@ -146,6 +149,7 @@ def cmd_start(args) -> int:
         finish_run(quiet=True)
     serial = pick_serial(args.device)
     adb = Adb(serial)
+    took_over = _check_device_owner(adb, serial, args.take_over)
     model = next((d.model for d in list_devices() if d.serial == serial), "")
     meta = {
         "device": serial,
@@ -163,11 +167,14 @@ def cmd_start(args) -> int:
         meta["animations_before"] = dev.animations_off(adb)
     run = Run.create(args.name, meta)
     set_active(run, serial)
+    dev.claim_device(adb, _owner(run))
     live.mark_all_read()  # messages typed before this run are not instructions for it
     live.clear_agent_status()
     live.set_paused(False)
     dev.logcat_clear(adb)
     print(f"run: {run.name}  device: {serial} {model}".rstrip())
+    if took_over:
+        print(took_over)
     print(f"dir: {run.path}")
     if args.package:
         print(f"app: {args.package} {meta.get('app_version', '')}".rstrip())
@@ -181,6 +188,37 @@ def cmd_start(args) -> int:
         print(f"map: learning routes into {navmap.map_dir() / args.package}" if navmap.enabled() else "map: off")
     print(uia2.start_line(adb))
     return 0
+
+
+def _owner(run: Run) -> dict:
+    return {"host": socket.gethostname(), "home": str(home().resolve()), "run": run.name, "t": int(time.time())}
+
+
+def _check_device_owner(adb: Adb, serial: str, take_over: bool) -> str:
+    """One driver per device across every home and machine (two teams, a script beside an agent):
+    refuse while another live run holds it; take over one that is gone, and say so."""
+    other = dev.device_owner(adb)
+    if not other or other["home"] == str(home().resolve()):
+        return ""
+    who = f"run {other['run']} from {other['home']} on {other['host']}"
+    if not take_over and _still_running(other, serial):
+        raise UserError(f"{serial} is in use by {who}. Stop that run first, or start with --take-over "
+                        f"if it is abandoned")
+    return f"took over the device from {who}"
+
+
+def _still_running(other: dict, serial: str) -> bool:
+    if other["host"] != socket.gethostname():
+        try:
+            return time.time() - float(other["t"]) < dev.OWNER_STALE_S
+        except ValueError:
+            return False
+    active = Path(other["home"]) / ".tnazar" / "active.json"
+    try:
+        data = json.loads(active.read_text())
+    except (OSError, ValueError):
+        return False
+    return Path(data.get("run", "")).name == other["run"] and data.get("device") == serial
 
 
 def refuse_if_owned(run: Run) -> None:
@@ -197,6 +235,7 @@ def finish_run(quiet: bool = False) -> Run | None:
     meta = run.meta()
     try:
         adb = Adb(serial)
+        dev.release_device(adb, _owner(run))
         uia2.stop(adb)
         if meta.get("animations_before"):
             dev.animations_restore(adb, meta["animations_before"])
@@ -206,7 +245,7 @@ def finish_run(quiet: bool = False) -> Run | None:
     except AdbError as exc:
         print(f"warning: device cleanup skipped: {exc}", file=sys.stderr)
     learned = _learn(run, meta)
-    run.update_meta(finished_at=now_iso())
+    run.update_meta(finished_at=now_iso(), **({"map_learned": learned} if learned else {}))
     clear_active()
     live.set_paused(False)
     paths = rpt.write(run)
@@ -712,6 +751,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fresh", action="store_true", help="force-stop and clear app data first")
     p.add_argument("--prompt", help="the original request, kept in the report")
     p.add_argument("--keep-animations", action="store_true", help="do not turn off system animations")
+    p.add_argument("--take-over", action="store_true",
+                   help="start even if another home's run holds the device (it was abandoned)")
 
     p = add("stop", cmd_stop, "finish the active run and write the report")
     p.add_argument("--quiet", action="store_true")

@@ -543,3 +543,19 @@ class TemplateScreenTest(GotoBase):
         self.t("tap", "What is a savings account")
         out = self.t("goto", "asba", code=2)  # on an article, not this one: never "already there"
         self.assertNotIn("already there", out)
+
+
+class ReportTest(GotoBase):
+    def test_the_report_says_what_the_map_did_and_learned(self):
+        run = self.start()
+        self.explore_passbook()
+        self.t("key", "back")
+        self.t("goto", "passbook")
+        self.t("goto", "pasbook", code=2)
+        self.stop()
+        md = (run.path / "report.md").read_text()
+        self.assertIn("## Navigation map", md)
+        self.assertIn("| passbook | arrived | 2 |", md)
+        self.assertIn("| pasbook | not in the map |", md)
+        self.assertIn("map: learned", md)
+        self.assertIn("Navigation map", (run.path / "report.html").read_text())

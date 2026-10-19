@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from unittest import mock
 
 from fakedevice import PACKAGE, tnazar
 from teesri_nazar import cli
@@ -109,3 +110,47 @@ class OwnershipTest(PlanRunBase):
 def _started(pid):
     from teesri_nazar.session import process_started
     return process_started(pid)
+
+
+class DeviceOwnerTest(PlanRunBase):
+    """One device, many homes (teams, scripts, machines): the device itself says who drives it.
+    Found when a smoke script in its own TNAZAR_HOME started while another run was live."""
+
+    def other_home(self):
+        other = os.path.join(self.home, "other-team")
+        os.makedirs(other, exist_ok=True)
+        return mock.patch.dict(os.environ, {"TNAZAR_HOME": other})
+
+    def test_a_second_home_cannot_start_on_a_device_another_home_is_driving(self):
+        self.start()
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("is in use by run", err)
+        self.assertIn(os.path.realpath(self.home), err)
+
+    def test_after_stop_another_home_may_start(self):
+        self.start()
+        self.assertEqual(tnazar("stop")[0], 0)
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE)
+        self.assertEqual(code, 0, out + err)
+
+    def test_a_run_whose_home_stopped_tracking_it_is_taken_over_with_a_note(self):
+        self.start()
+        (state_dir() / "active.json").unlink()  # crashed, or its folder was wiped: not running any more
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("took over the device from run", out)
+
+    def test_take_over_is_explicit(self):
+        self.start()
+        with self.other_home():
+            code, out, err = tnazar("start", "theirs", "--package", PACKAGE, "--take-over")
+        self.assertEqual(code, 0, out + err)
+
+    def test_the_same_home_still_replaces_its_own_unstopped_run(self):
+        self.start()
+        code, out, err = tnazar("start", "again", "--package", PACKAGE)
+        self.assertEqual(code, 0, out + err)

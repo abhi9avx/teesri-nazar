@@ -958,8 +958,22 @@ knowledge). `TNAZAR_MAP=off` turns learning and `goto` off; `start` says which.
    agent's next step needs no `observe`. Each step is an ordinary `tap` event (replay re-runs
    it); a `nav` event records the outcome; the dashboard holds it between steps (3, 5).
 
+**Observability.** Every `goto` is a `nav` event (asked for, outcome, steps, time, why it
+broke); the run report has a *Navigation map* section listing them with "N of M arrived by
+the map" and what the run taught; `stop` prints the same line.
+
 `tnazar map` lists the screens, names and usable steps (`--edges` every step and why one is
 not used); `map audit` prints every readable string stored; `map compact` folds the file.
+
+### 15.4 One driver per device, across homes and machines
+
+Two teams, a smoke script beside an agent, or two laptops on one device farm each have their
+own `TNAZAR_HOME`, so the per-home `active.json` cannot see each other. `start` therefore
+writes the owner on the device itself (`/data/local/tmp/tnazar-owner`: host, home, run,
+time) and refuses while another home's run still holds it: on the same machine, while that
+home still tracks the run as active; from another machine, for 12 hours. `stop` clears it.
+An abandoned owner is taken over with a line saying whose run it was; `--take-over` forces
+it. Found when a smoke script started on an emulator another run was driving.
 
 ## 16. Design decisions and trade-offs
 

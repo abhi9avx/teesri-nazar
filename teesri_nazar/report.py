@@ -168,11 +168,41 @@ def to_markdown(run: Run, s: dict) -> str:
         out.append("")
     if s["bugs"]:
         out += ["## Bugs found", ""] + [f"- {b['text']} (case {b.get('case') or '-'})" for b in s["bugs"]] + [""]
+    out += _nav_markdown(run, m)
     if s["slow"]:
         out += [f"## Slow steps (> {SLOW_MS / 1000:g} s)", "", "| Case | Step | Took | Why |", "|---|---|---|---|"]
         out += [f"| {_case_of(s, e) or '-'} | {step_label(e)} | {e['dur_ms'] / 1000:.1f}s | {slow_reason(e)} |"
                 for e in s["slow"]] + [""]
     return "\n".join(out)
+
+
+NAV_OUTCOMES = {"arrived": "arrived", "failed": "a step broke", "unknown": "not in the map",
+                "start_unknown": "start screen unknown", "no_route": "no usable route", "conflict": "two screens",
+                "stopped": "stopped by you", "flow": "saved flow"}
+
+
+def nav_rows(run: Run) -> list[dict]:
+    return [e for e in run.events() if e["type"] == "nav"]
+
+
+def _nav_markdown(run: Run, m: dict) -> list[str]:
+    """What the navigation map did in this run: every goto and its outcome, and what was learned."""
+    rows = nav_rows(run)
+    if not rows and not m.get("map_learned"):
+        return []
+    out = ["## Navigation map", ""]
+    if rows:
+        out += ["| Asked for | Outcome | Steps | Took | Detail |", "|---|---|---|---|---|"]
+        for e in rows:
+            took = f"{e['took_ms'] / 1000:.1f}s" if e.get("took_ms") is not None else ""
+            detail = f"expected {e.get('expected')}: {e.get('why')}" if e["outcome"] == "failed" else e.get("flow", "")
+            out.append(f"| {e['phrase']} | {NAV_OUTCOMES.get(e['outcome'], e['outcome'])} | {e.get('hops', '')} | "
+                       f"{took} | {detail} |")
+        hits = sum(1 for e in rows if e["outcome"] == "arrived")
+        out += ["", f"{hits} of {len(rows)} goto(s) arrived by the map."]
+    if m.get("map_learned"):
+        out += ["", m["map_learned"]]
+    return out + [""]
 
 
 def _case_of(s: dict, e: dict) -> str | None:
@@ -243,7 +273,7 @@ def to_html(run: Run, s: dict) -> str:
 {prompt}<div class="tiles">{tiles}</div>
 <p class="muted">checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed</p>
 <table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th>{'<th>Tokens</th>' if tokens else ''}<th>Reason</th></tr>{''.join(rows)}</table>
-<h2>Details</h2>{''.join(cards)}{_slow_html(s)}
+<h2>Details</h2>{''.join(cards)}{_nav_html(run, m)}{_slow_html(s)}
 </main></body></html>
 """
 
@@ -270,6 +300,19 @@ def _figure(path: str, caption: str, tooltip: str, cls: str) -> str:
     e = html.escape
     return (f"<figure class='{cls}'><a href='{e(path)}'><img loading='lazy' src='{e(path)}' alt='{e(caption)}'></a>"
             f"<figcaption title='{e(tooltip)}'>{e(caption)}</figcaption></figure>")
+
+
+def _nav_html(run: Run, m: dict) -> str:
+    lines = _nav_markdown(run, m)
+    if not lines:
+        return ""
+    e = html.escape
+    rows = [ln for ln in lines if ln.startswith("| ") and not ln.startswith("| Asked")]
+    table = "".join("<tr>" + "".join(f"<td>{e(c.strip())}</td>" for c in r.strip("|").split("|")) + "</tr>"
+                    for r in rows)
+    notes = "".join(f"<p class='muted'>{e(ln)}</p>" for ln in lines[2:] if ln and not ln.startswith("|"))
+    head = "<tr><th>Asked for</th><th>Outcome</th><th>Steps</th><th>Took</th><th>Detail</th></tr>"
+    return f"<h2>Navigation map</h2>" + (f"<table>{head}{table}</table>" if rows else "") + notes
 
 
 def _slow_html(s: dict) -> str:

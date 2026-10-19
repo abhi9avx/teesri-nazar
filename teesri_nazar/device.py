@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+import urllib.parse
 from pathlib import Path
 
 from . import screen as scr
@@ -226,6 +227,31 @@ def _saved_baseline(adb: Adb) -> dict[str, str] | None:
     raw = adb.shell("cat", ANIMATION_BASELINE, check=False).strip()
     pairs = dict(p.split("=", 1) for p in raw.split(",") if "=" in p)
     return pairs if set(pairs) == set(ANIMATION_SETTINGS) else None
+
+
+OWNER_FILE = "/data/local/tmp/tnazar-owner"
+OWNER_STALE_S = 12 * 3600  # an owner on another machine that has not started a run since is gone
+
+
+def device_owner(adb: Adb) -> dict | None:
+    """Who started the run driving this device, from any home or machine: on the device itself."""
+    raw = adb.shell("cat", OWNER_FILE, check=False).strip()
+    pairs = dict(p.split("=", 1) for p in raw.split(",") if "=" in p)
+    if not {"host", "home", "run", "t"} <= set(pairs):
+        return None
+    return {k: urllib.parse.unquote(v) for k, v in pairs.items()}
+
+
+def claim_device(adb: Adb, owner: dict) -> None:
+    # Quoted values: no spaces, commas or quotes reach the device shell.
+    adb.shell("echo", ",".join(f"{k}={urllib.parse.quote(str(v), safe='')}" for k, v in owner.items()), ">",
+              OWNER_FILE)
+
+
+def release_device(adb: Adb, owner: dict) -> None:
+    now = device_owner(adb)
+    if now and now["home"] == owner["home"] and now["run"] == owner["run"]:
+        adb.shell("rm", "-f", OWNER_FILE, check=False)
 
 
 def logcat_clear(adb: Adb) -> None:
