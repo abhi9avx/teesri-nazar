@@ -273,8 +273,8 @@ p { margin: 0; }
 .log-you { font-style: italic; font-size: 1.1rem; }
 .log-agent { color: var(--saffron); }
 .log code { background: none; padding: 0; color: var(--cream); }
-.pass { color: #7BE0C6; font-weight: 600; }
-.pass::before { content: "✓ "; }
+.log .pass { color: #7BE0C6; font-weight: 600; }
+.log .pass::before { content: "✓ "; }
 /* Lines the replay has not reached yet keep their space but stay hidden. */
 .stage.is-playing .log li:not(.is-done, .is-current) { visibility: hidden; }
 .stage.is-playing .log li.is-current::after { content: ""; position: absolute; left: -0.7rem; top: 0.2em; bottom: 0.2em; width: 3px; border-radius: 2px; background: var(--saffron); }
@@ -450,6 +450,22 @@ article.release.prose h1 { margin-top: 0.75rem; }
   .toc-list a { color: var(--muted); text-decoration: none; }
   .toc-list a:hover { color: var(--fg); }
 }
+
+/* Docs: the report preview */
+.report-preview { margin: 2rem 0 0; padding: 1.25rem 1.4rem 1rem; border: 1px solid var(--line); border-radius: 16px; background: var(--side); }
+.rp-head { display: grid; gap: 0.2rem; }
+.rp-head span { color: var(--muted); font-size: 0.9rem; }
+.rp-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin-top: 1rem; }
+.rp-tile { padding: 0.6rem 0.8rem; border-radius: 10px; background: var(--chip); color: var(--muted); font-size: 0.85rem; }
+.rp-tile b { display: block; font-size: 1.5rem; color: var(--fg); }
+.rp-tile.pass b { color: #3DBE8B; }
+.rp-tile.fail b { color: #FF6B5E; }
+.rp-pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; color: #FFFFFF; }
+.rp-pill.pass { background: var(--peacock); }
+.rp-pill.fail { background: var(--vermilion); }
+.report-preview td:first-child { white-space: nowrap; }
+.report-preview figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.6rem; }
+.tile a { color: inherit; text-decoration-color: currentColor; }
 
 /* About: the maker card */
 .maker { margin-top: 1.25rem; padding: 1.4rem 1.5rem; border: 1px solid var(--line); border-radius: 16px; background: var(--side); }

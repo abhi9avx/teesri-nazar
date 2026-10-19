@@ -1,0 +1,86 @@
+<!--
+title: Reports | Teesri Nazar docs
+description: Every Teesri Nazar run ends in a pass/fail report: a summary, each test case with its checks and screenshots, bugs found, crashes, slow steps and token cost, as HTML and Markdown.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Reports</h1>
+  <p class="docs-lede">Every run ends in a report you can share: what was tested, what passed, what failed and why, with a screenshot for every check.</p>
+
+  <figure class="report-preview" aria-label="Example report for the Settings example plan">
+    <div class="rp-head">
+      <strong>Teesri Nazar · settings-example</strong>
+      <span>com.android.settings · Pixel 7 (emulator) Android 14 · 1m 12s</span>
+    </div>
+    <div class="rp-tiles">
+      <div class="rp-tile pass"><b>2</b>pass</div>
+      <div class="rp-tile fail"><b>1</b>fail</div>
+      <div class="rp-tile"><b>0</b>blocked</div>
+      <div class="rp-tile"><b>0</b>skipped</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Case</th><th scope="col">Title</th><th scope="col">Result</th><th scope="col">Checks</th><th scope="col">Reason</th></tr></thead>
+        <tbody>
+          <tr><td>TC-01</td><td>Network &amp; internet opens</td><td><span class="rp-pill pass">pass</span></td><td>2/2</td><td></td></tr>
+          <tr><td>TC-02</td><td>Search finds Wi-Fi settings</td><td><span class="rp-pill pass">pass</span></td><td>1/1</td><td></td></tr>
+          <tr><td>TC-03</td><td>Back returns to Settings</td><td><span class="rp-pill fail">fail</span></td><td>0/1</td><td>Expected "Search Settings", saw the Internet page</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption>An illustration of the HTML report's top section.</figcaption>
+  </figure>
+
+  <h2 id="where">Where to find it</h2>
+  <p>Each run gets its own folder, <code>runs/&lt;run-name&gt;/</code>. The report is written when the run stops.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">File</th><th scope="col">What it is</th></tr></thead>
+      <tbody>
+        <tr><td><code>report.html</code></td><td>The report to share. Opens in any browser; screenshots are linked next to their checks.</td></tr>
+        <tr><td><code>report.md</code></td><td>The same report in Markdown, ready to paste into a PR, Jira or Confluence.</td></tr>
+        <tr><td>Screenshots</td><td>PNG evidence for every check, kept in the run folder.</td></tr>
+        <tr><td><code>events.jsonl</code></td><td>Every step as data. Replay reads this.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="contents">What it contains</h2>
+  <ol>
+    <li><strong>Header.</strong> The app and its version, the device and Android version, when it started and how long it took, and your original request.</li>
+    <li><strong>Summary.</strong> Cases passed, failed, blocked and skipped, and how many checks passed.</li>
+    <li><strong>Case table.</strong> Every case with its result, checks passed, and the reason it failed or was blocked. When available, the AI token cost of each case.</li>
+    <li><strong>Case details.</strong> Each check with what was expected and what was seen, notes, and screenshots. Failures come first, in red, so the problem is the first thing you see.</li>
+    <li><strong>Crashes and ANRs.</strong> Caught automatically and attached to the case they happened in, with the log.</li>
+    <li><strong>Bugs found.</strong> Every bug the agent noted, with the case it came from.</li>
+    <li><strong>Navigation map.</strong> The routes <code>goto</code> used during the run, and whether each one arrived.</li>
+    <li><strong>Slow steps.</strong> Any step over 5 seconds, and why it was slow.</li>
+  </ol>
+
+  <h2 id="results">What each result means</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Result</th><th scope="col">Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>✅ pass</td><td>Every check in the case passed.</td></tr>
+        <tr><td>❌ fail</td><td>A check failed, or the app crashed or stopped responding.</td></tr>
+        <tr><td>⛔ blocked</td><td>The case could not run, for example the environment was down. The reason is recorded.</td></tr>
+        <tr><td>⏭ skipped</td><td>Out of scope for this run.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="commands">Commands</h2>
+  <pre><code>./tnazar runs              # list recent runs
+./tnazar report my-run     # rewrite a run's report
+./tnazar replay my-run     # run it again and re-check every result</code></pre>
+  <p class="callout-note"><strong>Before you share.</strong> Screenshots show exactly what the screen showed. Secrets typed with <code>--env</code> are never printed or logged, but a value typed into a plain (non-password) field is visible on screen, so check screenshots before sending a report outside your team.</p>
+
+  <nav class="docs-pager" aria-label="Previous and next page">
+    <a class="prev" href="/docs/dashboard/"><span>Previous</span>Live dashboard</a>
+    <a class="next" href="/docs/commands/"><span>Next</span>Commands</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>
