@@ -26,7 +26,7 @@ an engineer can use it as the design reference.
 12. [The brain — how Claude decides](#12-the-brain--how-claude-decides)
 13. [One request, end to end](#13-one-request-end-to-end)
 14. [Replay — running a recording again](#14-replay--running-a-recording-again)
-15. [The live dashboard](#15-the-live-dashboard) (15.1 running a whole plan)
+15. [The live dashboard](#15-the-live-dashboard) (15.1 running a whole plan, 15.2 the app map)
 16. [Design decisions and trade-offs](#16-design-decisions-and-trade-offs)
 17. [How the tool itself is tested](#17-how-the-tool-itself-is-tested)
 18. [Limits](#18-limits)
@@ -529,7 +529,7 @@ Finally, Claude reports back in chat: summary line, case table, each failure as
 
 ### Exit codes
 
-Every `tnazar` command, `tnazar run <plan>` and `tnazar replay` use the same codes, so
+Every `tnazar` command, `tnazar run <plan>`, `tnazar flow` and `tnazar replay` use the same codes, so
 Claude (and CI) can act on them without reading the output:
 
 | Code | Meaning | What to do |
@@ -820,6 +820,33 @@ case TC-01 "Network & internet opens"
   stops the run after the current step, marks the case blocked and leaves the run open
   (exit 3); `--from <case>` continues in the same run.
 
+### 15.2 The app map — saved routes
+
+*File: `teesri_nazar/appmap.py`*
+
+Mid-run, the user often asks for a screen ("open settings"). Exploring there costs a
+model turn per step, every time. The app map remembers routes instead: each one is a plan
+`flow`, kept in `plans/*.plan` (a map file is `app <package>` plus flows; it needs no case).
+
+- `tnazar flows` lists the flows of every map whose `app` is the active run's app, with a
+  one-line summary of each (`tap "Settings" → wait "Log out"`).
+- `tnazar flow <name> [--plan FILE]` runs one against the **active** run with the plan
+  runner's executor, so `if`, `retry` and nested `run` work and each step goes through the
+  normal CLI: recorded, shown in the timeline (after a `say` heading), held by the
+  dashboard. It never starts or stops a run, and the run stays open afterwards.
+- **Failures.** A failed step stops the flow and exits with that step's code (1, or 4 for
+  `wait --or`), naming the line; it does not fail the current case, since the agent decides
+  what a broken route means. A `check` in a flow is recorded in the current case as usual,
+  and a failed one makes the flow exit 1.
+- **Dashboard.** A message stops the flow after the current step (exit 3). Unlike a plan
+  run, a pause longer than 60 s hands the turn back (exit 5), like any device command; the
+  flow did not finish, so the agent observes before going on.
+- **Lookup.** A name found in two maps of the same app is an error (pick one with `--plan`);
+  a map that does not parse is skipped with a warning, so one typo never hides the others.
+
+The agent is told (CLAUDE.md) to check `flows` before exploring and to save each route it
+finds by hand, so the map grows as the app is tested.
+
 ## 16. Design decisions and trade-offs
 
 | Decision | Why | Cost |
@@ -907,6 +934,7 @@ teesri_nazar/
 ├── usage.py                token cost per test case, from the Claude Code session log
 ├── plan.py                 plan files: parse and validate (`tnazar run`)
 ├── runner.py               run every case of a plan; hand back on a dashboard message
+├── appmap.py               `tnazar flow` / `flows`: run one saved route on the active run
 └── visual.py               optional screenshot comparison via headless Claude
 CLAUDE.md                   the tester playbook Claude follows
 .claude/skills/test-feature the "test a feature" skill

@@ -16,7 +16,8 @@ Follow `CLAUDE.md` (the playbook). In short:
 3. **Plan.** Numbered cases `TC-NN` with steps, expected result and verification type
    (ui / db / figma), plus added edge cases and an explicit "not testing" list.
    Wait for approval unless the user said to go ahead.
-4. **Run.** Explore the screens the cases touch (`observe`), write `plans/<name>.plan`
+4. **Run.** Check the app map first (`./tnazar flows`; `./tnazar flow <name>` runs a saved
+   route). Explore the screens the cases touch (`observe`), save new routes as `flow`s, write `plans/<name>.plan`
    (format: `teesri_nazar/plan.py`, example `examples/settings.plan`), then
    `./tnazar run plans/<name>.plan` in the background. Exit 1 = a case failed, 2 = plan
    or setup error, 3 = the user sent a dashboard message: act on it, then `--from <case>`

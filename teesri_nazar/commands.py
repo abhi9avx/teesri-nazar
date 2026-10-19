@@ -43,6 +43,8 @@ COMMANDS = (
     Command("runs", None),
     Command("replay", None),
     Command("run", None),
+    Command("flow", None, device=True),  # its steps record their own events
+    Command("flows", None),
     Command("ui", None),
     Command("devices", None),
     Command("packages", None),

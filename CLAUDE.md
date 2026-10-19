@@ -73,6 +73,20 @@ screen, add `--or <the error you would see>` so a failure is noticed in ~1 s, no
 timeout. Run several cases in one command when you can: every model turn re-reads the whole
 conversation.
 
+**App map: don't explore a route twice.** Before exploring your way to a screen ("open the
+help chat", "go to settings"), run `./tnazar flows`: it lists the saved routes for the run's
+app (the `flow`s in `plans/*.plan`). If one fits, `./tnazar flow <name>` runs it in one
+command (each step logged as usual; exit codes as for any device command: 1 a step failed,
+3 a dashboard message stopped it, 5 paused). After finding a new route by hand, save it as a
+`flow` in `plans/<app>.plan` (a file of `app <package>` plus flows; no case needed) with the
+selectors you used and a `wait` for the screen it ends on, so the next request is one command.
+
+```bash
+./tnazar flows                          # saved routes for the run's app, one line each
+./tnazar flow open_settings             # run one against the active run
+./tnazar flow open_settings --plan plans/other.plan   # when two files define it
+```
+
 Target priority: **id → desc → text → coordinates.** Selectors survive screen-size and
 layout changes and make the run replayable; coordinates do not. After an action that
 navigates, use `wait` or `tap --wait` for the next screen instead of `sleep`.

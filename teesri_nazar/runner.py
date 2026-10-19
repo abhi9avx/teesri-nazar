@@ -34,6 +34,12 @@ DETAIL_LINES = 6
 @dataclass
 class Failed:
     detail: str
+    code: int = 1  # the failing step's exit code
+
+
+@dataclass
+class Paused:
+    output: str
 
 
 @dataclass
@@ -113,8 +119,11 @@ def _stop() -> None:
 
 
 class Executor:
-    def __init__(self, plan: Plan, the_run: Run, case: Case):
+    def __init__(self, plan: Plan, the_run: Run, case: Case, wait_paused: bool = True):
         self.plan, self.run, self.case = plan, the_run, case
+        # False (`tnazar flow`): give a long pause back to the agent like any device command (exit 5).
+        self.wait_paused = wait_paused
+        self.failed_checks = 0
 
     def body(self, items: list, record: bool = True):
         for item in items:
@@ -139,13 +148,16 @@ class Executor:
                 if not isinstance(result, Failed):
                     return result
             return self.fail(item.line, f"retry {item.times}",
-                             f"still failing after {item.times} attempts: {result.detail}", record)
+                             f"still failing after {item.times} attempts: {result.detail}", record, result.code)
         return self.step(item, record)
 
-    def hold(self) -> HandedBack | None:
+    def hold(self) -> HandedBack | Paused | None:
         """What the CLI does before a device command, for the screen read an `if` makes itself."""
         while live.paused():
-            live.wait_resume()
+            if not live.wait_resume() and not self.wait_paused:
+                if not live.unread():
+                    return Paused("")
+                break  # paused and a message: hand back with the message
         live.wait_typing()
         if live.needs_agent(live.unread()):
             out = io.StringIO()
@@ -161,18 +173,23 @@ class Executor:
                 return HandedBack(out)
             if code != live.EXIT_PAUSED:
                 break
+            if not self.wait_paused:
+                return Paused(out)
             while not live.wait_resume():
                 pass  # no model timeout here: wait as long as the user keeps it paused
-        if code == 0 or (step.argv[0] == "check" and code == cli.EXIT_FAIL):
+        if step.argv[0] == "check" and code == cli.EXIT_FAIL:
+            self.failed_checks += 1
             return None  # a failed check is already recorded; the case goes on
-        return self.fail(step.line, " ".join(_quote(a) for a in step.argv), _tail(out), record)
+        if code == 0:
+            return None
+        return self.fail(step.line, " ".join(_quote(a) for a in step.argv), _tail(out), record, code)
 
-    def fail(self, line: int, what: str, detail: str, record: bool) -> Failed:
+    def fail(self, line: int, what: str, detail: str, record: bool, code: int = cli.EXIT_FAIL) -> Failed:
         first = next((ln for ln in detail.splitlines() if ln.strip()), "failed")
         if record:
             self.run.log({"type": "check", "kind": "ui", "ok": False, "case": self.case.id,
                           "what": f"line {line}: {what}: {first.strip()}"})
-        return Failed(f"line {line}: {what}\n{detail}")
+        return Failed(f"line {line}: {what}\n{detail}", code)
 
     def visible(self, target: str, alts: list[str], wait: float) -> tuple[bool, int]:
         """Is `target` on screen? With --wait, read until it or one of `alts` shows (or time runs out)."""
