@@ -93,8 +93,10 @@ name wins), verifying each step, and prints the screen it arrived on: no `observ
 - Long multi-part asks ("statement of my active loan"): `goto` the part the map knows
   (`active loan`), explore only the rest.
 - Money-moving steps (pay, transfer, confirm, MPIN screens) are never replayed by `goto`.
-- A route you will run in plans or share for review still belongs in a `flow`
-  (`./tnazar flows` lists them).
+- A route you will run in plans or share for review still belongs in a `flow` in
+  `plans/<app>.plan` (`./tnazar flows` lists them; `./tnazar flow <name>` runs one: exit 1 a
+  step or check failed, 2 no such flow, 3 a dashboard message, 4 a `wait --or` saw the other
+  screen, 5 paused).
 
 **One driver.** Only you drive the device: no planner agent hands you steps (the hand-off
 costs more than it saves, and two drivers fight over one phone). Use sub-agents only for

@@ -80,19 +80,20 @@ class Ctx:
         out = {"sid": sid}
         try:
             stable = scr.stable_selector(t["screen"], t["element"]).to_dict()
-        except Exception:  # noqa: BLE001 - same rule as stamp()
+        except Exception as exc:  # noqa: BLE001 - same rule as stamp()
+            print(f"warning: map: {exc}", file=sys.stderr)
             return out
         if stable and not stable.get("nth") and stable != t["selector"]:
             out["stable"] = stable
         return out
 
-    def stamp(self, screen: scr.Screen | None) -> str | None:
+    def stamp(self, screen: scr.Screen | None, it=None) -> str | None:
         """The screen's identity for the navigation map, recorded on the command's event. Never
         fails the command: learning is a by-product, not part of the step."""
         if screen is None or self.run is None or not navmap.enabled():
             return None
         try:
-            return navmap.stamp(self.run, screen)
+            return navmap.stamp(self.run, screen, it)
         except Exception as exc:  # noqa: BLE001 - a map problem must never change a step's result
             print(f"warning: map: {exc}", file=sys.stderr)
             return None
@@ -149,7 +150,7 @@ def cmd_start(args) -> int:
         finish_run(quiet=True)
     serial = pick_serial(args.device)
     adb = Adb(serial)
-    took_over = _check_device_owner(adb, serial, args.take_over)
+    took_over = check_device_owner(adb, serial, args.take_over)
     model = next((d.model for d in list_devices() if d.serial == serial), "")
     meta = {
         "device": serial,
@@ -168,7 +169,7 @@ def cmd_start(args) -> int:
     run = Run.create(args.name, meta)
     set_active(run, serial)
     try:
-        dev.claim_device(adb, _owner(run))
+        dev.claim_device(adb, device_owner_of(run))
     except AdbError as exc:  # a locked-down device: run as before, only unguarded
         print(f"warning: could not mark the device as in use: {exc}", file=sys.stderr)
     live.mark_all_read()  # messages typed before this run are not instructions for it
@@ -193,11 +194,11 @@ def cmd_start(args) -> int:
     return 0
 
 
-def _owner(run: Run) -> dict:
+def device_owner_of(run: Run) -> dict:
     return {"host": socket.gethostname(), "home": str(home().resolve()), "run": run.name, "t": int(time.time())}
 
 
-def _check_device_owner(adb: Adb, serial: str, take_over: bool) -> str:
+def check_device_owner(adb: Adb, serial: str, take_over: bool) -> str:
     """One driver per device across every home and machine (two teams, a script beside an agent):
     refuse while another live run holds it; take over one that is gone, and say so."""
     other = dev.device_owner(adb)
@@ -240,7 +241,7 @@ def finish_run(quiet: bool = False) -> Run | None:
     meta = run.meta()
     try:
         adb = Adb(serial)
-        dev.release_device(adb, _owner(run))
+        dev.release_device(adb, device_owner_of(run))
         uia2.stop(adb)
         if meta.get("animations_before"):
             dev.animations_restore(adb, meta["animations_before"])
@@ -884,6 +885,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--plan", metavar="FILE", help="list only this file's flows")
 
     p = add("goto", cmd_goto, "go to a screen by a route learned in earlier runs (or a saved flow), in one command")
+    p.epilog = ("exit codes: 0 arrived, already there, or --dry-run; 1 a step went somewhere else (the screen is "
+                "printed); 2 not in the map, start screen unknown, no usable route, or the phrase means two "
+                "screens (the screen is printed); 3 a dashboard message; 5 paused")
     p.add_argument("target", nargs="+", help='what the user asked for ("passbook") or a screen id from `map`')
     p.add_argument("--dry-run", action="store_true", help="show the route without tapping")
     p.add_argument("--timeout", type=float, default=10, help="seconds to wait for each screen on the way")

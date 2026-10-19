@@ -8,9 +8,11 @@ and replay modules, and swaps the clock so waits and timeouts finish instantly.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import io
 import os
+import shutil
 import subprocess
 import tempfile
 import urllib.error
@@ -21,7 +23,9 @@ from teesri_nazar import cli
 from teesri_nazar.adb import AdbError
 
 # Any test that learns a navigation map outside fake_device() still never writes the user's own.
-os.environ.setdefault("TNAZAR_MAP_DIR", tempfile.mkdtemp(prefix="tnazar-test-maps-"))
+if "TNAZAR_MAP_DIR" not in os.environ:
+    os.environ["TNAZAR_MAP_DIR"] = tempfile.mkdtemp(prefix="tnazar-test-maps-")
+    atexit.register(shutil.rmtree, os.environ["TNAZAR_MAP_DIR"], True)
 
 PACKAGE = "com.example.app"
 SERIAL = "fake-1"

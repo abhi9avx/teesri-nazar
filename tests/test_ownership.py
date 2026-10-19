@@ -175,3 +175,39 @@ class DeviceOwnerHostTest(PlanRunBase):
             from teesri_nazar import cli
             self.assertTrue(cli._still_running({"host": cli.socket.gethostname(), "home": self.home,
                                                 "run": "demo", "t": "0"}, "fake-1"))
+
+
+class ReleaseTest(PlanRunBase):
+    def test_stop_never_removes_another_machines_claim_with_the_same_home_and_run_name(self):
+        import time
+        from teesri_nazar import device
+        self.start()
+        theirs = {"host": "ci-runner-7", "home": os.path.realpath(self.home), "run": "demo", "t": int(time.time())}
+        device.claim_device(self.adb, theirs)  # taken over from the other machine meanwhile
+        tnazar("stop")
+        self.assertEqual(device.device_owner(self.adb)["host"], "ci-runner-7")
+
+    def test_goto_help_lists_its_exit_codes(self):
+        import contextlib
+        import io
+        from teesri_nazar import cli
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            cli.main(["goto", "--help"])
+        for word in ("0 arrived", "1 a step", "2 ", "3 ", "5 "):
+            self.assertIn(word, buf.getvalue())
+
+
+class ReplayOwnerTest(PlanRunBase):
+    def test_replay_refuses_a_device_another_homes_run_is_driving(self):
+        self.start()
+        self.assertEqual(tnazar("stop")[0], 0)
+        self.start()  # live again, in this home
+        other = os.path.join(self.home, "other-team")
+        os.makedirs(other, exist_ok=True)
+        import shutil
+        shutil.copytree(os.path.join(self.home, "runs"), os.path.join(other, "runs"))
+        with mock.patch.dict(os.environ, {"TNAZAR_HOME": other}):
+            code, out, err = tnazar("replay", "demo")
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("is in use by run", err)

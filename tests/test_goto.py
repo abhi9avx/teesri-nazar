@@ -166,7 +166,7 @@ class NoDuplicatesTest(GotoBase):
         self.stop()
         self.start()
         for phrase in ("passbook", "PASSBOOK", "go to the passbook"):
-            self.t("goto", phrase)
+            self.assertIn("arrived in 2 step(s)", self.t("goto", phrase))
             self.t("key", "back")
 
 

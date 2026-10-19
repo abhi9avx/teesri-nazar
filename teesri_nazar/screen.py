@@ -73,7 +73,7 @@ def _quote(s: str, limit: int = 60) -> str:
 _QUOTES = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})
 
 
-def _norm(s: str) -> str:
+def norm(s: str) -> str:
     return " ".join(s.translate(_QUOTES).split()).casefold()
 
 
@@ -197,7 +197,7 @@ class Selector:
 
 
 def _text_match(wanted: str, actual: str, contains: bool) -> bool:
-    w, a = _norm(wanted), _norm(actual)
+    w, a = norm(wanted), norm(actual)
     return bool(a) and (w in a if contains else w == a)
 
 

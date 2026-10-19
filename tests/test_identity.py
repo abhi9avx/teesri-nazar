@@ -237,7 +237,8 @@ class SettingsShapeTest(unittest.TestCase):
 
     def test_history_pages_are_not_money_screens_but_confirm_and_pin_are(self):
         for t, guarded in (("Payment history", False), ("Transfer history", False), ("Pay later", False),
-                           ("Confirm payment", True), ("Enter MPIN", True)):
+                           ("Confirm payment", True), ("Enter MPIN", True), ("Send money", True),
+                           ("Transfer", True), ("Withdraw", True), ("Pay", True)):
             self.assertEqual(ident_of([TOOLBAR, title(t), node(id="go", text="Go")]).secure, guarded, t)
 
     def test_untitled_screens_never_merge_by_similarity(self):

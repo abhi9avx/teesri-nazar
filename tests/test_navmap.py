@@ -394,6 +394,31 @@ class StoreTest(unittest.TestCase):
         m = navmap.NavMap.load(APP)
         self.assertEqual(set(m.screens), {"X", "Y"})
 
+    def test_the_start_screen_read_again_after_its_feed_changed_never_takes_the_name(self):
+        home2 = dict(scr("HOME"), id="HOME2", inner=["x"])  # same frame and title, other feed content
+        log = Log().add(type="nav", phrase="loan statement", outcome="unknown", sid="HOME", episode=True) \
+            .tap("HOME", text="Loans").add(type="check", kind="ui", sid="LOANS", ok=True, selector={"text": "x"}) \
+            .add(type="key", key="back").add(type="check", kind="ui", sid="HOME2", ok=True, selector={"text": "y"})
+        obs = navmap.learn(log.events, run="r1", version="1",
+                           screens={"HOME": scr("HOME"), "HOME2": home2, "LOANS": scr("LOANS")})
+        self.assertEqual([o for o in obs if o["k"] == "name"], [])
+
+    def test_a_template_screen_named_without_its_opening_tap_is_never_routed_to(self):
+        log = Log().tap("FAQS", text="Savings account").wait("ART").add(type="key", key="back").seen("FAQS") \
+            .tap("FAQS", text="UPI limits").wait("ART")
+        self.save(log, "r1")
+        navmap.Store(APP).append([navmap.name_line("refund policy", "ART", explicit=True)], None)
+        m = navmap.NavMap.load(APP, version="1.0")
+        self.assertIsNone(m.route("FAQS", m.resolve("refund policy"), via=m.via("refund policy")))
+
+    def test_phrases_with_account_numbers_or_emails_are_never_stored(self):
+        for phrase in ("statement for a/c 1234567890", "mail a@b.com", "pay ₹500"):
+            log = Log().add(type="nav", phrase=phrase, outcome="unknown", sid="HOME", episode=True) \
+                .add(type="check", kind="ui", sid="STMT", ok=True, selector={"text": "Statement"})
+            self.assertEqual([o for o in learn(log) if o["k"] == "name"], [], phrase)
+            with self.assertRaises(navmap.UserError):
+                navmap.check_phrase(phrase)
+
     def test_a_normal_screen_keeps_every_way_in(self):
         log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \
             .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB") \

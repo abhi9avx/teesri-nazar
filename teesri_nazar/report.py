@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -186,28 +185,36 @@ def nav_rows(run: Run) -> list[dict]:
     return [e for e in run.events() if e["type"] == "nav"]
 
 
-def _cell(text) -> str:
-    return " ".join(str(text).split()).replace("|", "\\|")
+def _nav_table(run: Run, m: dict) -> tuple[list[list[str]], list[str]]:
+    """What the navigation map did in this run: a row per goto, and the summary lines."""
+    rows, notes = [], []
+    for e in nav_rows(run):
+        took = f"{e['took_ms'] / 1000:.1f}s" if e.get("took_ms") is not None else ""
+        detail = f"expected {e.get('expected')}: {e.get('why')}" if e["outcome"] == "failed" else e.get("flow") or ""
+        rows.append([" ".join(str(e["phrase"]).split()), NAV_OUTCOMES.get(e["outcome"], e["outcome"]),
+                     str(e.get("hops", "")), took, " ".join(str(detail).split())])
+    if rows:
+        hits = sum(1 for r in rows if r[1] == "arrived")
+        notes.append(f"{hits} of {len(rows)} goto(s) arrived by the map.")
+    if m.get("map_learned"):
+        notes.append(m["map_learned"])
+    return rows, notes
+
+
+NAV_HEAD = ["Asked for", "Outcome", "Steps", "Took", "Detail"]
 
 
 def _nav_markdown(run: Run, m: dict) -> list[str]:
-    """What the navigation map did in this run: every goto and its outcome, and what was learned."""
-    rows = nav_rows(run)
-    if not rows and not m.get("map_learned"):
+    rows, notes = _nav_table(run, m)
+    if not rows and not notes:
         return []
     out = ["## Navigation map", ""]
     if rows:
-        out += ["| Asked for | Outcome | Steps | Took | Detail |", "|---|---|---|---|---|"]
-        for e in rows:
-            took = f"{e['took_ms'] / 1000:.1f}s" if e.get("took_ms") is not None else ""
-            detail = f"expected {e.get('expected')}: {e.get('why')}" if e["outcome"] == "failed" else e.get("flow") or ""
-            out.append(f"| {_cell(e['phrase'])} | {NAV_OUTCOMES.get(e['outcome'], e['outcome'])} | "
-                       f"{e.get('hops', '')} | {took} | {_cell(detail)} |")
-        hits = sum(1 for e in rows if e["outcome"] == "arrived")
-        out += ["", f"{hits} of {len(rows)} goto(s) arrived by the map."]
-    if m.get("map_learned"):
-        out += ["", m["map_learned"]]
-    return out + [""]
+        out += ["| " + " | ".join(NAV_HEAD) + " |", "|---|---|---|---|---|"]
+        out += ["| " + " | ".join(c.replace("|", "\\|") for c in r) + " |" for r in rows] + [""]
+    for n in notes:
+        out += [n, ""]
+    return out
 
 
 def _case_of(s: dict, e: dict) -> str | None:
@@ -308,17 +315,14 @@ def _figure(path: str, caption: str, tooltip: str, cls: str) -> str:
 
 
 def _nav_html(run: Run, m: dict) -> str:
-    lines = _nav_markdown(run, m)
-    if not lines:
+    rows, notes = _nav_table(run, m)
+    if not rows and not notes:
         return ""
     e = html.escape
-    rows = [ln for ln in lines if ln.startswith("| ") and not ln.startswith("| Asked")]
-    cells = [re.split(r"(?<!\\)\|", r.strip()[1:-1]) for r in rows]
-    table = "".join("<tr>" + "".join(f"<td>{e(c.strip().replace(chr(92) + '|', '|'))}</td>" for c in r) + "</tr>"
-                    for r in cells)
-    notes = "".join(f"<p class='muted'>{e(ln)}</p>" for ln in lines[2:] if ln and not ln.startswith("|"))
-    head = "<tr><th>Asked for</th><th>Outcome</th><th>Steps</th><th>Took</th><th>Detail</th></tr>"
-    return f"<h2>Navigation map</h2>" + (f"<table>{head}{table}</table>" if rows else "") + notes
+    head = "<tr>" + "".join(f"<th>{h}</th>" for h in NAV_HEAD) + "</tr>"
+    table = "".join("<tr>" + "".join(f"<td>{e(c)}</td>" for c in r) + "</tr>" for r in rows)
+    return ("<h2>Navigation map</h2>" + (f"<table>{head}{table}</table>" if rows else "")
+            + "".join(f"<p class='muted'>{e(n)}</p>" for n in notes))
 
 
 def _slow_html(s: dict) -> str:

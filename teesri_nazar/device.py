@@ -250,7 +250,7 @@ def claim_device(adb: Adb, owner: dict) -> None:
 
 def release_device(adb: Adb, owner: dict) -> None:
     now = device_owner(adb)
-    if now and now["home"] == owner["home"] and now["run"] == owner["run"]:
+    if now and all(now[k] == owner[k] for k in ("host", "home", "run")):
         adb.shell("rm", "-f", OWNER_FILE, check=False)
 
 

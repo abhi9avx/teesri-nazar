@@ -17,11 +17,12 @@ compared with stored canonicals only, so a screen never drifts into its neighbou
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass
 
-from .screen import Element, Screen, _norm
+from .screen import Element, Screen, norm
 
 SAME = 0.6  # with equal titles: one changed button on a small screen keeps it the same screen
 SMALL_FRAME = 4  # a frame this small (a page that is all list) cannot tell two same-titled pages apart
@@ -42,6 +43,16 @@ class Ident:
     inner: frozenset = frozenset()  # the lists' content, hashed: only for the exact id
     tab: str = ""           # hashed selected tab(s): two different tabs are never one screen
     menu: frozenset = frozenset()  # hashed short labels of buttons inside lists with no digits: a page's menu
+
+    def to_record(self) -> dict:
+        """The screen as the map stores it (every value already hashed)."""
+        return {"id": self.id, "tokens": sorted(self.tokens), "title": self.title, "secure": self.secure,
+                "inner": sorted(self.inner), "tab": self.tab, "menu": sorted(self.menu)}
+
+    @classmethod
+    def from_record(cls, d: dict) -> "Ident":
+        return cls(d["id"], "screen", frozenset(d.get("tokens") or ()), d.get("title") or "", bool(d.get("secure")),
+                   frozenset(d.get("inner") or ()), d.get("tab") or "", frozenset(d.get("menu") or ()))
 
 
 def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
@@ -142,7 +153,7 @@ def match(ident: Ident, stored: dict, one_sided: bool = True) -> str | None:
     if not fits:
         return None
     fits.sort(key=lambda f: -f[0])
-    score, best, lopsided = fits[0]
+    _, best, lopsided = fits[0]
     if lopsided and (not one_sided or len(fits) > 1):
         return None
     return best
@@ -155,16 +166,18 @@ def _h(token: str) -> str:
 def _label(raw: str, secrets, limit: int = MAX_LABEL) -> str:
     if any(s in raw for s in secrets):
         return ""
-    label = _DIGITS.sub("#", _norm(raw))
+    label = _DIGITS.sub("#", norm(raw))
     return label if len(label) <= limit else ""
 
 
 # The screen where money moves or a PIN is asked; "Payment history" or "Pay later" are places to go.
-_UNSAFE_TITLE = re.compile(r"\b(confirm|review and pay|checkout|enter (m|upi )?pin|authori[sz]e|verify payment)\b")
+_UNSAFE_TITLE = re.compile(r"\b(confirm|review and pay|checkout|enter (m|upi )?pin|authori[sz]e|verify payment)\b"
+                           r"|^(pay|pay now|send|send money|transfer|transfer money|withdraw|withdraw money)$")
 
 
 def _unsafe_title(title: str) -> bool:
-    return bool(_UNSAFE_TITLE.search(title))
+    extra = [w.strip().casefold() for w in os.environ.get("TNAZAR_UNSAFE_WORDS", "").split(",") if w.strip()]
+    return bool(_UNSAFE_TITLE.search(title)) or any(re.search(rf"\b{re.escape(w)}\b", title) for w in extra)
 
 
 def _app_elements(screen: Screen, app: str | None) -> list[Element]:

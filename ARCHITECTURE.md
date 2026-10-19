@@ -933,13 +933,20 @@ that says every word of the phrase; otherwise the check saying most of it wins, 
 says none of it counts only if the agent did not press Back after it. `map name` binds a
 phrase by hand and overrides learned bindings; `map forget` drops anything older than it.
 
+**Untitled pages and templates.** An untitled page is recognised by its menu (hashed short
+labels of buttons in its lists, no digits); a read that lacks the title its screen had matches
+on the menu only when exactly one stored screen fits. When several buttons of one screen open
+the same screen (FAQ articles, order details), it is a template: a name remembers the tap that
+opened it, `goto` must end with that tap and is never "already there" on it.
+
 **The store** is `${TNAZAR_MAP_DIR:-~/.tnazar/maps}/<package>/map.jsonl`: append-only JSON
 lines, a run learned once, appends under a file lock, a torn last line kept apart, unreadable
 lines skipped with a warning. Nothing in it is screen text: tokens are hashed, and selectors or
 labels with digits, `@`, currency or a `.env` value are not stored (the step stays as
 knowledge). `TNAZAR_MAP=off` turns learning and `goto` off; `start` says which.
 
-**`goto <phrase>`** (exit codes in `tnazar goto --help` and below):
+**`goto <phrase>`** (exit codes in `tnazar goto --help`; a phrase with an account number, email
+or amount is never stored):
 
 1. A saved flow whose name matches the phrase runs instead.
 2. One read; the screen is found in the map plus what this run learned so far.
@@ -947,8 +954,9 @@ knowledge). `TNAZAR_MAP=off` turns learning and `goto` off; `start` says which.
    listing, so exploring from there costs no extra read or turn. Unknown or transparent
    start screen → exit 2, no `back` presses. A phrase bound to two screens → exit 2.
 4. Fewest steps from the current screen over usable steps: a selector, not money-moving
-   (pay, transfer, confirm, delete, log out … or into a password screen; recomputed on every
-   load), not failed in this run, not retired (its last two results on this app version
+   (pay, transfer, confirm, delete, log out … in its label, recomputed on every load; or into a
+   password screen or one titled pay / transfer / confirm / enter PIN, decided when the screen
+   is read), not failed in this run, not retired (its last two results on this app version
    failed). `--dry-run` prints the route.
 5. Each step taps on the screen just read, then polls until the screen *is* the step's
    target. The screen it started from means "still on the way"; another screen holding for
@@ -973,7 +981,8 @@ writes the owner on the device itself (`/data/local/tmp/tnazar-owner`: host, hom
 time) and refuses while another home's run still holds it: on the same machine, while that
 home still tracks the run as active; from another machine, for 12 hours. `stop` clears it.
 An abandoned owner is taken over with a line saying whose run it was; `--take-over` forces
-it. Found when a smoke script started on an emulator another run was driving.
+it; `replay` checks and claims it too. Found when a smoke script started on an emulator another
+run was driving.
 
 ## 16. Design decisions and trade-offs
 

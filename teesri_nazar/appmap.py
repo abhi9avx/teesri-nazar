@@ -189,16 +189,17 @@ def goto(args) -> int:
             return 0
         # A new request: it ends an open search for an earlier phrase, like any goto.
         the_run.log({"type": "nav", "phrase": phrase, "outcome": "flow", "flow": name})
-        return run_flow(argparse.Namespace(name=name, plan=str(f), device=args.device))
+        code = run_flow(argparse.Namespace(name=name, plan=str(f), device=args.device))
+        return cli.EXIT_FAIL if code == cli.EXIT_INSTEAD else code  # goto's codes have no 4
 
     ctx = cli.Ctx.from_args(args.device)
     version = the_run.meta().get("app_version", "")
     screen = ctx.capture()
-    start_sid = ctx.stamp(screen)
+    it = ident.identify(screen, app=app, secrets=navmap.secret_values())
+    start_sid = ctx.stamp(screen, it)
     m = navmap.current(the_run, app, version)
     for w in m.warnings[:3]:
         print(f"warning: map: {w}", file=sys.stderr)
-    it = ident.identify(screen, app=app, secrets=navmap.secrets())
     here = m.where(it) if it.id else None
     targets = m.resolve(phrase)
 
@@ -239,16 +240,16 @@ def goto(args) -> int:
               f"pixel steps are known, or a step failed earlier in this run). Explore. Current screen:")
         cli.print_screen(screen)
         return cli.EXIT_ERROR
-    route_text = " → ".join(_hop_text(m, h) for h in path)
+    route_text = " → ".join(_hop_text(h) for h in path)
     if args.dry_run:
         print(f"goto {phrase}: {len(path)} step(s): {route_text}")
         for h in path:
-            print(f"  {h.frm} -> {h.to}  {_hop_text(m, h)}  (worked in {len(h.ok_runs)} run(s))")
+            print(f"  {h.frm} -> {h.to}  {_hop_text(h)}  (worked in {len(h.ok_runs)} run(s))")
         return 0
 
     began = time.monotonic()
     cli.cmd_say(argparse.Namespace(text=f"Going to {phrase} by a learned route ({len(path)} steps)"))
-    cur = screen
+    cur, cur_it = screen, it
     for i, hop in enumerate(path, 1):
         if i > 1:
             held = cli.hold(the_run)
@@ -268,13 +269,14 @@ def goto(args) -> int:
                 sel = hop.sel or {}
                 ctx.log({"type": "tap", "selector": hop.sel, "xy": [x, y],
                          "label": hop.label or sel.get("text") or sel.get("desc") or sel.get("id") or "",
-                         "long": False, "screen": list(ctx.adb.screen_size()), "sid": ctx.stamp(cur), "via": "goto"})
+                         "long": False, "screen": list(ctx.adb.screen_size()), "sid": ctx.stamp(cur, cur_it),
+                         "via": "goto"})
         except live.DeviceBusy:
             raise UserError("the device is busy with another step; run goto again") from None
-        arrived, cur, why = _arrive(ctx, m, app, hop, args.timeout)
+        arrived, cur, cur_it, why = _arrive(ctx, m, app, hop, args.timeout)
         if not arrived:
             return _hop_failed(ctx, m, nav, phrase, i, hop, cur, why)
-    if sid := ctx.stamp(cur):
+    if sid := ctx.stamp(cur, cur_it):
         ctx.log({"type": "seen", "sid": sid})
     cli.save_xml(cli.state_dir() / "last-screen.xml", cur.xml)
     took = time.monotonic() - began
@@ -284,7 +286,7 @@ def goto(args) -> int:
     return 0
 
 
-def _hop_text(m, h) -> str:
+def _hop_text(h) -> str:
     sel = h.sel or {}
     what = h.label or sel.get("text") or sel.get("desc") or sel.get("id") or "?"
     return f'tap "{what}"' + (f" (scroll {h.scroll['direction']})" if h.scroll else "")
@@ -320,28 +322,28 @@ def _arrive(ctx, m, app, hop, timeout):
     interval = 0.15 if uia2.active(ctx.adb) else 0.4
     deadline = time.monotonic() + timeout
     other, other_since = None, 0.0
-    screen = None
+    screen = it = None
     while True:
         try:
             screen = scr.capture(ctx.adb)
         except cli.AdbError:
             screen = None
         if screen is not None:
-            it = ident.identify(screen, app=app, secrets=navmap.secrets())
+            it = ident.identify(screen, app=app, secrets=navmap.secret_values())
             sid = m.where(it) if it.id else None
             if sid == hop.to:
-                return True, screen, ""
+                return True, screen, it, ""
             if it.id and sid != hop.frm:
                 now = time.monotonic()
                 if other != it.id:
                     other, other_since = it.id, now
                 elif now - other_since >= STABLE_ELSEWHERE:
                     name = m.label(sid) if sid else ""
-                    return False, screen, f"it went to {('“' + name + '”') if name else 'another screen'}"
+                    return False, screen, it, f"it went to {('“' + name + '”') if name else 'another screen'}"
             else:
                 other = None
         if time.monotonic() >= deadline:
-            return False, screen, f"the screen did not change to the expected one within {timeout:g}s"
+            return False, screen, it, f"the screen did not change to the expected one within {timeout:g}s"
         time.sleep(interval)
 
 
@@ -349,7 +351,7 @@ def _hop_failed(ctx, m, nav, phrase, i, hop, screen, why) -> int:
     expected = m.label(hop.to) or hop.to
     nav("failed", hops=i - 1, ok=False, expected=expected, why=why,
         edge={"from": hop.frm, "to": hop.to, "kind": hop.kind, "sel": hop.sel})
-    print(f"goto {phrase}: FAILED at step {i} ({_hop_text(m, hop)}): expected “{expected}”, but {why}. "
+    print(f"goto {phrase}: FAILED at step {i} ({_hop_text(hop)}): expected “{expected}”, but {why}. "
           f"This step is not used again in this run; explore from here and the new way is learned.")
     if screen is not None:
         cli.save_xml(cli.state_dir() / "last-screen.xml", screen.xml)
@@ -428,7 +430,7 @@ def _map_list(app, active, with_edges) -> int:
         for e in m.edges.values():
             state = "" if m.runnable(e) else " [unsafe]" if m.unsafe(e) else " [retired]" if m.retired(e) else \
                 " [failed in this run]" if e.key in m.failed else f" [{e.kind}: not replayed]"
-            print(f"  {navmap.edge_id(e)}  {e.frm} -> {e.to}  {_hop_text(m, e)}  "
+            print(f"  {navmap.edge_id(e)}  {e.frm} -> {e.to}  {_hop_text(e)}  "
                   f"(worked in {len(e.ok_runs)} run(s)){state}")
     return 0
 
@@ -437,6 +439,8 @@ def _map_name(app, active, args) -> int:
     if len(args.args) < 2:
         raise UserError("usage: tnazar map name <screen-id|here> <phrase> [--alias other]")
     where, phrases = args.args[0], [" ".join(args.args[1:]), *args.alias]
+    for p_ in phrases:
+        navmap.check_phrase(p_)
     lines = []
     if where == "here":
         if not active or _app_of(active) != app:
@@ -455,9 +459,6 @@ def _map_name(app, active, args) -> int:
         if where not in m.screens and where not in m.alias:
             raise UserError(f"no screen {where} in the map; `tnazar map` lists them")
         sid = m.canon(where)
-    bad = [p for p in phrases if not navmap.normalise(p)]
-    if bad:
-        raise UserError(f"say which screen: {bad[0]!r} names none")
     lines += [navmap.name_line(p, sid, explicit=True, via=via) for p in phrases]
     navmap.Store(app).append(lines, None)
     print(f"named {sid}: {', '.join(navmap.normalise(p) for p in phrases)}")

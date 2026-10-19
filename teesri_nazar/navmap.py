@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import ident
+from .errors import UserError
 
 SCHEMA = 2  # 2: screens carry their menu; a map of an older schema is moved aside and relearned
 MAX_GAP = 60.0          # seconds between an action and the read that shows where it went
@@ -42,6 +43,7 @@ UNSAFE_WORDS = ("pay", "send", "transfer", "confirm", "buy", "purchase", "withdr
                 "uninstall", "reset", "erase")
 _FILLER = ("open", "go to", "goto", "show me", "show", "check", "view", "navigate to", "take me to", "my", "the", "me")
 _PII = re.compile(r"\d|@|₹|\$|€|£|\brs\.?\b", re.IGNORECASE)
+_BACK_KEYS = ("back", "4", "KEYCODE_BACK")
 _MONEY = re.compile(r"@|₹|\$|€|£|\brs\.?\s?\d", re.IGNORECASE)
 # Taps that go back to wherever the user came from: where they lead depends on history.
 _BACKWARD = {"navigate up", "back", "go back", "close", "dismiss", "cancel", "done"}
@@ -72,6 +74,21 @@ def normalise(raw: str) -> str:
     return s
 
 
+_PII_PHRASE = re.compile(r"\d{4,}|@|₹|\$|€|£|\brs\.?\s?\d", re.IGNORECASE)
+
+
+def check_phrase(raw: str) -> str:
+    """The phrase as the map stores it; refused when it names no screen or holds what looks like an
+    account number, an email or an amount (the map is plain text for phrases)."""
+    phrase = normalise(raw)
+    if not phrase:
+        raise UserError(f"say which screen: {raw!r} names none")
+    if _PII_PHRASE.search(phrase):
+        raise UserError(f"{raw!r} looks like it holds an account number, email or amount: name the screen "
+                        f"without it")
+    return phrase
+
+
 def suggest(phrase: str, known) -> list[str]:
     return difflib.get_close_matches(phrase, list(known), n=3, cutoff=0.75)
 
@@ -85,7 +102,7 @@ def _ts(t: str) -> float:
         return 0.0
 
 
-def secrets() -> set:
+def secret_values() -> set:
     """Values never stored in or used for the map: only .env values. The dashboard's secrets cost
     an HTTP call per step, and typed values (where they end up) are never part of the map."""
     from .env import dotenv_keys
@@ -120,8 +137,46 @@ def sel_key(sel: dict | None) -> str:
 VOID = "void"
 
 
+def settled_sid(e: dict) -> str | None:
+    """The screen an event's own read showed, when that read counts: what a tap or typed field
+    acted on, what a passing wait or check found, where a scroll ended, an observe."""
+    sid, typ = e.get("sid"), e.get("type")
+    if not sid:
+        return None
+    if typ in ("tap", "type"):
+        return sid if e.get("ok") is not False else None
+    if typ in ("scroll", "seen"):
+        return sid
+    if typ in ("wait", "check"):
+        return sid if e.get("ok", True) and not e.get("found_instead") else None
+    return None
+
+
+def edge_line(frm: str, to: str, kind: str, sel: dict | None, label: str, scroll: dict | None, run, ver: str,
+              ok: bool, t) -> dict:
+    return {"k": "edge", "from": frm, "to": to, "kind": kind, "sel": sel, "label": label, "scroll": scroll,
+            "run": run, "ver": ver, "ok": ok, "t": t}
+
+
+def _run_canon(screens: dict):
+    """Within one run, a screen read again after its feed changed is the same screen: map each
+    raw id to the first one read like it (stored records, in the order they were first seen)."""
+    canon, kept = {}, {}
+    for sid, rec in screens.items():
+        try:
+            same = ident.match(ident.Ident.from_record(dict(rec, id=sid)), kept, one_sided=False)
+        except (KeyError, TypeError):
+            same = None
+        canon[sid] = same or sid
+        if not same:
+            kept[sid] = ident.Ident.from_record(dict(rec, id=sid))
+    return lambda sid: canon.get(sid, sid) if sid else sid
+
+
 def learn(events: list[dict], run: str, version: str, screens: dict, secrets=()) -> list[dict]:
     """Map observations from one run's events (pure). `screens`: sid -> screen record."""
+    c = _run_canon(screens)
+    events = [dict(e, sid=c(e["sid"])) if e.get("sid") else e for e in events]
     out: list[dict] = []
     used: set[str] = set()
     last = None          # screen of the last settled read ("@cold" after a fresh launch)
@@ -143,13 +198,12 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
         sel = scrub_selector(raw, secrets) if kind == "tap" else None
         if kind == "tap" and not sel:
             kind = "xy"
-        hint = act.get("scroll")
-        if hint:
-            to_sel = scrub_selector(hint.get("to"), secrets)
-            hint = {"direction": hint.get("direction"), "to": to_sel} if to_sel else None
-        out.append({"k": "edge", "from": frm, "to": to, "kind": kind, "sel": sel,
-                    "label": label if _clean(label, secrets) else "", "scroll": hint,
-                    "run": run, "ver": version, "ok": ok, "t": t})
+        scroll_hint = act.get("scroll")
+        if scroll_hint:
+            to_sel = scrub_selector(scroll_hint.get("to"), secrets)
+            scroll_hint = {"direction": scroll_hint.get("direction"), "to": to_sel} if to_sel else None
+        out.append(edge_line(frm, to, kind, sel, label if _clean(label, secrets) else "", scroll_hint,
+                             run, version, ok, t))
         used.update((frm, to))
 
     def settle(sid, t):
@@ -165,22 +219,20 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
         pending = VOID if pending is not None else a
 
     for e in events:
-        typ, t, sid = e.get("type"), e.get("t", ""), e.get("sid")
+        typ, t = e.get("type"), e.get("t", "")
+        if seen := settled_sid(e):
+            settle(seen, t)  # a tap's or a typed field's read comes before its action
         if typ == "tap":
             if e.get("ok") is False:
                 continue
-            if sid:
-                settle(sid, t)
             sel = e.get("stable") or e.get("selector")
             act({"kind": "tap" if sel else "xy", "sel": sel, "label": e.get("label"), "at": _ts(t),
                  "scroll": hint})
             hint = None
         elif typ == "type":
-            if sid and e.get("ok") is not False:
-                settle(sid, t)
             pending = VOID
         elif typ == "key":
-            if e.get("key") in ("back", "4", "KEYCODE_BACK") and not e.get("keyboard"):
+            if e.get("key") in _BACK_KEYS and not e.get("keyboard"):
                 act({"kind": "back", "sel": None, "label": "back", "at": _ts(t)})
             else:
                 pending = VOID
@@ -195,18 +247,12 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
             if not (typ == "adb" and (e.get("args") or [""])[0] == "logcat"):
                 pending = VOID
         elif typ == "scroll":
-            if sid:
-                settle(sid, t)
             if e.get("to") and e.get("found"):
                 hint = {"direction": e.get("direction"), "to": e.get("to")}
-        elif typ in ("wait", "check", "seen"):
-            if sid and e.get("ok", True) and not e.get("found_instead"):
-                settle(sid, t)
         elif typ == "nav" and e.get("outcome") == "failed" and e.get("edge"):
             ed = e["edge"]
-            out.append({"k": "edge", "from": ed["from"], "to": ed["to"], "kind": ed.get("kind", "tap"),
-                        "sel": ed.get("sel"), "label": "", "scroll": None, "run": run, "ver": version,
-                        "ok": False, "t": t})
+            out.append(edge_line(ed["from"], ed["to"], ed.get("kind", "tap"), ed.get("sel"), "", None, run,
+                                 version, False, t))
     out = _once_per_run(out)
     named = set()
     for o in _episodes(events, run, secrets):
@@ -258,14 +304,16 @@ def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
 
     for n, e in enumerate(events):
         typ = e.get("type")
-        sid = e.get("sid")
-        settled = sid and (typ in ("tap", "type", "scroll", "seen")
-                           or (typ in ("wait", "check") and e.get("ok", True) and not e.get("found_instead")))
-        if settled and sid != here:
-            entered[sid], here = last_tap, sid
+        seen = settled_sid(e)
+        if seen and seen != here:
+            entered[seen], here = last_tap, seen
         if typ == "nav":
             close()
-            if e.get("episode") and e.get("phrase"):
+            try:
+                ok_phrase = bool(e.get("episode") and e.get("phrase") and check_phrase(e["phrase"]))
+            except UserError:
+                ok_phrase = False  # never stored: a phrase holding an account number or an email
+            if ok_phrase:
                 ep = {"phrase": e["phrase"], "words": _words(e["phrase"]), "start": e.get("sid"),
                       "best": None, "actions": 0}
         elif typ in ("case_start", "case_end") or (typ == "launch" and (e.get("fresh") or e.get("restart"))):
@@ -276,7 +324,7 @@ def _episodes(events: list[dict], run: str, secrets=()) -> list[dict]:
             continue
         if typ in ("tap", "type", "key", "swipe", "scroll", "adb", "launch", "open_url"):
             ep["actions"] += 1
-            if typ == "key" and e.get("key") in ("back", "4", "KEYCODE_BACK") and ep["best"] and ep["best"][0] == 0:
+            if typ == "key" and e.get("key") in _BACK_KEYS and ep["best"] and ep["best"][0] == 0:
                 ep["best"] = None  # left the unrelated screen it checked: not what it was looking for
             if ep["actions"] > EPISODE_ACTIONS:
                 close()
@@ -389,7 +437,7 @@ class Store:
         os.replace(tmp, self.path)
 
 
-class MapLocked(OSError):
+class MapLocked(UserError):
     pass
 
 
@@ -502,8 +550,7 @@ class NavMap:
         sid = d["id"]
         if sid in self.screens or sid in self.alias:
             return
-        it = ident.Ident(sid, "screen", frozenset(d.get("tokens") or ()), d.get("title") or "", bool(d.get("secure")),
-                         frozenset(d.get("inner") or ()), d.get("tab") or "", frozenset(d.get("menu") or ()))
+        it = ident.Ident.from_record(d)
         same = ident.match(it, self.screens, one_sided=False)  # never fold a titled page into an untitled one
         if same:
             self.alias[sid] = same
@@ -563,7 +610,7 @@ class NavMap:
         froms: dict = {}
         for e in self.edges.values():
             if e.to == sid and e.kind != "back":
-                froms.setdefault(e.frm, set()).add(sel_key(e.sel) or e.key[3] or id(e))
+                froms.setdefault(e.frm, set()).add(sel_key(e.sel) or id(e))
         return any(len(v) > 1 for v in froms.values())
 
     def known_names(self) -> list[str]:
@@ -588,7 +635,9 @@ class NavMap:
         targets = {self.canon(t) for t in targets}
         if not start or not targets:
             return None
-        strict = {t for t in targets if via and self.template(t)}
+        # A template screen (an article, an order) is reached only by the tap its name was learned
+        # with; named without one, it cannot be reached at all rather than reached wrongly.
+        strict = {t for t in targets if self.template(t)}
         if start in targets - strict:
             return []
         out: dict[str, list] = {}
@@ -644,21 +693,20 @@ def edge_id(e: Edge) -> str:
 
 # ---------------------------------------------------------------- the CLI's side
 
-def stamp(run, screen) -> str | None:
-    """Identify `screen` for the run's app and keep its tokens with the run (once per screen)."""
+def stamp(run, screen, it: ident.Ident | None = None) -> str | None:
+    """Identify `screen` for the run's app (unless `it` already did) and keep its tokens with the
+    run, once per screen."""
     app = run.meta().get("package")
     if not app:
         return None
-    it = ident.identify(screen, app=app, secrets=secrets())
+    it = it or ident.identify(screen, app=app, secrets=secret_values())
     if not it.id:
         return None
     f = run.path / "screens.jsonl"
     known = f.read_text() if f.exists() else ""
     if f'"id": "{it.id}"' not in known:
         with f.open("a") as out:
-            out.write(json.dumps({"id": it.id, "tokens": sorted(it.tokens), "title": it.title,
-                                  "secure": it.secure, "inner": sorted(it.inner), "tab": it.tab,
-                                  "menu": sorted(it.menu)}) + "\n")
+            out.write(json.dumps(it.to_record()) + "\n")
     return it.id
 
 
@@ -677,15 +725,16 @@ def run_screens(run) -> dict:
 
 def entry_tap(events: list[dict], sid: str) -> dict | None:
     """The tap that last opened screen `sid` in these events (scrubbed), for `map name here`."""
+    hidden = secret_values()
     last_tap, here, found = None, None, None
     for e in events:
-        s = e.get("sid")
-        if s and s != here:
-            if s == sid:
+        seen = settled_sid(e)
+        if seen and seen != here:
+            if seen == sid:
                 found = last_tap
-            here = s
+            here = seen
         if e.get("type") == "tap" and e.get("ok") is not False:
-            last_tap = scrub_selector(e.get("stable") or e.get("selector"), secrets())
+            last_tap = scrub_selector(e.get("stable") or e.get("selector"), hidden)
     return found
 
 
@@ -696,7 +745,7 @@ def failed_in(events: list[dict]) -> set:
 
 def learn_run(run, app: str, version: str) -> str:
     """Store what a finished run taught; a summary line, or "" when it taught nothing new."""
-    obs = learn(run.events(), run.name, version, run_screens(run), secrets())
+    obs = learn(run.events(), run.name, version, run_screens(run), secret_values())
     if not any(o["k"] in ("edge", "name") for o in obs):
         return ""
     if not Store(app).append(obs, run.name):
@@ -709,7 +758,7 @@ def learn_run(run, app: str, version: str) -> str:
 def current(run, app: str, version: str) -> NavMap:
     """The stored map plus what the active run has learned so far (not yet stored)."""
     events = run.events()
-    extra = [] if Store(app).learned(run.name) else learn(events, run.name, version, run_screens(run), secrets())
+    extra = [] if Store(app).learned(run.name) else learn(events, run.name, version, run_screens(run), secret_values())
     return NavMap.load(app, version, extra=extra, failed=failed_in(events))
 
 
@@ -724,13 +773,10 @@ def compact(app: str, version: str = "") -> int:
         m = NavMap.load(app, version)
         lines: list[dict] = []
         for sid, it in m.screens.items():
-            lines.append({"k": "screen", "id": sid, "tokens": sorted(it.tokens), "title": it.title,
-                          "secure": sid in m.secure, "inner": sorted(it.inner), "tab": it.tab,
-                          "menu": sorted(it.menu)})
+            lines.append(dict(it.to_record(), k="screen", secure=sid in m.secure))
         for e in m.edges.values():
             for ver, ok, run in e.results:
-                lines.append({"k": "edge", "from": e.frm, "to": e.to, "kind": e.kind, "sel": e.sel,
-                              "label": e.label, "scroll": e.scroll, "run": run, "ver": ver, "ok": ok, "t": 0})
+                lines.append(edge_line(e.frm, e.to, e.kind, e.sel, e.label, e.scroll, run, ver, ok, 0))
         for phrase, binds in m.names.items():
             for sid, explicit, via in binds:
                 lines.append({"k": "name", "phrase": phrase, "screen": sid, "via": via,
