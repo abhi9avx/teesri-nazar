@@ -36,7 +36,6 @@ from .errors import UserError
 SCHEMA = 4  # 2: screens carry their menu; 3: tab strips are not menu; 4: nearly empty pages are not screens. An older map is moved aside and relearned
 MAX_GAP = 60.0          # seconds between an action and the read that shows where it went
 RESPOND = 3.0           # a read of the same screen this soon after a tap: the app may not have moved yet
-LATE = 8.0              # ...but then the move must come this soon after the tap, or the tap did not cause it
 EPISODE_ACTIONS = 25    # a phrase search ends after this many actions without a new goto
 MAX_SELECTOR = 24
 LOCK_WAIT = 10.0  # a run stopping while `map compact` rewrites waits rather than loses its learning
@@ -216,10 +215,11 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
     def settle(sid, t):
         nonlocal last, pending, hint
         if pending not in (None, VOID) and sid == last and _ts(t) - pending["at"] < RESPOND:
-            pending["looked"] = True  # looked right after the tap, before the screen changed
+            # Looked right after the tap, before the screen changed (a page still loading): the tap
+            # still counts. A screen that moves on its own after a do-nothing tap may be credited
+            # to it; goto verifies every hop, so such a step fails once, is not reused, and retires.
             return
-        gap = LATE if pending not in (None, VOID) and pending.get("looked") else MAX_GAP
-        if pending not in (None, VOID) and last and sid != last and _ts(t) - pending["at"] <= gap:
+        if pending not in (None, VOID) and last and sid != last and _ts(t) - pending["at"] <= MAX_GAP:
             emit_edge(last, sid, pending, t)
         if sid != last:
             hint = None

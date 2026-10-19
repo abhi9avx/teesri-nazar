@@ -85,13 +85,15 @@ class LearnEdgesTest(unittest.TestCase):
         log.seen("HOME").add(type="key", key="back").seen("PREV")
         self.assertEqual([x for x in edges(learn(log)) if x[2] == "tap"], [])
 
-    def test_a_later_move_the_tap_did_not_cause_is_not_credited_to_it(self):
-        """OTP: Resend does nothing, a look at +1 s, then SMS auto-read moves the app 15 s later."""
-        log = Log().seen("OTP").tap("OTP", text="Resend")
-        log.seen("OTP")
-        log.t += 14
-        log.wait("HOME")
-        self.assertEqual(edges(learn(log)), [])
+    def test_a_slow_page_seen_a_model_turn_later_is_still_learned(self):
+        """The agent's loop: tap, glance at once (still loading), think, look again 12 s later.
+        A screen that moves on its own after a do-nothing tap can be credited wrongly instead;
+        goto verifies every hop, so such a step fails, is not reused, and retires."""
+        log = Log().seen("HOME").tap("HOME", text="Savings")
+        log.seen("HOME")
+        log.t += 11
+        log.seen("SAV")
+        self.assertEqual(edges(learn(log)), [("HOME", "SAV", "tap")])
 
     def test_a_second_tap_soon_after_a_slow_one_learns_nothing(self):
         log = Log().seen("S").tap("S", text="Continue").tap("S", text="Help").wait("X")
