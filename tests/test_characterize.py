@@ -169,5 +169,14 @@ class ExitCodeTest(Phase0):
         self.run_("check", "Login")
 
 
+class MapIsolationTest(Phase0):
+    def test_tests_never_learn_into_the_users_map(self):
+        import os
+        from pathlib import Path
+        from teesri_nazar import navmap
+        self.assertNotEqual(navmap.map_dir(), Path.home() / ".tnazar" / "maps")
+        self.assertTrue(str(navmap.map_dir()).startswith(os.environ["TNAZAR_HOME"]))
+
+
 if __name__ == "__main__":
     unittest.main()

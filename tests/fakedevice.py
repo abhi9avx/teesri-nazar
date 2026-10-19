@@ -20,6 +20,9 @@ from xml.sax.saxutils import quoteattr
 from teesri_nazar import cli
 from teesri_nazar.adb import AdbError
 
+# Any test that learns a navigation map outside fake_device() still never writes the user's own.
+os.environ.setdefault("TNAZAR_MAP_DIR", tempfile.mkdtemp(prefix="tnazar-test-maps-"))
+
 PACKAGE = "com.example.app"
 SERIAL = "fake-1"
 PNG = b"\x89PNG\r\n\x1a\nfake"
@@ -59,6 +62,7 @@ def server_xml(nodes: list[dict], size=(1080, 2400), package: str = PACKAGE) -> 
         pairs = {"index": "0", "package": package, "class": n["cls"], "text": n["text"], "resource-id": rid,
                  "clickable": str(n["clickable"]).lower(), "enabled": str(n["enabled"]).lower(),
                  "checked": str(n["checked"]).lower(), "password": str(n["password"]).lower(),
+                 "scrollable": str(n.get("scrollable", False)).lower(),
                  "bounds": f"[{l},{t}][{r},{b}]", "displayed": "true"}
         if n["desc"]:
             pairs["content-desc"] = n["desc"]
@@ -75,8 +79,10 @@ class FakeApp:
     """screens: name -> nodes. on_tap: (screen, node id or text) -> next screen. on_key: (screen, key) -> next."""
 
     def __init__(self, screens: dict[str, list[dict]], start: str,
-                 on_tap: dict | None = None, on_key: dict | None = None, on_swipe: dict | None = None):
+                 on_tap: dict | None = None, on_key: dict | None = None, on_swipe: dict | None = None,
+                 packages: dict | None = None):
         self.screens = screens
+        self.packages = packages or {}  # screen -> package, for another app's window (a system dialog)
         self.start = start
         self.on_tap = on_tap or {}
         self.on_key = on_key or {}
@@ -156,7 +162,7 @@ class FakeAdb:
                 body = b'{"value": {"error": "unknown error", "message": "Cannot read the screen"}}'
                 raise urllib.error.HTTPError(path, 500, "Internal Server Error", {}, io.BytesIO(body))
             self.uia2_reads += 1
-            return {"value": server_xml(self.nodes(), self.size)}
+            return {"value": server_xml(self.nodes(), self.size, package=self.package())}
         raise AssertionError(f"unexpected uia2 call: {method} {path}")
 
     def _tick(self) -> None:
@@ -170,6 +176,9 @@ class FakeAdb:
     # --- helpers for tests
     def nodes(self) -> list[dict]:
         return self.app.screens[self.current]
+
+    def package(self) -> str:
+        return self.app.packages.get(self.current, PACKAGE)
 
     def node_at(self, x: int, y: int) -> dict | None:
         hits = [n for n in self.nodes() if n["bounds"][0] <= x < n["bounds"][2] and n["bounds"][1] <= y < n["bounds"][3]]
@@ -189,7 +198,7 @@ class FakeAdb:
             if self.dump_failures:
                 self.dump_failures -= 1
                 return b"ERROR: could not get idle state."
-            return screen_xml(self.nodes(), self.size).encode()
+            return screen_xml(self.nodes(), self.size, package=self.package()).encode()
         if command.startswith("screencap"):
             return b"" if self.secure else PNG
         raise AssertionError(f"unexpected exec-out: {command}")
@@ -227,7 +236,8 @@ class FakeAdb:
             if n:
                 if "EditText" in n["cls"]:
                     self.keyboard = self.keyboard_on_focus
-                nxt = self.app.on_tap.get((self.current, n["id"])) or self.app.on_tap.get((self.current, n["text"]))
+                nxt = (self.app.on_tap.get((self.current, n["id"])) or self.app.on_tap.get((self.current, n["text"]))
+                       or self.app.on_tap.get((self.current, n["desc"])))
                 if nxt:
                     self.current, self.keyboard = nxt, False
             return ""
@@ -326,13 +336,15 @@ class FakeClock:
 @contextlib.contextmanager
 def fake_device(adb: FakeAdb):
     """Patch tnazar to use `adb` and a temp TNAZAR_HOME; yields the home directory."""
-    from teesri_nazar import device, replay, screen, uia2
+    from teesri_nazar import appmap, device, replay, screen, uia2
 
     clock = FakeClock()
     with tempfile.TemporaryDirectory() as home, contextlib.ExitStack() as stack:
         # APPIUM_HOME: the server APKs a test puts there, never the ones on the machine running it.
+        # TNAZAR_MAP_DIR: the navigation map a test learns, never the one in the user's home.
         stack.enter_context(mock.patch.dict(os.environ, {"TNAZAR_HOME": home,
-                                                         "APPIUM_HOME": os.path.join(home, "appium")}))
+                                                         "APPIUM_HOME": os.path.join(home, "appium"),
+                                                         "TNAZAR_MAP_DIR": os.path.join(home, "maps")}))
         for mod in (cli, replay):
             stack.enter_context(mock.patch.object(mod, "Adb", lambda serial: adb))
             stack.enter_context(mock.patch.object(mod, "pick_serial", lambda explicit=None: SERIAL))
@@ -340,6 +352,7 @@ def fake_device(adb: FakeAdb):
                                               lambda: [mock.Mock(serial=SERIAL, state="device", model="FakePhone")]))
         stack.enter_context(mock.patch.object(device, "time", clock))
         stack.enter_context(mock.patch.object(replay, "time", clock))
+        stack.enter_context(mock.patch.object(appmap, "time", clock))
         stack.enter_context(mock.patch.object(screen, "time", clock))
         stack.enter_context(mock.patch.object(uia2, "time", clock))
         stack.enter_context(mock.patch.object(uia2, "_http", adb.uia2_http))

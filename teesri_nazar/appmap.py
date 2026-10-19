@@ -15,6 +15,7 @@ Exit codes: 0 done; 1 a step or check failed; 4 a `wait --or` saw the other scre
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import time
@@ -138,3 +139,313 @@ def summary(body: list) -> str:
     """The route at a glance: `tap Login → wait "Pay now"`."""
     text = " → ".join(item.summary() for item in body)
     return text if len(text) <= SUMMARY_CHARS else text[:SUMMARY_CHARS - 1] + "…"
+
+
+# ---------------------------------------------------------------- learned routes: goto and map
+#
+# `goto <phrase>` reaches a screen in one command. A saved flow of that name wins. Otherwise it
+# reads the screen once, finds it in the navigation map (navmap.py) and taps the learned route,
+# waiting after each tap until the screen *is* the expected one (identity, not a label: the
+# button that opens "Passbook" is often labelled "Passbook" itself). It stops at the first hop
+# that goes elsewhere, explains it, and remembers the failure. A miss costs the one read and
+# prints the screen like `observe`, so exploring from there costs nothing extra.
+#
+# Exit codes: 0 arrived (or already there, or --dry-run); 1 a hop failed; 2 not in the map, the
+# start screen is unknown, no route can run, or the phrase means two screens; 3 a dashboard
+# message; 5 paused.
+
+STABLE_ELSEWHERE = 1.5  # seconds another screen must hold before a hop counts as gone wrong
+
+
+def _need_app():
+    active = get_active()
+    if not active:
+        raise UserError("no active run: `./tnazar start <name> --package <app>` first")
+    app = _app_of(active)
+    if not app:
+        raise UserError("the run has no app: start it with --package to learn and use routes")
+    return active[0], app
+
+
+def _flow_for(phrase: str, app: str):
+    from .navmap import normalise
+    want = normalise(phrase)
+    found, _ = route_files(app)
+    hits = [(f, p, n) for f, p in found for n in p.flows if normalise(n) == want and want]
+    return hits[0] if len(hits) == 1 else None
+
+
+def goto(args) -> int:
+    from . import device as dev
+    from . import ident, navmap
+    from . import screen as scr
+    since = live.Since()
+    the_run, app = _need_app()
+    phrase = " ".join(args.target).strip()
+    if not navmap.enabled():
+        raise UserError("the navigation map is off (TNAZAR_MAP=off)")
+    if flow := _flow_for(phrase, app):
+        f, _, name = flow
+        print(f"goto {phrase}: saved flow `{name}` ({_rel(f)})")
+        if args.dry_run:
+            return 0
+        return run_flow(argparse.Namespace(name=name, plan=str(f), device=args.device))
+
+    ctx = cli.Ctx.from_args(args.device)
+    version = the_run.meta().get("app_version", "")
+    screen = ctx.capture()
+    start_sid = ctx.stamp(screen)
+    m = navmap.current(the_run, app, version)
+    for w in m.warnings[:3]:
+        print(f"warning: map: {w}", file=sys.stderr)
+    it = ident.identify(screen, app=app, secrets=navmap._secrets())
+    here = m.where(it) if it.id else None
+    targets = m.resolve(phrase)
+
+    def nav(outcome: str, **extra) -> None:
+        ctx.log({"type": "nav", "phrase": phrase, "outcome": outcome, "sid": start_sid, **extra})
+
+    if not targets:
+        if not navmap.normalise(phrase):
+            raise UserError(f"say which screen: {phrase!r} names none")
+        close = navmap.suggest(navmap.normalise(phrase), m.known_names())
+        nav("unknown", episode=True)
+        print(f"goto {phrase}: not in the map yet." + (f" Did you mean: {', '.join(close)}?" if close else ""))
+        print("Explore from here, then `check` the screen: the route and the name are learned. Current screen:")
+        cli.print_screen(screen)
+        return cli.EXIT_ERROR
+    if len(targets) > 1:
+        nav("conflict")
+        print(f"goto {phrase}: the name means more than one screen: "
+              + ", ".join(f"{t} ({m.label(t) or 'unnamed'})" for t in sorted(targets))
+              + f". Fix it with `tnazar map name <screen> {phrase}` or `tnazar map forget {phrase}`.")
+        return cli.EXIT_ERROR
+    if here is None:
+        nav("start_unknown")
+        kind = it.kind if not it.id else "not in the map yet"
+        print(f"goto {phrase}: this screen is {kind}, so no route starts here. Known: "
+              f"{', '.join(m.known_names()) or '(no names yet)'}. Current screen:")
+        cli.print_screen(screen)
+        return cli.EXIT_ERROR
+    path = m.route(here, targets)
+    if path == []:
+        nav("arrived", hops=0)
+        print(f"goto {phrase}: already there")
+        cli.print_screen(screen)
+        return 0
+    if path is None:
+        nav("no_route")
+        print(f"goto {phrase}: no route the map can run from here (only unsafe, typed, back or "
+              f"pixel steps are known, or a step failed earlier in this run). Explore. Current screen:")
+        cli.print_screen(screen)
+        return cli.EXIT_ERROR
+    route_text = " → ".join(_hop_text(m, h) for h in path)
+    if args.dry_run:
+        print(f"goto {phrase}: {len(path)} step(s): {route_text}")
+        for h in path:
+            print(f"  {h.frm} -> {h.to}  {_hop_text(m, h)}  (worked in {len(h.ok_runs)} run(s))")
+        return 0
+
+    began = time.monotonic()
+    cli.cmd_say(argparse.Namespace(text=f"Going to {phrase} by a learned route ({len(path)} steps)"))
+    cur = screen
+    for i, hop in enumerate(path, 1):
+        if i > 1:
+            held = cli._hold(the_run)
+            if held is None and live.needs_agent(since.take()):
+                held = live.EXIT_HELD
+            if held is not None:
+                nav("stopped", hops=i - 1)
+                print(f"goto {phrase}: stopped by you before step {i}; `observe` first: the route stopped part-way.")
+                return held
+        try:
+            with live.device_lock():
+                el = _find_for_hop(ctx, dev, scr, cur, hop)
+                if el is None:
+                    return _hop_failed(ctx, m, nav, phrase, i, hop, cur, "its button is not on the screen")
+                x, y = el.center
+                dev.tap(ctx.adb, x, y)
+                ctx.log({"type": "tap", "selector": hop.sel, "xy": [x, y], "label": hop.label or str(hop.sel),
+                         "long": False, "screen": list(ctx.adb.screen_size()), "sid": ctx.stamp(cur), "via": "goto"})
+        except live.DeviceBusy:
+            raise UserError("the device is busy with another step; run goto again") from None
+        arrived, cur, why = _arrive(ctx, m, scr, ident, app, hop, args.timeout)
+        if not arrived:
+            return _hop_failed(ctx, m, nav, phrase, i, hop, cur, why)
+    if sid := ctx.stamp(cur):
+        ctx.log({"type": "seen", "sid": sid})
+    cli.save_xml(cli.state_dir() / "last-screen.xml", cur.xml)
+    took = time.monotonic() - began
+    nav("arrived", hops=len(path), took_ms=round(took * 1000))
+    print(f"goto {phrase}: arrived in {len(path)} step(s), {took:.1f}s ({route_text})")
+    cli.print_screen(cur)
+    return 0
+
+
+def _hop_text(m, h) -> str:
+    sel = h.sel or {}
+    what = h.label or sel.get("text") or sel.get("desc") or sel.get("id") or "?"
+    return f'tap "{what}"' + (f" (scroll {h.scroll['direction']})" if h.scroll else "")
+
+
+def _find_for_hop(ctx, dev, scr, cur, hop):
+    sel = scr.Selector.from_dict(hop.sel)
+    el = scr.find(cur, sel, strict=True)
+    if el is not None or not hop.scroll:
+        return el
+    direction = hop.scroll.get("direction") or "down"
+    vec = dev.scroll_vector(direction, dev.scroll_area(cur, direction, ctx.adb.screen_size()))
+    screen = cur
+    for _ in range(dev.SCROLL_MAX):
+        dev.swipe(ctx.adb, *vec)
+        before, screen = screen.signature(), scr.capture(ctx.adb)
+        if (el := scr.find(screen, sel, strict=True)) is not None:
+            return el
+        if screen.signature() == before:
+            return None
+    return None
+
+
+def _arrive(ctx, m, scr, ident_mod, app, hop, timeout):
+    """Poll until the screen is the hop's target. Another screen holding still means the hop
+    went somewhere else; the screen it started from just means the app is still on its way."""
+    from . import navmap
+    from . import uia2
+    interval = 0.15 if uia2.active(ctx.adb) else 0.4
+    deadline = time.monotonic() + timeout
+    other, since = None, 0.0
+    screen = None
+    while True:
+        try:
+            screen = scr.capture(ctx.adb)
+        except cli.AdbError:
+            screen = None
+        if screen is not None:
+            it = ident_mod.identify(screen, app=app, secrets=navmap._secrets())
+            sid = m.where(it) if it.id else None
+            if sid == hop.to:
+                return True, screen, ""
+            if it.id and sid != hop.frm:
+                now = time.monotonic()
+                if other != it.id:
+                    other, since = it.id, now
+                elif now - since >= STABLE_ELSEWHERE:
+                    name = m.label(sid) if sid else ""
+                    return False, screen, f"it went to {('“' + name + '”') if name else 'another screen'}"
+            else:
+                other = None
+        if time.monotonic() >= deadline:
+            return False, screen, f"the screen did not change to the expected one within {timeout:g}s"
+        time.sleep(interval)
+
+
+def _hop_failed(ctx, m, nav, phrase, i, hop, screen, why) -> int:
+    expected = m.label(hop.to) or hop.to
+    nav("failed", hops=i - 1, ok=False, expected=expected, why=why,
+        edge={"from": hop.frm, "to": hop.to, "kind": hop.kind, "sel": hop.sel})
+    print(f"goto {phrase}: FAILED at step {i} ({_hop_text(m, hop)}): expected “{expected}”, but {why}. "
+          f"This step is not used again in this run; explore from here and the new way is learned.")
+    if screen is not None:
+        cli.save_xml(cli.state_dir() / "last-screen.xml", screen.xml)
+        print("Current screen:")
+        cli.print_screen(screen)
+    return cli.EXIT_FAIL
+
+
+def cmd_map(args) -> int:
+    from . import navmap
+    active = get_active()
+    app = args.app or _app_of(active)
+    if not app:
+        raise UserError("which app? start a run with --package, or pass --app <package>")
+    version = active[0].meta().get("app_version", "") if active else ""
+    if args.action == "list":
+        return _map_list(navmap, app, version, active, args.edges)
+    if args.action == "name":
+        return _map_name(navmap, app, version, active, args)
+    if args.action == "forget":
+        if len(args.args) != 1:
+            raise UserError("usage: tnazar map forget <phrase|screen-id|route-id>")
+        m = navmap.current(active[0], app, version) if active else navmap.NavMap.load(app, version)
+        key = args.args[0]
+        what = "screen" if key in m.screens or key in m.alias else \
+            "edge" if any(navmap.edge_id(e) == key for e in m.edges.values()) else "name"
+        if what == "name" and not m.resolve(key):
+            raise UserError(f"nothing called {key!r} in the map")
+        navmap.Store(app).append([navmap.forget_line(what, key)], None)
+        print(f"forgot {what} {key}")
+        return 0
+    if args.action == "audit":
+        m = navmap.NavMap.load(app, version)
+        strings = sorted({s for e in m.edges.values() for s in (e.label, *(str(v) for v in (e.sel or {}).values()))
+                          if s and s not in ("True", "0")} | set(m.known_names()))
+        print(f"every readable string in the map of {app} ({navmap.Store(app).path}):")
+        for s in strings:
+            print(f"  {s}")
+        return 0
+    if args.action == "compact":
+        n = navmap.compact(app, version)
+        print(f"map of {app} compacted: {n} lines")
+        return 0
+    return cli.EXIT_ERROR
+
+
+def _map_list(navmap, app, version, active, with_edges) -> int:
+    m = navmap.current(active[0], app, version) if active and _app_of(active) == app else navmap.NavMap.load(app, version)
+    for w in m.warnings[:3]:
+        print(f"warning: map: {w}", file=sys.stderr)
+    runnable = [e for e in m.edges.values() if m.runnable(e)]
+    print(f"map: {app}  {len(m.screens)} screens, {len(runnable)} usable steps, {len(m.known_names())} names"
+          f"  ({navmap.Store(app).path})")
+    names_of: dict = {}
+    for p in m.known_names():
+        for sid in m.resolve(p):
+            names_of.setdefault(sid, []).append(p)
+    for sid in m.screens:
+        outs = [e for e in m.edges.values() if e.frm == sid]
+        ins = [e for e in m.edges.values() if e.to == sid]
+        if not (outs or ins or sid in names_of):
+            continue
+        flags = " [secure]" if sid in m.secure else ""
+        names = f"  names: {', '.join(names_of[sid])}" if sid in names_of else ""
+        print(f"  {sid}  {m.label(sid) or '(unnamed)'}{names}{flags}")
+    flows = sorted({n for _, p in route_files(app)[0] for n in p.flows})
+    if flows:
+        print(f"  saved flows: {', '.join(flows)}")
+    if with_edges:
+        print("steps:")
+        for e in m.edges.values():
+            state = "" if m.runnable(e) else " [unsafe]" if m.unsafe(e) else " [retired]" if m.retired(e) else \
+                " [failed in this run]" if e.key in m.failed else f" [{e.kind}: not replayed]"
+            print(f"  {navmap.edge_id(e)}  {e.frm} -> {e.to}  {_hop_text(m, e)}  "
+                  f"(worked in {len(e.ok_runs)} run(s)){state}")
+    return 0
+
+
+def _map_name(navmap, app, version, active, args) -> int:
+    if len(args.args) < 2:
+        raise UserError("usage: tnazar map name <screen-id|here> <phrase> [--alias other]")
+    where, phrases = args.args[0], [" ".join(args.args[1:]), *args.alias]
+    lines = []
+    if where == "here":
+        if not active:
+            raise UserError("`here` needs an active run on the device")
+        ctx = cli.Ctx.from_args(args.device)
+        sid = ctx.stamp(ctx.capture())
+        if not sid:
+            raise UserError("this screen cannot be named (a loading, web or system screen)")
+        rec = navmap.run_screens(active[0]).get(sid)
+        if rec:
+            lines.append(dict(rec, k="screen"))
+    else:
+        m = navmap.current(active[0], app, version) if active else navmap.NavMap.load(app, version)
+        if where not in m.screens and where not in m.alias:
+            raise UserError(f"no screen {where} in the map; `tnazar map` lists them")
+        sid = m.canon(where)
+    bad = [p for p in phrases if not navmap.normalise(p)]
+    if bad:
+        raise UserError(f"say which screen: {bad[0]!r} names none")
+    lines += [navmap.name_line(p, sid, explicit=True) for p in phrases]
+    navmap.Store(app).append(lines, None)
+    print(f"named {sid}: {', '.join(navmap.normalise(p) for p in phrases)}")
+    return 0
