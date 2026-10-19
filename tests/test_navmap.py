@@ -437,9 +437,20 @@ class StoreTest(unittest.TestCase):
         navmap.Store(APP).append(obs, "r1")
         self.assertIsNone(navmap.NavMap.load(APP, version="1").route("HOME", {"ADD"}))
 
-    def test_years_are_fine_in_a_phrase(self):
-        for phrase in ("2024 statement", "fy 2023", "form 16"):
+    def test_years_are_fine_in_a_phrase_but_pins_and_card_digits_are_not(self):
+        for phrase in ("2024 statement", "fy 2023", "form 16", "26as"):
             self.assertTrue(navmap.check_phrase(phrase))
+        for phrase in ("card 4321", "mpin 1234", "otp 98765"):
+            with self.assertRaises(navmap.UserError):
+                navmap.check_phrase(phrase)
+
+    def test_rows_with_the_same_button_label_make_a_template(self):
+        log = Log()
+        for n in range(3):
+            log.add(type="tap", sid="ORDERS", selector={"text": "View details", "nth": n}, label="View details") \
+                .wait("DETAIL").add(type="key", key="back").seen("ORDERS")
+        self.save(log, "r1")
+        self.assertTrue(navmap.NavMap.load(APP, version="1.0").template("DETAIL"))
 
     def test_a_normal_screen_keeps_every_way_in(self):
         log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \

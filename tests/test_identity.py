@@ -132,6 +132,14 @@ class UntitledMenuTest(unittest.TestCase):
         t2 = ident_of(self.page(["A", "B"], [node(text="Credit card", clickable=False, bounds=(200, 100, 600, 190))]))
         self.assertFalse(ident.compatible(t1, t2))
 
+    def test_a_small_menu_inside_a_bigger_one_is_another_page(self):
+        """Found on a device: an article whose only menu entry also sits on the profile page."""
+        profile = ident_of(self.page(["Help & support", "Profile details", "App settings", "Reports", "Pricing"]))
+        article = ident_of(self.page(["Help & support"]))
+        self.assertFalse(ident.same(profile, article))
+        self.assertFalse(ident.compatible(article, profile))
+        self.assertIsNone(ident.match(profile, {article.id: article}))
+
     def test_rows_with_amounts_are_not_menu(self):
         a = ident_of(self.page(["Help & support", "Pricing", "Rent ₹12,000"]))
         b = ident_of(self.page(["Help & support", "Pricing", "Fuel ₹900"]))

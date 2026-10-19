@@ -74,7 +74,8 @@ def normalise(raw: str) -> str:
     return s
 
 
-_PII_PHRASE = re.compile(r"\d{6,}|@|₹|\$|€|£|\brs\.?\s?\d", re.IGNORECASE)  # years and form numbers are fine
+# Account, phone, card, PIN and OTP digits (4+ in a row) are refused; a year (19xx, 20xx) is fine.
+_PII_PHRASE = re.compile(r"(?<!\d)(?!(?:19|20)\d\d(?!\d))\d{4,}|@|₹|\$|€|£|\brs\.?\s?\d", re.IGNORECASE)
 
 
 def check_phrase(raw: str) -> str:
@@ -83,7 +84,7 @@ def check_phrase(raw: str) -> str:
     phrase = normalise(raw)
     if not phrase:
         raise UserError(f"say which screen: {raw!r} names none")
-    if _PII_PHRASE.search(phrase):
+    if _PII_PHRASE.search(phrase) or any(v and len(v) >= 3 and v.casefold() in phrase for v in secret_values()):
         raise UserError(f"{raw!r} looks like it holds an account number, email or amount: name the screen "
                         f"without it")
     return phrase
@@ -617,8 +618,10 @@ class NavMap:
             if e.to == sid and e.kind != "back":
                 sel = e.sel or {}
                 # Counted by what the button says: one button learned by its text and by its id is one.
-                froms.setdefault(e.frm, set()).add(normalise(e.label or sel.get("text") or sel.get("desc") or "")
-                                                   or sel_key(e.sel) or id(e))
+                said = normalise(e.label or sel.get("text") or sel.get("desc") or "")
+                # One button learned by its text and by its id is one way in; the same label on
+                # different rows (nth) is several, like different labels.
+                froms.setdefault(e.frm, set()).add((said, sel.get("nth", 0)) if said else sel_key(e.sel) or id(e))
         return any(len(v) > 1 for v in froms.values())
 
     def known_names(self) -> list[str]:

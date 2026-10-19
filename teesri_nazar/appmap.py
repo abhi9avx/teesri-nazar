@@ -331,12 +331,7 @@ def _arrive(ctx, m, app, hop, timeout):
         if screen is not None:
             it = ident.identify(screen, app=app, secrets=navmap.secret_values())
             sid = m.where(it) if it.id else None
-            expected, source = m.screens.get(hop.to), m.screens.get(hop.frm)
-            # The page may be held twice in the map (read with and without its title): a read that
-            # fits the target and not the screen it left counts as arriving.
-            if sid == hop.to or (it.id and expected is not None and sid != hop.frm
-                                 and ident.compatible(expected, it)
-                                 and not (source is not None and ident.compatible(source, it))):
+            if sid == hop.to or (it.id and _arrival(m.screens, sid, it, hop.to, hop.frm)):
                 return True, screen, it, ""
             if it.id and sid != hop.frm:
                 now = time.monotonic()
@@ -350,6 +345,15 @@ def _arrive(ctx, m, app, hop, timeout):
         if time.monotonic() >= deadline:
             return False, screen, it, f"the screen did not change to the expected one within {timeout:g}s"
         time.sleep(interval)
+
+
+def _arrival(screens: dict, sid: str | None, it, target: str, source: str) -> bool:
+    """A read that is no known screen still arrives when the map holds the target page twice (with
+    and without its title): it must fit the target, no other stored screen, and not the source."""
+    if sid is not None or target not in screens:
+        return False
+    fits = [k for k, s in screens.items() if ident.compatible(s, it)]
+    return fits == [target] and source not in fits
 
 
 def _hop_failed(ctx, m, nav, phrase, i, hop, screen, why) -> int:

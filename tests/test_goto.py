@@ -566,3 +566,21 @@ class ReportTest(GotoBase):
         self.stop()
         self.assertIn("| a\\|b | not in the map |", (run.path / "report.md").read_text())
         self.assertIn("<td>a|b</td><td>not in the map</td>", (run.path / "report.html").read_text())
+
+
+class ArrivalTest(unittest.TestCase):
+    """goto's arrival check: a page the map holds twice still arrives; a sibling never does."""
+
+    def test_compatible_fallback_only_when_the_read_is_no_known_screen_and_only_one_fits(self):
+        from teesri_nazar import ident
+        from teesri_nazar.appmap import _arrival
+        menu = frozenset("abcde")
+        credit = ident.Ident("cccccccc", "screen", frozenset("F"), "t-credit", False, menu=menu)
+        debit = ident.Ident("dddddddd", "screen", frozenset("F"), "t-debit", False, menu=menu)
+        hub = ident.Ident("hhhhhhhh", "screen", frozenset("H"), "t-hub", False)
+        screens = {s.id: s for s in (credit, debit, hub)}
+        untitled_read = ident.Ident("rrrrrrrr", "screen", frozenset("F"), "", False, menu=menu)
+        self.assertFalse(_arrival(screens, None, untitled_read, "cccccccc", "hhhhhhhh"))  # debit fits too
+        del screens["dddddddd"]
+        self.assertTrue(_arrival(screens, None, untitled_read, "cccccccc", "hhhhhhhh"))
+        self.assertFalse(_arrival(screens, "hhhhhhhh", untitled_read, "cccccccc", "hhhhhhhh"))  # a known screen

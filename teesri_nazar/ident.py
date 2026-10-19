@@ -137,9 +137,16 @@ def _score(a: Ident, b: Ident) -> float:
 
 
 def _menu_overlap(a: Ident, b: Ident) -> float:
-    if not a.menu or not b.menu:
+    """Jaccard; for two menus of at least 3 entries and similar length, against the shorter one
+    (a long list shows other entries when scrolled). A small menu inside a bigger one (an article's
+    one button that the profile page also has) is another page."""
+    small, big = sorted((len(a.menu), len(b.menu)))
+    if not small:
         return 0.0
-    return len(a.menu & b.menu) / min(len(a.menu), len(b.menu))
+    shared = len(a.menu & b.menu)
+    if small >= 3 and big <= 2 * small:
+        return shared / small
+    return shared / len(a.menu | b.menu)
 
 
 def compatible(expected: Ident, read: Ident) -> bool:
