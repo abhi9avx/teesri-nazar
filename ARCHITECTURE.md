@@ -537,7 +537,7 @@ Claude (and CI) can act on them without reading the output:
 | `0` | OK: the command worked; for `run` / `replay`, every case passed | Go on. |
 | `1` | Failed: a check failed, an element was not found, or an adb command failed | Read the output; for `run`, see the report. |
 | `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags, another process's run still in progress on the device) | Fix the line or the setup; nothing was tested. For a run in progress, wait for it or `./tnazar stop` it. |
-| `3` | Held: the user sent a dashboard message, so the command was **not run** | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. |
+| `3` | Held: the user sent a dashboard message, so the command was **not run**. For `wait-message`: a message arrived | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. An *info* message (the dashboard already typed a secret) is shown without holding. |
 | `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |
 | `5` | Still paused from the dashboard after 60 s; the command was **not run** | Run `./tnazar wait-resume` until it prints `resumed`, then continue. |
 | `130` | Interrupted (Ctrl-C) | — |
@@ -749,7 +749,23 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
 - **Narration and timings.** `./tnazar say "…"` records a `say` event, the timeline heading
   for the steps after it. Every action event carries `dur_ms`; `wait` and `check` add
   `polls` (screen dumps it took). Steps over 5 s are highlighted.
-- **Secrets.** A value typed in the dashboard stays in the server's memory. Claude is told
+- **Listening while idle.** `./tnazar wait-message` blocks until a message arrives (exit 3,
+  after delivering it) or the run ends (exit 0). Claude keeps one running in the background
+  while a run is open, so a message reaches it in about a second even between steps.
+  Delivery takes a lock (`.tnazar/inbox.lock`), so the listener and a command never print
+  the same message twice.
+- **Agent status.** `.tnazar/agent.json` holds what the agent is doing: `listening` (set by
+  `wait-message`, with its pid; a dead pid reads as `away`), `got_message` (set on delivery),
+  `working` (the last `say`). The control pane shows it as one line, and *Thinking…* when
+  a message has had no step for 5 s.
+- **Secrets.** A value typed in the dashboard stays in the server's memory. With **Type it
+  now** (the default) the server types it straight into the field that has focus, because
+  PIN and OTP screens expire; the step is logged as a `type` event with `"by": "dashboard"`
+  and no value, and Claude gets an *info* message ("already typed: check the screen") that
+  is shown but does not stop its next command. While the server types, `.tnazar/typing`
+  exists and device commands wait for it (up to 15 s), so a tap cannot move focus mid-PIN.
+  If typing fails, only adb's reason is kept: its message quotes the command, which carries
+  the value. Without *Type it now*, Claude is told
   the name (`UI_OTP`) and types it with `--env UI_OTP`; `type` fetches it from the server
   with a per-session token (in `.tnazar/ui.json`, mode 600). `tnazar adb` arguments that
   contain any `.env` value or dashboard secret are logged as `••••`. Masking covers printed output
@@ -762,8 +778,9 @@ There is no channel into Claude itself: Claude runs one short `tnazar` command p
   `127.0.0.1:<port>` / `localhost:<port>` (DNS rebinding), needs the session token for every
   change, and serves files only from inside `runs/`.
 
-Limit: a message reaches Claude only while it is running commands. If its turn has ended,
-the message waits (the dashboard shows *waiting for the agent's next step*).
+Limit: a message reaches Claude while it is running commands or has `wait-message` running.
+Otherwise it waits for the next step, and the status line says *Not listening right now*.
+Claude still needs a few seconds to read the message and decide; only the delivery is instant.
 
 ---
 

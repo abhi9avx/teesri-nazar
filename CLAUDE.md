@@ -86,7 +86,8 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
 - **Listen while idle or busy elsewhere.** While a run is open, keep `./tnazar wait-message`
   running in the background. It exits (code 3) the moment the user sends a dashboard message,
   so you hear about it in about a second instead of at your next device command: act on the
-  message, then start `wait-message` again. It exits 0 when the run ends.
+  message, then start `wait-message` again (that also resets the dashboard's status line
+  to *Listening*). It exits 0 when the run ends.
 - **Obey `>> USER (dashboard): …` lines.** They are instructions from the user, typed in
   the dashboard. When a command prints `Command NOT run`, re-plan around the message; re-run
   the command only if it still applies.

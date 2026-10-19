@@ -113,6 +113,7 @@ Login with the test user and verify the home screen loads.
 | `./tnazar run plans/x.plan` | Run every case of a plan file in one go (no AI turn per step) |
 | `./tnazar ui` | Live dashboard: screen, timeline, messages to Claude |
 | `./tnazar say "Opening login"` | Narrate the next step (timeline heading) |
+| `./tnazar wait-message` | Block until you send a dashboard message (the agent runs it in the background) |
 | `./tnazar replay <name>` | Run a recorded test again |
 | `./tnazar replay <name> --fresh` | Clear the app's data first, then replay |
 | `./tnazar replay <name> --visual` | Also compare old and new screenshots with Claude (runs `claude -p`, uses tokens) |
@@ -163,14 +164,20 @@ the panes stack.
 
 ### Steering the agent
 
-- **Messages.** The agent reads your message before its **next device step**. That step is
-  held back (not run) so the agent can change course. The list shows *"waiting for the
-  agent's next step…"* until then, and *"✓ delivered"* after. If the agent is idle (its
-  turn has ended), the message waits until it runs a command again.
+- **Messages.** The agent keeps `./tnazar wait-message` running in the background, so your
+  message reaches it in about a second, even while it is idle or busy elsewhere. Its next
+  device step is held back (not run) so it can change course. The list shows *"waiting for
+  the agent's next step…"* until then, and *"✓ delivered"* after.
+- **What the agent is doing.** A line above the message box: *Listening*, *Got your
+  message*, *Thinking about your message* (no step for 5 s), *Working: …* (its last
+  narration), or *Not listening right now* (the message waits for its next step).
 - **Pause.** The agent's next device step waits. If you are still paused after 60 s, the
   agent is told to wait (`./tnazar wait-resume`) until you press **Resume**.
-- **OTP / PIN.** Enter a name (e.g. `OTP`), the value and, optionally, where to use it. The
-  agent types it with `--env UI_OTP`, so the value never reaches the chat. It is kept
+- **OTP / PIN.** Enter a name (e.g. `OTP`), the value and, optionally, where to use it.
+  With **Type it now** (on by default) the dashboard types it at once into the field that
+  has focus, because PIN and OTP screens expire; the agent is told afterwards and checks
+  the screen. Untick it to let the agent type it with `--env UI_OTP` into a field it picks.
+  Either way the value never reaches the chat. It is kept
   only in the dashboard's memory, never written to disk, shown as `••••` (*"🔒 OTP sent
   (value hidden)"*), and cleared when a new run starts.
 - **Plan runs** (`tnazar run <plan>`). Pause holds the runner as long as you like. A message
