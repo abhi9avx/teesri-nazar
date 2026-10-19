@@ -504,3 +504,42 @@ class StampTest(GotoBase):
         with mock.patch("teesri_nazar.screen.stable_selector", side_effect=RuntimeError("boom")):
             self.t("tap", "Savings")
         self.assertEqual(self.adb.current, "savings")
+
+
+class TemplateScreenTest(GotoBase):
+    """Found on a real FAQ section: every article is one screen layout, so the map must remember
+    which question opened the article a name means."""
+
+    def setUp(self):
+        super().setUp()
+        art = lambda q: [node(desc="Navigate up", bounds=(0, 80, 120, 200)),
+                         node(id="body", cls="android.widget.ScrollView", clickable=False, scrollable=True,
+                              bounds=(0, 220, 1080, 2000)),
+                         node(text=q, clickable=False, bounds=(40, 240, 1040, 400)),
+                         node(desc="Helpful", bounds=(800, 2100, 900, 2200)),
+                         node(desc="Not helpful", bounds=(920, 2100, 1040, 2200))]
+        self.adb.app.screens.update({
+            "faqs": [bar("FAQs"), node(text="What is a savings account", bounds=(40, 600, 1040, 700)),
+                     node(text="What is ASBA", bounds=(40, 720, 1040, 820))],
+            "art_savings": art("What is a savings account"), "art_asba": art("What is ASBA")})
+        self.adb.app.on_tap.update({("home", "btn_loans"): "faqs",
+                                    ("faqs", "What is a savings account"): "art_savings",
+                                    ("faqs", "What is ASBA"): "art_asba"})
+        self.adb.app.on_key.update({("art_savings", BACK): "faqs", ("art_asba", BACK): "faqs"})
+
+    def test_goto_taps_the_question_the_name_was_learned_with(self):
+        self.start()
+        self.t("tap", "Loans")
+        self.t("tap", "What is a savings account")
+        self.t("check", "What is a savings account")
+        self.t("key", "back")
+        self.t("goto", "asba", code=2)
+        self.t("tap", "What is ASBA")
+        self.t("check", "What is ASBA")
+        self.t("key", "back")
+        self.t("goto", "asba")
+        self.assertEqual(self.adb.current, "art_asba")
+        self.t("key", "back")
+        self.t("tap", "What is a savings account")
+        out = self.t("goto", "asba", code=2)  # on an article, not this one: never "already there"
+        self.assertNotIn("already there", out)

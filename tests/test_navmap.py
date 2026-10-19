@@ -342,6 +342,14 @@ class StoreTest(unittest.TestCase):
         self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r1")
         self.assertEqual((d / "map.jsonl").read_text().count("\n"), 1)
 
+    def test_a_map_of_an_older_schema_is_moved_aside_and_learning_starts_fresh(self):
+        d = self.dir / APP
+        d.mkdir(parents=True)
+        (d / "map.jsonl").write_text('{"k": "header", "schema": 1, "app": "%s"}\n{"k": "edge"}\n' % APP)
+        self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r1")
+        self.assertTrue((d / "map.schema1.jsonl").exists())
+        self.assertTrue(navmap.NavMap.load(APP, version="1.0").route("HOME", {"SAV"}))
+
     def test_compact_keeps_what_the_map_means(self):
         self.save(Log().tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB"), "r1")
         self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r2")
@@ -353,6 +361,30 @@ class StoreTest(unittest.TestCase):
                          {k: (e.ok_runs, e.results) for k, e in after.edges.items()})
         self.assertEqual(after.resolve("passbook"), {"PB"})
         self.assertTrue(navmap.Store(APP).learned("r1"))
+
+    def test_a_template_screen_is_reached_by_the_button_its_name_was_learned_with(self):
+        """FAQ articles share one layout: three questions open the same screen. "asba" must tap
+        "What is ASBA?", never another question that also opens an article."""
+        log = Log().tap("FAQS", text="Savings account").wait("ART").add(type="key", key="back").seen("FAQS") \
+            .tap("FAQS", text="UPI limits").wait("ART").add(type="key", key="back").seen("FAQS") \
+            .add(type="nav", phrase="asba", outcome="unknown", sid="FAQS", episode=True) \
+            .tap("FAQS", text="What is ASBA").add(type="check", kind="ui", sid="ART", ok=True,
+                                                  selector={"text": "What is ASBA"})
+        obs = navmap.learn(log.events, run="r1", version="1", screens={"FAQS": scr("FAQS"), "ART": scr("ART")})
+        navmap.Store(APP).append(obs, "r1")
+        m = navmap.NavMap.load(APP, version="1")
+        route = m.route("FAQS", m.resolve("asba"), via=m.via("asba"))
+        self.assertEqual([h.sel for h in route], [{"text": "What is ASBA"}])
+        # On some article already: which one is unknown, so never "already there".
+        self.assertNotEqual(m.route("ART", m.resolve("asba"), via=m.via("asba")), [])
+
+    def test_a_normal_screen_keeps_every_way_in(self):
+        log = Log().add(type="nav", phrase="passbook", outcome="unknown", sid="HOME", episode=True) \
+            .tap("HOME", text="Savings").wait("SAV").tap("SAV", text="Passbook").check("PB") \
+            .seen("PROF").tap("PROF", text="Statements").wait("STMT").tap("STMT", text="Open passbook").wait("PB")
+        self.save(log, "r1")
+        m = navmap.NavMap.load(APP, version="1.0")
+        self.assertEqual([h.frm for h in m.route("STMT", m.resolve("passbook"), via=m.via("passbook"))], ["STMT"])
 
     def test_an_edge_that_failed_in_this_run_is_not_retried(self):
         self.save(Log().tap("HOME", text="Savings").wait("SAV"), "r1")

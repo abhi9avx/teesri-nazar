@@ -227,7 +227,7 @@ def goto(args) -> int:
               f"{', '.join(m.known_names()) or '(no names yet)'}. Current screen:")
         cli.print_screen(screen)
         return cli.EXIT_ERROR
-    path = m.route(here, targets)
+    path = m.route(here, targets, via=m.via(phrase))
     if path == []:
         nav("arrived", hops=0)
         print(f"goto {phrase}: already there")
@@ -448,7 +448,10 @@ def _map_name(app, active, args) -> int:
         rec = navmap.run_screens(active[0]).get(sid)
         if rec:
             lines.append(dict(rec, k="screen"))
+        taps = [e for e in active[0].events() if e.get("type") == "tap" and e.get("ok") is not False]
+        via = navmap.scrub_selector(taps[-1].get("stable") or taps[-1].get("selector")) if taps else None
     else:
+        via = None
         m = _load(app, active)
         if where not in m.screens and where not in m.alias:
             raise UserError(f"no screen {where} in the map; `tnazar map` lists them")
@@ -456,7 +459,7 @@ def _map_name(app, active, args) -> int:
     bad = [p for p in phrases if not navmap.normalise(p)]
     if bad:
         raise UserError(f"say which screen: {bad[0]!r} names none")
-    lines += [navmap.name_line(p, sid, explicit=True) for p in phrases]
+    lines += [navmap.name_line(p, sid, explicit=True, via=via) for p in phrases]
     navmap.Store(app).append(lines, None)
     print(f"named {sid}: {', '.join(navmap.normalise(p) for p in phrases)}")
     return 0

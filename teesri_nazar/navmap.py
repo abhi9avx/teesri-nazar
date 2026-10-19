@@ -32,7 +32,7 @@ from pathlib import Path
 
 from . import ident
 
-SCHEMA = 1
+SCHEMA = 2  # 2: screens carry their menu; a map of an older schema is moved aside and relearned
 MAX_GAP = 60.0          # seconds between an action and the read that shows where it went
 EPISODE_ACTIONS = 25    # a phrase search ends after this many actions without a new goto
 MAX_SELECTOR = 24
@@ -104,7 +104,7 @@ def _clean(value: str | None, secrets=()) -> bool:
         and not any(s and s in value for s in secrets)
 
 
-def _scrub_selector(sel: dict | None, secrets=()) -> dict | None:
+def scrub_selector(sel: dict | None, secrets=()) -> dict | None:
     if not sel:
         return None
     for k in ("text", "desc"):
@@ -140,12 +140,12 @@ def learn(events: list[dict], run: str, version: str, screens: dict, secrets=())
         if kind == "tap" and (unsafe_label(*texts) or any(_MONEY.search(x) or any(v and v in x for v in secrets)
                                                           for x in texts)):
             kind = "xy"
-        sel = _scrub_selector(raw, secrets) if kind == "tap" else None
+        sel = scrub_selector(raw, secrets) if kind == "tap" else None
         if kind == "tap" and not sel:
             kind = "xy"
         hint = act.get("scroll")
         if hint:
-            to_sel = _scrub_selector(hint.get("to"), secrets)
+            to_sel = scrub_selector(hint.get("to"), secrets)
             hint = {"direction": hint.get("direction"), "to": to_sel} if to_sel else None
         out.append({"k": "edge", "from": frm, "to": to, "kind": kind, "sel": sel,
                     "label": label if _clean(label, secrets) else "", "scroll": hint,
@@ -250,9 +250,11 @@ def _episodes(events: list[dict], run: str) -> list[dict]:
     def close():
         nonlocal ep
         if ep and ep["best"]:
-            _, _, sid, t = ep["best"]
-            names.append(dict(name_line(ep["phrase"], sid, explicit=False, run=run), t=_ts(t)))
+            _, _, sid, t, via = ep["best"]
+            names.append(dict(name_line(ep["phrase"], sid, explicit=False, run=run, via=via), t=_ts(t)))
         ep = None
+
+    last_tap = None
 
     for n, e in enumerate(events):
         typ = e.get("type")
@@ -263,9 +265,11 @@ def _episodes(events: list[dict], run: str) -> list[dict]:
                       "best": None, "actions": 0}
         elif typ in ("case_start", "case_end") or (typ == "launch" and (e.get("fresh") or e.get("restart"))):
             close()
-        elif ep is None:
+        if typ == "tap" and e.get("ok") is not False:
+            last_tap = scrub_selector(e.get("stable") or e.get("selector"))
+        if typ in ("nav", "case_start", "case_end") or ep is None:
             continue
-        elif typ in ("tap", "type", "key", "swipe", "scroll", "adb", "launch", "open_url"):
+        if typ in ("tap", "type", "key", "swipe", "scroll", "adb", "launch", "open_url"):
             ep["actions"] += 1
             if typ == "key" and e.get("key") in ("back", "4", "KEYCODE_BACK") and ep["best"] and ep["best"][0] == 0:
                 ep["best"] = None  # left the unrelated screen it checked: not what it was looking for
@@ -276,15 +280,17 @@ def _episodes(events: list[dict], run: str) -> list[dict]:
             said = _words(_check_label(e))
             score = len(ep["words"] & said) / max(len(ep["words"]), 1)
             if ep["best"] is None or score >= ep["best"][0]:
-                ep["best"] = (score, n, e["sid"], e.get("t", ""))
+                ep["best"] = (score, n, e["sid"], e.get("t", ""), last_tap)
             if score >= 1:
                 close()
     close()
     return names
 
 
-def name_line(phrase: str, screen: str, explicit: bool, run: str | None = None) -> dict:
-    return {"k": "name", "phrase": normalise(phrase) or phrase, "screen": screen,
+def name_line(phrase: str, screen: str, explicit: bool, run: str | None = None, via: dict | None = None) -> dict:
+    """`via`: the tap that opened the screen when it was named. On a template screen (several
+    buttons of one screen open it: FAQ articles, order details) only that tap reaches it."""
+    return {"k": "name", "phrase": normalise(phrase) or phrase, "screen": screen, "via": via,
             "src": "explicit" if explicit else "learned", "run": run, "t": time.time()}
 
 
@@ -325,21 +331,31 @@ class Store:
     def learned(self, run: str) -> bool:
         return any(d.get("k") == "learned" and d.get("run") == run for d in self.lines())
 
-    def foreign_schema(self) -> bool:
+    def schema(self):
         if not self.path.exists():
-            return False
+            return None
         with self.path.open(encoding="utf-8", errors="replace") as f:
             first = f.readline()
         try:
             head = json.loads(first)
         except ValueError:
-            return False
-        return isinstance(head, dict) and head.get("k") == "header" and head.get("schema") != SCHEMA
+            return None
+        return head.get("schema") if isinstance(head, dict) and head.get("k") == "header" else None
+
+    def foreign_schema(self) -> bool:
+        return self.schema() not in (None, SCHEMA)
+
+    def older_schema(self) -> bool:
+        """Written by an older tnazar whose screens cannot be compared with today's: set aside."""
+        v = self.schema()
+        return isinstance(v, int) and v < SCHEMA
 
     def append(self, obs: list[dict], run: str | None) -> bool:
         """Add observations; a run's are added once. False when nothing was written."""
         self.dir.mkdir(parents=True, exist_ok=True)
         with _Lock(self.dir / "map.lock"):
+            if self.older_schema():
+                os.replace(self.path, self.path.with_name(f"map.schema{self.schema()}.jsonl"))
             if self.foreign_schema() or (run and self.learned(run)):
                 return False
             fresh = not self.path.exists() or self.path.stat().st_size == 0
@@ -473,7 +489,7 @@ class NavMap:
             elif k == "name":
                 phrase = normalise(d["phrase"]) or d["phrase"]
                 if not self._forgotten("name", phrase, d) and not self._forgotten("screen", d["screen"], d):
-                    self.add_name(phrase, self.canon(d["screen"]), d.get("src") == "explicit")
+                    self.add_name(phrase, self.canon(d["screen"]), d.get("src") == "explicit", d.get("via"))
         except (KeyError, TypeError, ValueError) as exc:
             self.warnings.append(f"map line skipped ({exc}): {str(d)[:80]}")
 
@@ -482,7 +498,7 @@ class NavMap:
         if sid in self.screens or sid in self.alias:
             return
         it = ident.Ident(sid, "screen", frozenset(d.get("tokens") or ()), d.get("title") or "", bool(d.get("secure")),
-                         frozenset(d.get("inner") or ()), d.get("tab") or "")
+                         frozenset(d.get("inner") or ()), d.get("tab") or "", frozenset(d.get("menu") or ()))
         same = ident.match(it, self.screens)
         if same:
             self.alias[sid] = same
@@ -513,9 +529,9 @@ class NavMap:
                 e.label = d["label"]
         e.results.append((d.get("ver") or "", bool(d.get("ok")), d.get("run")))
 
-    def add_name(self, phrase: str, screen: str, explicit: bool) -> None:
+    def add_name(self, phrase: str, screen: str, explicit: bool, via: dict | None = None) -> None:
         phrase = normalise(phrase) or phrase
-        self.names.setdefault(phrase, []).append((self.canon(screen), explicit))
+        self.names.setdefault(phrase, []).append((self.canon(screen), explicit, via))
 
     # -------------------------------------------------- queries
 
@@ -524,10 +540,26 @@ class NavMap:
         if phrase in self.screens or phrase in self.alias:
             return {self.canon(phrase)}
         binds = self.names.get(normalise(phrase) or phrase, [])
-        explicit = [s for s, ex in binds if ex]
+        explicit = [s for s, ex, _ in binds if ex]
         if explicit:
             return {explicit[-1]}
-        return {s for s, _ in binds}
+        return {s for s, _, _ in binds}
+
+    def via(self, phrase: str) -> dict | None:
+        """The tap a name was learned with (the latest binding that has one)."""
+        for _, _, v in reversed(self.names.get(normalise(phrase) or phrase, [])):
+            if v:
+                return v
+        return None
+
+    def template(self, sid: str) -> bool:
+        """Several buttons of one screen open this screen: it shows data (an article, an order),
+        so arriving says which kind of screen, not which one."""
+        froms: dict = {}
+        for e in self.edges.values():
+            if e.to == sid and e.kind != "back":
+                froms.setdefault(e.frm, set()).add(sel_key(e.sel) or e.key[3] or id(e))
+        return any(len(v) > 1 for v in froms.values())
 
     def known_names(self) -> list[str]:
         return sorted(p for p, bs in self.names.items() if bs)
@@ -544,14 +576,15 @@ class NavMap:
         return e.kind == "tap" and bool(e.sel) and not self.unsafe(e) and e.key not in self.failed \
             and not self.retired(e)
 
-    def route(self, start: str | None, targets) -> list | None:
+    def route(self, start: str | None, targets, via: dict | None = None) -> list | None:
         """Fewest hops from `start` to any of `targets` over runnable edges: [] already there,
-        None no route."""
+        None no route. Into a template screen the last hop must be the `via` tap."""
         start = self.canon(start)
         targets = {self.canon(t) for t in targets}
         if not start or not targets:
             return None
-        if start in targets:
+        strict = {t for t in targets if via and self.template(t)}
+        if start in targets - strict:
             return []
         out: dict[str, list] = {}
         for e in self.edges.values():
@@ -564,7 +597,11 @@ class NavMap:
         while q:
             cur = q.popleft()
             for e in out.get(cur, []):
-                if e.to in seen:
+                if e.to in strict and sel_key(e.sel) != sel_key(via):
+                    continue
+                if e.to in seen and e.to not in strict:
+                    continue
+                if e.to in strict and e.to in prev:
                     continue
                 seen.add(e.to)
                 prev[e.to] = e
@@ -583,9 +620,9 @@ class NavMap:
     def label(self, sid: str) -> str:
         """A human name for a screen: its name, else the label of a tap that leads to it."""
         for p, bs in self.names.items():
-            if any(s == sid for s, _ in bs):
+            if any(b[0] == sid for b in bs):
                 return p
-        labels = [e.label for e in self.edges.values() if e.to == sid and e.label]
+        labels = [e.label for e in self.edges.values() if e.to == sid and e.label and e.kind != "back"]
         return labels[0] if labels else ""
 
 
@@ -615,7 +652,8 @@ def stamp(run, screen) -> str | None:
     if f'"id": "{it.id}"' not in known:
         with f.open("a") as out:
             out.write(json.dumps({"id": it.id, "tokens": sorted(it.tokens), "title": it.title,
-                                  "secure": it.secure, "inner": sorted(it.inner), "tab": it.tab}) + "\n")
+                                  "secure": it.secure, "inner": sorted(it.inner), "tab": it.tab,
+                                  "menu": sorted(it.menu)}) + "\n")
     return it.id
 
 
@@ -668,14 +706,15 @@ def compact(app: str, version: str = "") -> int:
         lines: list[dict] = []
         for sid, it in m.screens.items():
             lines.append({"k": "screen", "id": sid, "tokens": sorted(it.tokens), "title": it.title,
-                          "secure": sid in m.secure, "inner": sorted(it.inner), "tab": it.tab})
+                          "secure": sid in m.secure, "inner": sorted(it.inner), "tab": it.tab,
+                          "menu": sorted(it.menu)})
         for e in m.edges.values():
             for ver, ok, run in e.results:
                 lines.append({"k": "edge", "from": e.frm, "to": e.to, "kind": e.kind, "sel": e.sel,
                               "label": e.label, "scroll": e.scroll, "run": run, "ver": ver, "ok": ok, "t": 0})
         for phrase, binds in m.names.items():
-            for sid, explicit in binds:
-                lines.append({"k": "name", "phrase": phrase, "screen": sid,
+            for sid, explicit, via in binds:
+                lines.append({"k": "name", "phrase": phrase, "screen": sid, "via": via,
                               "src": "explicit" if explicit else "learned", "run": None, "t": 0})
         runs = sorted({d["run"] for d in store.lines() if d.get("k") == "learned"})
         lines += [{"k": "learned", "run": r} for r in runs]

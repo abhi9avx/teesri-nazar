@@ -81,6 +81,35 @@ class DifferentScreenTest(unittest.TestCase):
         self.assertFalse(ident.same(a, b))
 
 
+class UntitledMenuTest(unittest.TestCase):
+    """Found on a real app: a profile page with no title, all one scroll view, whose own list
+    content varies between visits. Its menu labels are what say which page it is."""
+
+    def page(self, menu, extra=()):
+        scroll = node(cls="android.widget.ScrollView", clickable=False, scrollable=True, bounds=(0, 200, 1080, 2400))
+        icons = [node(cls="android.widget.ImageView", bounds=(40, 100, 150, 190)),
+                 node(cls="android.widget.ImageView", bounds=(930, 100, 1040, 190))]
+        items = [node(desc=m, cls="android.widget.ImageView", bounds=(0, 1700 + 120 * i, 1080, 1800 + 120 * i))
+                 for i, m in enumerate(menu)]
+        return [scroll, *icons, *items, *extra]
+
+    def test_the_same_menu_is_the_same_page_whatever_else_loaded(self):
+        menu = ["Help & support", "Profile details", "App settings", "Reports & documents", "Pricing"]
+        header = node(id="accountsSettingsSectionHeader", desc="ACCOUNTS & SETTINGS", clickable=False,
+                      bounds=(0, 1600, 1080, 1680))
+        self.assertTrue(ident.same(ident_of(self.page(menu)), ident_of(self.page(menu, [header]))))
+
+    def test_different_menus_are_different_pages(self):
+        a = ident_of(self.page(["Help & support", "Profile details", "App settings"]))
+        b = ident_of(self.page(["Wi-Fi", "Bluetooth", "Hotspot"]))
+        self.assertFalse(ident.same(a, b))
+
+    def test_rows_with_amounts_are_not_menu(self):
+        a = ident_of(self.page(["Help & support", "Pricing", "Rent ₹12,000"]))
+        b = ident_of(self.page(["Help & support", "Pricing", "Fuel ₹900"]))
+        self.assertTrue(ident.same(a, b))
+
+
 class TabsTest(unittest.TestCase):
     def tabs(self, selected):
         out = [TOOLBAR, title("Bank")]

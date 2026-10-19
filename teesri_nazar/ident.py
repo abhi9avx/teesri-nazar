@@ -41,6 +41,7 @@ class Ident:
     secure: bool            # never route into it: a password field, or a pay/transfer/... title
     inner: frozenset = frozenset()  # the lists' content, hashed: only for the exact id
     tab: str = ""           # hashed selected tab(s): two different tabs are never one screen
+    menu: frozenset = frozenset()  # hashed short labels of buttons inside lists with no digits: a page's menu
 
 
 def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
@@ -54,7 +55,7 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
         return Ident("", "loading", frozenset(), "", False)
     scrolls = [e for e in els if e.scrollable]
     secrets = [s for s in secrets if s and len(s) >= 3]
-    tokens, inner, tabs = set(), set(), set()
+    tokens, inner, tabs, menu = set(), set(), set(), set()
     quiet = []  # labels that are not buttons: used only when a screen has nothing else
     for e in els:
         if not (e.text or e.desc or e.clickable or e.scrollable or e.password or e.checkable
@@ -63,6 +64,9 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
         if any(_inside(e, s) for s in scrolls if s is not e):
             if e.rid:
                 inner.add(f"in:{e.short_cls}:{e.short_id}")
+            label = _label(e.text or e.desc, secrets) if e.clickable else ""
+            if label and "#" not in label:
+                menu.add(label)  # a static menu entry; rows with amounts or dates are left out
             continue
         if e.selected and e.clickable:  # a tab; marquee text is "selected" too
             tabs.add(e.short_id or _label(e.text or e.desc, secrets))
@@ -87,10 +91,11 @@ def identify(screen: Screen, app: str | None = None, secrets=()) -> Ident:
     content = frozenset(_h(t) for t in inner)
     t_hash = _h("title:" + title) if title else ""
     tab = _h("tab:" + "|".join(sorted(tabs))) if tabs else ""
+    menu_h = frozenset(_h("menu:" + m) for m in menu)
     sid = hashlib.sha1((t_hash + "|" + tab + "|" + "|".join(sorted(frame)) + "|" + "|".join(sorted(content))
-                        ).encode()).hexdigest()[:8]
+                        + "|" + "|".join(sorted(menu_h))).encode()).hexdigest()[:8]
     guarded = any(e.password for e in els) or (bool(title) and _unsafe_title(title))
-    return Ident(sid, "screen", frame, t_hash, guarded, content, tab)
+    return Ident(sid, "screen", frame, t_hash, guarded, content, tab, menu_h)
 
 
 def same(a: Ident, b: Ident) -> bool:
@@ -104,9 +109,14 @@ def _score(a: Ident, b: Ident) -> float:
     A page that is all list has a tiny frame shared by every page of the app's layout: then its
     list ids must overlap too, counted against the smaller list (one still loading is the same
     page, one with other rows is not)."""
-    if not a.title or a.title != b.title or a.tab != b.tab:
+    if a.title != b.title or a.tab != b.tab:
         return 0.0
     frame = len(a.tokens & b.tokens) / len(a.tokens | b.tokens) if a.tokens | b.tokens else 1.0
+    if not a.title:
+        # Nothing anchors an untitled page but its menu: the same frame and mostly the same menu.
+        if not a.menu or not b.menu or len(a.menu & b.menu) / len(a.menu | b.menu) < SAME:
+            return 0.0
+        return frame
     if len(a.tokens | b.tokens) < SMALL_FRAME and a.inner and b.inner:
         if len(a.inner & b.inner) / min(len(a.inner), len(b.inner)) < 0.5:
             return 0.0
@@ -119,8 +129,6 @@ def match(ident: Ident, stored: dict) -> str | None:
         return None
     if ident.id in stored:
         return ident.id
-    if not ident.title:
-        return None
     best, score = None, SAME
     for sid, other in stored.items():
         s = _score(other, ident)
