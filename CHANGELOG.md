@@ -22,6 +22,10 @@ time you ask for a screen, it goes straight there.
 - One driver per device, even across terminals and machines.
 - The report shows the navigation map, and the dashboard shows `goto` steps.
 
+Also launched in October 2026: the website and docs at
+[teesrinazar.github.io](https://teesrinazar.github.io), with guides, a sample report and
+this changelog.
+
 ## v2: Steer it live
 
 Released 19 October 2026 in [PR #2](https://github.com/abhi9avx/teesri-nazar/pull/2) and
