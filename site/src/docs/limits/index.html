@@ -14,9 +14,9 @@ description: What Teesri Nazar can and cannot test today, and quick fixes for co
     <tbody>
       <tr><th scope="row">Devices</th><td>Android phones over USB and emulators, any screen size</td><td>One run drives one device at a time</td><td>iOS</td></tr>
       <tr><th scope="row">Screens</th><td>Native Android views</td><td>Jetpack Compose: ids only with <code>testTagsAsResourceId</code>, otherwise labels and text</td><td>Flutter, WebView and canvas screens</td></tr>
-      <tr><th scope="row">Typing</th><td>ASCII text; secrets from <code>.env</code></td><td></td><td>₹, Hindi, emoji and other non-ASCII text</td></tr>
+      <tr><th scope="row">Typing</th><td>ASCII text; secrets from <code>.env</code></td><td>—</td><td>₹, Hindi, emoji and other non-ASCII text</td></tr>
       <tr><th scope="row">Checks</th><td>On-screen checks with a screenshot each; crashes and ANRs</td><td>DB and Figma checks: the agent runs them and records the result; replay does not re-run them</td><td>Built-in DB or API checks</td></tr>
-      <tr><th scope="row">Navigation</th><td>Learned routes with <code>goto</code>; saved flows</td><td>Routes through a search box are not replayed</td><td>Money-moving steps are never replayed, by design</td></tr>
+      <tr><th scope="row">Navigation</th><td>Learned routes with <code>goto</code>, which never replays money-moving steps; saved flows</td><td><code>goto</code> does not replay routes through a search box</td><td>—</td></tr>
     </tbody>
   </table></div>
 

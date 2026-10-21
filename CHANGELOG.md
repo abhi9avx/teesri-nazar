@@ -5,7 +5,7 @@ are built from this file, so every version shipped here shows up there too.
 
 ## v4: Easy to set up, honest to trust
 
-In progress since 21 October 2026: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7) and this website update
+In progress since 21 October 2026: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7) and a website update
 
 v4 is about people outside the project installing Teesri Nazar, trusting what it says and
 finishing a run on their own app.
@@ -21,8 +21,8 @@ finishing a run on their own app.
   to Anthropic, and how secrets are kept out.
 - *Limits and fixes* opens with a table of what works today, partly, and not yet.
 - The quick start runs `tnazar doctor` before the first test.
-- Removed "Coming next" (parallel emulators, DB checks, Zephyr): none of it is being built
-  now, so the site no longer promises it.
+- The README's "Coming next" (parallel emulators, DB checks, Zephyr) is gone: none of it
+  is being built now, so it is no longer promised.
 
 ## v3: It learns your app
 

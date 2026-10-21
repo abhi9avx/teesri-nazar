@@ -6,16 +6,16 @@ description: What stays on your computer when Teesri Nazar tests your Android ap
 {{include:_docs-nav.html}}
 <article class="docs-main">
   <h1>Data and privacy</h1>
-  <p class="docs-lede">tnazar runs on your computer and sends nothing anywhere. The AI that drives it is Claude Code, which sends what it reads to Anthropic's model. This page says which is which.</p>
+  <p class="docs-lede">tnazar runs on your computer. The AI that drives it is Claude Code, which sends what it reads to Anthropic's model. This page says what stays and what goes.</p>
 
   <h2 id="stays-local">What stays on your computer</h2>
   <ul>
     <li><strong>Runs</strong> in <code>runs/&lt;name&gt;/</code>: the step log, screenshots, screen dumps, logs and the report. They stay until you delete them.</li>
-    <li><strong>The learned app map</strong> and run state in <code>.tnazar/</code>.</li>
+    <li><strong>Run state</strong> in the project's <code>.tnazar/</code>, and <strong>the learned app map</strong> in <code>~/.tnazar/maps/</code>.</li>
     <li><strong>Secrets and test data</strong> in <code>.env</code> and <code>testdata.yaml</code>. Both are gitignored.</li>
     <li><strong>The live dashboard</strong> listens on <code>127.0.0.1</code> only, needs a per-session token for every change, and serves files only from <code>runs/</code>.</li>
   </ul>
-  <p>tnazar has no telemetry, no account and no SDK inside your app. It talks only to your device, through adb.</p>
+  <p>tnazar has no telemetry, no account and no SDK inside your app. It talks to your device through adb. The one time it calls a model itself is <code>replay --visual</code>, which asks Claude to compare screenshot pairs.</p>
 
   <h2 id="sent-to-anthropic">What Claude Code sends to Anthropic</h2>
   <p>Claude Code sends what it reads to Anthropic's model so it can decide the next step. In a test run that is:</p>
@@ -23,7 +23,7 @@ description: What stays on your computer when Teesri Nazar tests your Android ap
     <li>Your request, and any test cases, PRD text or links you give it.</li>
     <li>The screen as text: each <code>observe</code> lists the elements on screen with their ids, labels and text. <strong>Any data shown on screen is in that text</strong>, so test with test accounts, not real customer data.</li>
     <li>The output of the commands it runs, including the result of any DB query it runs for a check.</li>
-    <li>Screenshots are evidence for you. One is sent only when Claude opens it, as it does for a Figma comparison or <code>replay --visual</code>.</li>
+    <li>Screenshots are evidence for you. One is sent only when Claude opens it, as it does for a Figma comparison, or when <code>replay --visual</code> sends the original and replay screenshots for comparison.</li>
   </ul>
   <p>How long Anthropic keeps this, and whether it is used for training, depends on your Claude plan. See <a href="https://code.claude.com/docs/en/data-usage">Claude Code data usage</a>.</p>
 
