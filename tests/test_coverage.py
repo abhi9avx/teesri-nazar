@@ -655,5 +655,71 @@ case TC-01 "Login"
         self.assertIn("**Result:** all passed", rpt.to_markdown(run, rpt.summarize(run)))
 
 
+from test_replay import ReplayTestCase  # noqa: E402
+
+
+class ReplayCoverageTest(ReplayTestCase):
+    def record_declared(self):
+        """`demo`: TC-01 proves E1 on screen and E2 only in the DB; TC-02 checks home; TC-03 never ran."""
+        self.ok("start", "demo", "--package", PACKAGE)
+        self.ok("case", "plan", "TC-01", "Login", "--expect", "Home shown", "--expect", "Login audited")
+        self.ok("case", "plan", "TC-02", "Balance")
+        self.ok("case", "plan", "TC-03", "Logout")
+        self.ok("case", "start", "TC-01")
+        self.ok("type", "9876543210", "--into", "id=phone_input")
+        self.ok("tap", "Login")
+        self.ok("check", "Hi Asha", "--for", "E1")
+        self.ok("check", "--result", "pass", "--kind", "db", "--what", "audit row written", "--for", "E2")
+        self.ok("case", "end")
+        self.ok("case", "start", "TC-02")
+        self.ok("check", "id=balance")
+        self.ok("case", "end")
+        self.ok("stop")
+        self.fresh_device()
+
+    def test_rpl_1_the_replay_requests_the_same_cases(self):
+        self.record_declared()
+        _, _, run = self.replay()
+        self.assertEqual([c["id"] for c in coverage.requested(run.events())], ["TC-01", "TC-02", "TC-03"])
+
+    def test_rpl_2_and_3_an_expected_result_proven_only_in_the_db_is_not_green_on_replay(self):
+        self.record_declared()
+        code, _, run = self.replay()
+        self.assertEqual(code, 1)
+        end = [e for e in run.events() if e["type"] == "case_end" and e["case"] == "TC-01"][0]
+        self.assertEqual(end["status"], "blocked")
+        self.assertIn("not verified: E2 Login audited", end["reason"])
+        self.assertEqual([x["state"] for x in end["expects"]], ["verified", "unverified"])
+        notes = [e["text"] for e in run.events() if e["type"] == "note"]
+        self.assertIn("[db] not re-verified on replay: audit row written", notes)
+
+    def test_rpl_4_a_case_that_never_ran_is_not_run_in_the_replay_too(self):
+        self.record_declared()
+        _, out, run = self.replay()
+        rows = {c["id"]: c for c in rpt.summarize(run)["cases"]}
+        self.assertEqual((rows["TC-03"]["status"], rows["TC-03"]["reason"]), ("not_run", "not run in the recorded run"))
+        self.assertIn("verified 1/3", out)
+
+    def test_rpl_6_new_events_add_no_steps_and_no_waits(self):
+        self.record_declared()
+        sleeps = []
+        from teesri_nazar import replay
+        real = replay.time.sleep
+        with mock.patch.object(replay.time, "sleep", side_effect=lambda s: (sleeps.append(s), real(s))):
+            _, out, _ = self.replay()
+        self.assertEqual(len(sleeps), 2)  # one settle per recorded action: the type and the tap
+        self.assertNotIn("step 3", out)
+
+    def test_rpl_7_a_step_that_raises_still_writes_not_run(self):
+        self.record_declared()
+        from teesri_nazar import replay
+        with mock.patch.object(replay, "_do", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                tnazar("replay", "demo")
+        runs = sorted(p.name for p in Run.load("demo").path.parent.iterdir() if "-replay-" in p.name)
+        run = Run.load(runs[-1])
+        self.assertEqual({e["case"] for e in run.events() if e["type"] == "not_run"}, {"TC-02", "TC-03"})
+
+
 if __name__ == "__main__":
     unittest.main()
