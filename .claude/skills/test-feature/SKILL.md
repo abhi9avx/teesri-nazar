@@ -11,8 +11,10 @@ Follow `CLAUDE.md` (the playbook). In short:
    Confluence/Jira via the Atlassian MCP, Figma via the Figma MCP. Read `testdata.yaml`
    if it exists. If something essential is missing (which app, which account, which
    environment), ask once, briefly.
-2. **Device.** `./tnazar devices`. One device → use it. Several → ask which one.
-   None → stop and tell the user.
+2. **Device.** `./tnazar doctor`: it checks adb, the devices, Python and fast screen reads,
+   and prints the fix for each problem. Exit 2 → follow its `fix:` lines (or tell the user
+   the ones only they can do, such as accepting the USB debugging prompt). One ready device →
+   use it. Several → ask which one.
 3. **Plan.** Numbered cases `TC-NN` with steps, expected result and verification type
    (ui / db / figma), plus added edge cases and an explicit "not testing" list.
    Wait for approval unless the user said to go ahead.

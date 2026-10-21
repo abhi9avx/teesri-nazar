@@ -86,6 +86,7 @@ show up in Android's accessibility tree (see [Limits](#limits)).
 
 ```bash
 cd teesri-nazar
+./tnazar doctor                       # checks adb, the device, Python; prints the fix for each problem
 cp .env.example .env                  # test MPIN/OTP etc. (never logged)
 cp testdata.example.yaml testdata.yaml   # accounts, env, DB, Figma links
 claude
@@ -103,6 +104,7 @@ Login with the test user and verify the home screen loads.
 
 | Command | What it does |
 |---|---|
+| `./tnazar doctor` | Check the setup (adb, devices, Python, fast screen reads) and print the fix for each problem |
 | `./tnazar start <name> --package <app>` | Start a test run |
 | `./tnazar observe` | Show what's on screen |
 | `./tnazar tap "Pay now"` | Tap by text (or `id=...`, `desc=...`, `#index`) |
@@ -197,7 +199,8 @@ the panes stack.
 | You see | What to do |
 |---|---|
 | `cannot listen on 127.0.0.1:8765` | Another dashboard (or app) uses the port: stop it or use `--port 9000`. |
-| *Waiting for the device…* | No device: check `adb devices`. |
+| *Waiting for the device…* | No device: run `./tnazar doctor`, which says what is wrong and how to fix it. |
+| `no ready device`, `adb not found`, `needs Python 3.9` | Run `./tnazar doctor` and follow its `fix:` lines. |
 | *Screen hidden by the app* | The screen blocks capture (`FLAG_SECURE`, e.g. a PIN screen). The test goes on; only the picture is hidden. |
 | `screen reads: uiautomator dump` at `start` | Works, just slower (~2 s per read). The next line says why; when the server is missing it prints the `adb install` commands for the APKs Appium downloaded (`$APPIUM_HOME`, default `~/.appium`). Run them once for ~0.05 s reads. |
 | A message stays *waiting* | The status line says *Not listening right now*: the agent's `wait-message` is not running, or its turn ended. Ask it to continue in Claude Code. |

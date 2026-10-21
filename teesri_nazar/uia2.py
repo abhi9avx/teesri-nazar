@@ -30,6 +30,7 @@ RUNNER = f"{TEST}/androidx.test.runner.AndroidJUnitRunner"
 DEVICE_PORT = 6790
 IDLE_MS = 300
 READY_TIMEOUT = 15.0
+GET_SERVER_HINT = "get it with `npm i -g appium && appium driver install uiautomator2`"
 
 
 def _state_file():
@@ -59,8 +60,8 @@ def active(adb: Adb) -> bool:
     return _state(adb) is not None
 
 
-def installed(adb: Adb) -> bool:
-    return RUNNER in adb.shell("pm", "list", "instrumentation", check=False)
+def installed(adb: Adb, timeout: float = 60) -> bool:
+    return RUNNER in adb.shell("pm", "list", "instrumentation", timeout=timeout, check=False)
 
 
 def start(adb: Adb) -> bool:
@@ -100,13 +101,16 @@ def start_line(adb: Adb) -> str:
     if installed(adb):
         return line + f"  the UiAutomator2 server is installed but did not answer within {READY_TIMEOUT:g} s"
     line += f"  the UiAutomator2 server is not installed on {adb.serial}"
-    apks = local_apks()
-    if not apks:
-        return line + ("; get it with `npm i -g appium && appium driver install uiautomator2`,"
-                       " then start again for the install commands")
+    cmds = install_hint(adb)
+    if not cmds:
+        return line + f"; {GET_SERVER_HINT}, then start again for the install commands"
+    return line + "; for ~0.05 s reads install it once:\n" + "\n".join(f"    {c}" for c in cmds)
+
+
+def install_hint(adb: Adb) -> list[str]:
+    """The adb commands that install the server APKs Appium downloaded here, or [] when there are none."""
     # Installing changes the device, so tnazar only prints the commands.
-    return line + "; for ~0.05 s reads install it once:\n" + "\n".join(
-        f"    adb -s {shlex.quote(adb.serial)} install -r -g {shlex.quote(str(apk))}" for apk in apks)
+    return [f"adb -s {shlex.quote(adb.serial)} install -r -g {shlex.quote(str(apk))}" for apk in local_apks()]
 
 
 def local_apks() -> list[Path]:

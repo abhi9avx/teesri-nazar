@@ -171,6 +171,8 @@ case could not be executed (environment down, missing data), `skipped` when out 
 
 ## Rules
 
+- **Setup problems first.** If `start` (or any command) exits 2 with a device, adb or Python
+  error, run `./tnazar doctor` and follow its `fix:` lines before anything else.
 - Never guess a tap from a screenshot; `observe` first.
 - Don't print or `note` passwords, MPINs, OTPs or customer data. Use `type --env`.
 - If the app, backend or device misbehaves outside the feature (network down, login
