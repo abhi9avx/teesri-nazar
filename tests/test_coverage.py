@@ -721,5 +721,24 @@ class ReplayCoverageTest(ReplayTestCase):
         self.assertEqual({e["case"] for e in run.events() if e["type"] == "not_run"}, {"TC-02", "TC-03"})
 
 
+@unittest.skipUnless(shutil.which("node"), "needs node to run the dashboard's describe() and layout()")
+class DashboardCoverageTest(unittest.TestCase):
+    """DA-14: every requested case shows once the run ends; not-run ones as grey rows with their reason."""
+
+    def test_not_run_cases_are_rows_with_their_reason(self):
+        line = node_eval('describe({type: "not_run", case: "TC-07", title: "Logout", reason: "--stop-on-fail after TC-03"})')
+        self.assertEqual(line, ["○", "TC-07 Logout: not run", "--stop-on-fail after TC-03"])
+
+    def test_layout_gives_not_run_its_own_block(self):
+        events = [{"type": "say", "text": "last step"}, {"type": "tap", "label": "x"},
+                  {"type": "not_run", "case": "TC-07", "reason": "r"}, {"type": "not_run", "case": "TC-08", "reason": "r"}]
+        blocks = node_eval(f"layout({json.dumps(events)}).map((b) => [b.kind, b.e.type])")
+        self.assertEqual(blocks, [["group", "say"], ["not_run", "not_run"], ["not_run", "not_run"]])
+
+    def test_layout_skips_case_plan(self):
+        events = [ev_plan("TC-01"), ev_plan("TC-02"), ev_start("TC-01")]
+        self.assertEqual(node_eval(f"layout({json.dumps(events)}).map((b) => b.kind)"), ["case_start"])
+
+
 if __name__ == "__main__":
     unittest.main()
