@@ -77,8 +77,12 @@ def run(args) -> int:
             why = "; ".join(ln.strip().removeprefix("error: ") for ln in out.splitlines() if ln.strip())
             print(f"setup error: {why or 'tnazar start failed'}", file=sys.stderr)
             return cli.EXIT_ERROR
-        get_active()[0].update_meta(plan=path)
+        how = f"--only {args.only}" if args.only else f"--from {args.from_}" if args.from_ else ""
+        get_active()[0].update_meta(plan=path, selection={"plan_cases": len(p.cases), "how": how})
     the_run = get_active()[0]
+    for case in cases:  # requested before any runs, so a case that never starts still has a row
+        the_run.log({"type": "case_plan", "case": case.id, "title": case.title, "expects": case.expects,
+                     "added": False})
     print(f"plan {p.name}: {len(cases)} case(s) on {p.app}")
 
     failed = False
@@ -92,6 +96,7 @@ def run(args) -> int:
         except Exception as exc:  # noqa: BLE001 - whatever broke, the run must not stay open
             call(["case", "end", "blocked", "--reason", f"error: {exc}"])
             print(f"{case.id:8} BLOCKED  error: {exc}")
+            the_run.update_meta(stop_reason=f"run stopped at {case.id}: error: {exc}")
             _stop()
             return cli.EXIT_ERROR
         if isinstance(result, HandedBack):
@@ -109,6 +114,7 @@ def run(args) -> int:
             failed = True
             if args.stop_on_fail:
                 print("stopping at the first failed case (--stop-on-fail)")
+                the_run.update_meta(stop_reason=f"--stop-on-fail after {case.id}")
                 break
     _stop()
     return cli.EXIT_FAIL if failed else 0

@@ -551,5 +551,109 @@ class ReportCoverageTest(unittest.TestCase):
         self.assertEqual(md.replace(rpt.UNDECLARED + "\n\n", "", 1), (GOLDEN / "legacy_report.md").read_text())
 
 
+from test_plan import LOGIN, PlanRunBase  # noqa: E402
+from teesri_nazar import live  # noqa: E402
+
+TEN = "".join(f'case TC-{i:02d} "case {i}"\n  check Login\n' for i in range(1, 11))
+
+
+class PlanRunCoverageTest(PlanRunBase):
+    def statuses(self, run):
+        return [(c["id"], c["status"]) for c in rpt.summarize(run)["cases"]]
+
+    def not_run(self, run):
+        return {e["case"]: e["reason"] for e in run.events() if e["type"] == "not_run"}
+
+    def test_run_1_an_unexpected_error_leaves_every_later_case_as_not_run(self):
+        from teesri_nazar import runner
+        from teesri_nazar.adb import AdbError
+        body = TEN.replace('case TC-03 "case 3"\n  check Login\n',
+                           'case TC-03 "case 3"\n  if Login\n    key back\n  end\n  check Login\n')
+        with mock.patch.object(runner.Executor, "visible", side_effect=AdbError("device offline")):
+            out, run = self.run_plan(body, expect=2)
+        st = dict(self.statuses(run))
+        self.assertEqual((st["TC-01"], st["TC-02"], st["TC-03"]), ("pass", "pass", "blocked"))
+        self.assertEqual(sorted(self.not_run(run)), [f"TC-{i:02d}" for i in range(4, 11)])
+        self.assertTrue(all(r.startswith("run stopped at TC-03: error:") for r in self.not_run(run).values()))
+        self.assertEqual(len(self.statuses(run)), 10)
+
+    def test_run_2_stop_on_fail_leaves_the_rest_as_not_run(self):
+        body = TEN.replace('case TC-02 "case 2"\n  check Login\n', 'case TC-02 "case 2"\n  check Nowhere --timeout 1\n')
+        out, run = self.run_plan(body, "--stop-on-fail", expect=1)
+        self.assertEqual(set(self.not_run(run).values()), {"--stop-on-fail after TC-02"})
+        self.assertEqual(len(self.not_run(run)), 8)
+        self.assertIn("○ 8 not run", out)  # run_8: the line survives the runner's output filter
+        self.assertIn("verified 2/10", out)
+
+    def _hand_back_at_tc04(self, path):
+        real_main = __import__("teesri_nazar.cli", fromlist=["main"]).main
+        posted = []
+
+        def main(argv):
+            if argv[:2] == ["say", "four"] and not posted:
+                posted.append(1)
+                live.post("stop here")
+            return real_main(argv)
+        with mock.patch("teesri_nazar.cli.main", main):
+            code, _, _ = tnazar("run", path)
+        self.assertEqual(code, live.EXIT_HELD)
+
+    def write_plan(self, body):
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(LOGIN + body)
+        return path
+
+    def test_run_3_a_handed_back_run_that_is_then_stopped_lists_the_rest_as_not_run(self):
+        path = self.write_plan(TEN.replace('case TC-04 "case 4"\n', 'case TC-04 "case 4"\n  say four\n'))
+        self._hand_back_at_tc04(path)
+        run = get_active()[0]
+        self.assertEqual(self.not_run(run), {})
+        self.ok("stop")
+        self.assertEqual(sorted(self.not_run(run)), [f"TC-{i:02d}" for i in range(5, 11)])
+        self.assertIn("tnazar stop", self.not_run(run)["TC-05"])
+
+    def test_run_4_continuing_with_from_runs_every_case_and_keeps_the_order(self):
+        path = self.write_plan(TEN.replace('case TC-04 "case 4"\n', 'case TC-04 "case 4"\n  say four\n'))
+        self._hand_back_at_tc04(path)
+        code, out, err = tnazar("run", path, "--from", "TC-04")
+        self.assertEqual(code, 0, out + err)
+        run = Run.load("demo")
+        self.assertEqual(self.not_run(run), {})
+        self.assertEqual([c["id"] for c in coverage.requested(run.events())], [f"TC-{i:02d}" for i in range(1, 11)])
+        self.assertTrue(rpt.summarize(run)["tally"]["green"])
+        self.assertNotIn("selected", rpt.to_markdown(run, rpt.summarize(run)))  # run_9
+
+    def test_run_5_only_requests_the_selected_case_and_says_so(self):
+        out, run = self.run_plan(TEN, "--only", "TC-05")
+        self.assertEqual([c["id"] for c in coverage.requested(run.events())], ["TC-05"])
+        self.assertIn("1 of 10 plan cases selected (--only TC-05)", rpt.to_markdown(run, rpt.summarize(run)))
+        self.assertIn("verified 1/1", out)
+
+    def test_run_6_an_expected_result_whose_check_did_not_run_blocks_the_case(self):
+        out, run = self.run_plan('''
+case TC-01 "Login"
+  expect "Home shows the user"
+  expect "Pay button shown"
+  run login
+  check "Hi Asha" --for E1
+  if "Nowhere"
+    check "Pay now" --for E2
+  end
+''', expect=1)
+        end = [e for e in run.events() if e["type"] == "case_end"][0]
+        self.assertEqual(end["status"], "blocked")
+        self.assertIn("not verified: E2 Pay button shown", end["reason"])
+
+    def test_run_7_every_expected_result_proven_is_all_passed(self):
+        out, run = self.run_plan('''
+case TC-01 "Login"
+  expect "Home shows the user"
+  run login
+  check "Hi Asha" --for E1
+''')
+        self.assertIn("**Result:** all passed", rpt.to_markdown(run, rpt.summarize(run)))
+
+
 if __name__ == "__main__":
     unittest.main()
