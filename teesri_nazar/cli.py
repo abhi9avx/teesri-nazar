@@ -157,7 +157,7 @@ def cmd_start(args) -> int:
         raise UserError("run name must be letters, digits, '-' or '_' (max 64)")
     if active := get_active():
         refuse_if_owned(active[0])
-        finish_run(quiet=True)
+        finish_run(quiet=True, reason="run closed by a new tnazar start")
     serial = pick_serial(args.device)
     adb = Adb(serial)
     took_over = check_device_owner(adb, serial, args.take_over)
@@ -243,21 +243,29 @@ def refuse_if_owned(run: Run) -> None:
         raise UserError(f"a run is in progress on this device: {run.name} (pid {pid}); stop it or wait")
 
 
-def finish_run(quiet: bool = False) -> Run | None:
+def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     active = get_active()
     if not active:
         return None
     run, serial = active
     meta = run.meta()
+    # Before any device call: a device that fails cleanup must not leave a case open or lose a case.
+    if case := run.current_case():
+        events = run.events()
+        end = {"type": "case_end", "case": case, "status": "blocked", "reason": "run stopped before the case finished"}
+        if expects := coverage.expects_of(events, case):
+            checks = [e for e in rpt.case_events(events, case) if e["type"] == "check"]
+            end["expects"] = coverage.expectation_states(expects, checks)
+        run.log(end)
+    why = reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started"
+    for c in coverage.not_started(run.events()):
+        run.log({"type": "not_run", "case": c["id"], "title": c["title"], "reason": why})
     try:
         adb = Adb(serial)
         dev.release_device(adb, device_owner_of(run))
         uia2.stop(adb)
         if meta.get("animations_before"):
             dev.animations_restore(adb, meta["animations_before"])
-        if run.current_case():
-            run.log({"type": "case_end", "case": run.current_case(), "status": "blocked",
-                     "reason": "run stopped before the case finished"})
     except AdbError as exc:
         print(f"warning: device cleanup skipped: {exc}", file=sys.stderr)
     learned = _learn(run, meta)

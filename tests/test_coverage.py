@@ -87,11 +87,13 @@ class Phase0UndeclaredRunsTest(unittest.TestCase):
     def test_ph0_2_report_is_unchanged(self):
         run = legacy_run()
         md = rpt.to_markdown(run, rpt.summarize(run))
-        self.assertEqual(md, (GOLDEN / "legacy_report.md").read_text())
+        self.assertEqual(md.replace(rpt.UNDECLARED + "\n\n", "", 1), (GOLDEN / "legacy_report.md").read_text())
 
     def test_ph0_2_html_report_is_unchanged(self):
         run = legacy_run()
         page = rpt.to_html(run, rpt.summarize(run))
+        # The only allowed additions (PRD Q6): the completeness line and the style for not-run rows.
+        page = page.replace(f"<p class=\"muted\">{rpt.UNDECLARED}</p>\n", "", 1).replace(rpt.CSS_COVERAGE, "", 1)
         self.assertEqual(page, (GOLDEN / "legacy_report.html").read_text())
 
     def test_ph0_5_example_plans_parse_as_before(self):
@@ -409,6 +411,144 @@ class CaseResultTest(CaseCliBase):
         e = self.case_end_event(self.run, "TC-02")
         self.assertEqual(e["status"], "skipped")
         self.assertEqual(len(e["expects"]), 2)
+
+
+class NotRunTest(CaseCliBase):
+    """Declared cases that never started are rows with a reason when the run ends (Q4, R3)."""
+
+    def declare_and_run(self, declared=8, ran=5):
+        run = self.start()
+        for i in range(1, declared + 1):
+            self.ok("case", "plan", f"TC-0{i}")
+        for i in range(1, ran + 1):
+            self.ok("case", "start", f"TC-0{i}")
+            self.ok("check", "Login")
+            self.ok("case", "end")
+        return run
+
+    def not_run(self, run):
+        return [(e["case"], e["reason"]) for e in run.events() if e["type"] == "not_run"]
+
+    def test_cli_11_stop_writes_a_not_run_row_per_unstarted_case(self):
+        run = self.declare_and_run()
+        out = self.ok("stop")
+        self.assertEqual([c for c, _ in self.not_run(run)], ["TC-06", "TC-07", "TC-08"])
+        self.assertTrue(all("tnazar stop" in r for _, r in self.not_run(run)))
+        self.assertIn("○ 3 not run", out)
+        self.assertIn("verified 5/8", out)
+
+    def test_cli_12_a_device_error_while_stopping_still_closes_the_case_and_writes_not_run(self):
+        from teesri_nazar import cli
+        from teesri_nazar.adb import AdbError
+        run = self.declare_and_run(declared=3, ran=1)
+        self.ok("case", "start", "TC-02")
+        with mock.patch.object(cli.dev, "release_device", side_effect=AdbError("device gone")):
+            self.ok("stop")
+        self.assertEqual(self.case_end_event(run, "TC-02")["status"], "blocked")
+        self.assertEqual([c for c, _ in self.not_run(run)], ["TC-03"])
+
+    def test_cli_15_a_new_start_closes_the_old_run_with_its_own_reason(self):
+        run = self.declare_and_run(declared=2, ran=1)
+        self.ok("start", "next", "--package", PACKAGE)
+        self.assertEqual(self.not_run(run), [("TC-02", "run closed by a new tnazar start")])
+
+    def test_stop_on_an_undeclared_run_writes_no_not_run_row(self):
+        run = self.start()
+        self.ok("case", "start", "TC-01")
+        self.ok("check", "Login")
+        self.ok("case", "end")
+        out = self.ok("stop")
+        self.assertEqual(self.not_run(run), [])
+        self.assertIn("1 case(s): ✅ 1 pass  | checks 1/1 passed", out)
+
+
+def declared_run(finished=True) -> Run:
+    """A declared run: TC-01 pass (E1 proven), TC-02 fail, TC-03 blocked (E1 unproven), TC-04 never ran."""
+    run = Run.create("declared", {"package": "com.example.app", "started_at": "2026-10-21T10:00:00.000Z"})
+    for e in [ev_plan("TC-01", "Login", ["Home shown"]), ev_plan("TC-02", "Wrong MPIN"),
+              ev_plan("TC-03", "Pay", ["Amount <b>shown</b>"]), ev_plan("TC-04", "Logout"),
+              ev_start("TC-01"), ev_check(True, ["E1"], "TC-01", what="Hi Asha visible"),
+              {**ev_end("TC-01", "pass"), "expects": [{"id": "E1", "text": "Home shown", "state": "verified",
+                                                        "by": ["Hi Asha visible"]}]},
+              ev_start("TC-02", "Wrong MPIN"), ev_check(False, None, "TC-02"), ev_end("TC-02", "fail", "failed: x"),
+              ev_start("TC-03"),
+              {**ev_end("TC-03", "blocked", "not verified: E1 Amount <b>shown</b>"),
+               "expects": [{"id": "E1", "text": "Amount <b>shown</b>", "state": "unverified", "by": []}]}]:
+        run.log(e)
+    if finished:
+        run.log({"type": "not_run", "case": "TC-04", "title": "Logout", "reason": "--stop-on-fail after TC-03"})
+        run.update_meta(finished_at="2026-10-21T10:01:00.000Z")
+    return run
+
+
+class ReportCoverageTest(unittest.TestCase):
+    def setUp(self):
+        temp_home(self)
+        no_transcripts = mock.patch.object(usage, "transcripts", return_value=[])
+        no_transcripts.start()
+        self.addCleanup(no_transcripts.stop)
+
+    def test_rep_1_the_declared_summary_line_is_todays_line_plus_additions(self):
+        line = rpt.summary_line(rpt.summarize(declared_run()))
+        self.assertEqual(line, "4 case(s): ✅ 1 pass  ❌ 1 fail  ⛔ 1 blocked  ○ 1 not run  "
+                               "| checks 1/2 passed  | verified 2/4")
+
+    def test_rep_1_a_live_run_shows_unstarted_cases_as_pending(self):
+        s = rpt.summarize(declared_run(finished=False))
+        self.assertIn("◌ 1 pending", rpt.summary_line(s))
+        self.assertEqual([c["status"] for c in s["cases"]][-1], "pending")
+
+    def test_not_run_rows_come_with_their_reason_and_title(self):
+        rows = {c["id"]: c for c in rpt.summarize(declared_run())["cases"]}
+        self.assertEqual((rows["TC-04"]["status"], rows["TC-04"]["title"], rows["TC-04"]["reason"]),
+                         ("not_run", "Logout", "--stop-on-fail after TC-03"))
+
+    def test_cli_14_a_case_started_without_a_title_takes_the_planned_one(self):
+        rows = {c["id"]: c for c in rpt.summarize(declared_run())["cases"]}
+        self.assertEqual(rows["TC-01"]["title"], "Login")
+
+    def test_rep_2_result_line(self):
+        md = rpt.to_markdown(declared_run(), rpt.summarize(declared_run()))
+        self.assertIn("**Result:** incomplete", md)
+
+    def test_rep_2_result_failed_and_all_passed(self):
+        run = Run.create("r", {"package": "p"})
+        for e in [ev_plan("A"), ev_plan("B"), ev_start("A"), ev_check(True, None, "A"), ev_end("A", "pass"),
+                  ev_start("B"), ev_check(False, None, "B"), ev_end("B", "fail")]:
+            run.log(e)
+        self.assertIn("**Result:** failed", rpt.to_markdown(run, rpt.summarize(run)))
+        run2 = Run.create("r2", {"package": "p"})
+        for e in [ev_plan("A"), ev_start("A"), ev_check(True, None, "A"), ev_end("A", "pass")]:
+            run2.log(e)
+        self.assertIn("**Result:** all passed", rpt.to_markdown(run2, rpt.summarize(run2)))
+
+    def test_rep_7_a_failed_check_outside_any_case_is_not_all_passed(self):
+        run = Run.create("r", {"package": "p"})
+        for e in [ev_plan("A"), ev_start("A"), ev_check(True, None, "A"), ev_end("A", "pass"),
+                  ev_check(False, None, None, what="visual match")]:
+            run.log(e)
+        self.assertIn("**Result:** failed", rpt.to_markdown(run, rpt.summarize(run)))
+
+    def test_rep_3_each_case_lists_its_expected_results(self):
+        md = rpt.to_markdown(declared_run(), rpt.summarize(declared_run()))
+        self.assertIn("- ✅ E1 Home shown — proven by: Hi Asha visible", md)
+        self.assertIn("- ○ E1 Amount <b>shown</b> — not verified", md)
+
+    def test_rep_5_html_shows_the_same_and_escapes_it(self):
+        run = declared_run()
+        page = rpt.to_html(run, rpt.summarize(run))
+        self.assertIn("Amount &lt;b&gt;shown&lt;/b&gt;", page)
+        self.assertNotIn("Amount <b>shown</b>", page)
+        self.assertIn("verified 2/4", page)
+        self.assertIn("incomplete", page)
+        self.assertIn("pill not_run", page)
+        self.assertIn("--stop-on-fail after TC-03", page)
+
+    def test_rep_4_an_undeclared_report_only_gains_the_completeness_line(self):
+        run = legacy_run()
+        md = rpt.to_markdown(run, rpt.summarize(run))
+        self.assertIn(rpt.UNDECLARED, md)
+        self.assertEqual(md.replace(rpt.UNDECLARED + "\n\n", "", 1), (GOLDEN / "legacy_report.md").read_text())
 
 
 if __name__ == "__main__":
