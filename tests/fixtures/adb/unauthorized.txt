@@ -1,0 +1,3 @@
+List of devices attached
+R58M00TEST01           unauthorized usb:1-1 transport_id:2
+

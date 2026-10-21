@@ -49,6 +49,7 @@ COMMANDS = (
     Command("map", None),
     Command("ui", None),
     Command("devices", None),
+    Command("doctor", None),  # read-only setup check: never held, safe during a run
     Command("packages", None),
     Command("wait-resume", None),
     Command("wait-message", None),

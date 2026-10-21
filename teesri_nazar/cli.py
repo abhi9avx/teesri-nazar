@@ -15,12 +15,13 @@ from pathlib import Path
 from . import __version__
 from . import commands
 from . import device as dev
+from . import doctor
 from . import live
 from . import navmap
 from . import uia2
 from . import report as rpt
 from . import screen as scr
-from .adb import Adb, AdbError, adb_binary, list_devices, pick_serial
+from .adb import Adb, AdbError, adb_binary, adb_version, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
 from .judge import _end_case, evidence_shot
@@ -133,6 +134,13 @@ def cmd_devices(args) -> int:
     for d in devices:
         print(f"{d.serial}\t{d.state}\t{d.model}")
     return 0
+
+
+def cmd_doctor(args) -> int:
+    checks = doctor.run_checks(find_adb=adb_binary, adb_version=adb_version, devices=list_devices, adb_for=Adb,
+                               only=args.device or os.environ.get("ANDROID_SERIAL"))
+    print(doctor.render(checks))
+    return doctor.verdict(checks)[0]
 
 
 def cmd_packages(args) -> int:
@@ -748,6 +756,9 @@ def build_parser() -> argparse.ArgumentParser:
         return p
 
     add("devices", cmd_devices, "list connected devices")
+    p = add("doctor", cmd_doctor, "check adb, the device, Python and fast screen reads; print the fix for each problem")
+    p.epilog = "exit codes: 0 a run can start (warnings allowed); 2 a blocker: nothing can run until it is fixed"
+    p.add_argument("--device", "-s", default=argparse.SUPPRESS, help="check only this device")
     p = add("packages", cmd_packages, "list installed packages, optionally filtered")
     p.add_argument("keyword", nargs="?")
 

@@ -142,6 +142,7 @@ class FakeAdb:
         self.uia2_errors = 0  # next N reads answer HTTP 500 (screen changing mid-read)
         self.uia2_reads = 0
         self.offline = False  # airplane mode: ping fails
+        self.booting = False  # adb lists it as `device`, but Android has not finished starting
         self.drop_taps = 0  # next N taps are lost (a screen that was not ready yet)
         self.becomes: tuple[int, str] | None = None  # (n, screen): after n more reads, the app shows `screen`
         self.files: dict[str, str] = {}  # device files tnazar writes via the shell
@@ -193,7 +194,7 @@ class FakeAdb:
         return hits[-1] if hits else None
 
     # --- the Adb interface used by tnazar
-    def screen_size(self) -> tuple[int, int]:
+    def screen_size(self, timeout: float = 60) -> tuple[int, int]:
         return self.size
 
     def exec_out(self, command: str, timeout: float = 60) -> bytes:
@@ -274,6 +275,8 @@ class FakeAdb:
         if a[:2] == ["rm", "-f"]:
             self.files.pop(a[2], None)
             return ""
+        if a[:2] == ["getprop", "sys.boot_completed"]:
+            return "\n" if self.booting else "1\n"
         if a[:1] == ["getprop"]:
             return "14\n"
         if a[:2] == ["wm", "size"]:

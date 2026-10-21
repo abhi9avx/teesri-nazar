@@ -1,0 +1,3 @@
+List of devices attached
+R58M00TEST01           no permissions (missing udev rules? user is in the plugdev group); see [http://developer.android.com/tools/device.html] usb:1-1 transport_id:2
+

@@ -165,6 +165,19 @@ adb -s <serial> shell input tap 540 860
 3. `$ANDROID_SERIAL`,
 4. the only connected device — or an error asking you to choose if there are several.
 
+When no device is ready, the error names each listed device and why it is not ready
+(`R58M… is unauthorized (accept the "Allow USB debugging" prompt …)`) and points to
+`./tnazar doctor`. The state-to-fix text (`STATE_FIX`) is shared with `doctor`.
+
+**Checking the setup: `tnazar doctor`** (*file: `teesri_nazar/doctor.py`*). One command checks
+Python 3.9+, adb (and its version), every listed device's state (including *still booting*:
+adb says `device` before Android has started), the screen size and whether the UiAutomator2
+server is installed. Each problem gets a `fix:` line. It only reads: it never installs, starts
+the server or claims the device, so it is safe while a run is in progress and is not held by
+a dashboard pause. Exit 0 = a run can start on at least one device (warnings allowed, such as
+slow reads); 2 = nothing can run until a blocker is fixed. The `./tnazar` launcher checks the
+Python version before importing anything, so old Python prints the fix instead of a traceback.
+
 **Everything is synchronous with a timeout.** If adb hangs (it can), the call fails with
 a clear `AdbError` instead of freezing the run.
 
@@ -543,6 +556,9 @@ Claude (and CI) can act on them without reading the output:
 | `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |
 | `5` | Still paused from the dashboard after 60 s; the command was **not run** | Run `./tnazar wait-resume` until it prints `resumed`, then continue. |
 | `130` | Interrupted (Ctrl-C) | — |
+
+`doctor` uses only `0` (a run can start on at least one device; warnings allowed) and `2` (a
+blocker: nothing can run until it is fixed). See §5, *Checking the setup*.
 
 ---
 
