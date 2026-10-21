@@ -15,6 +15,7 @@ from pathlib import Path
 
 from . import __version__
 from . import commands
+from . import coverage
 from . import device as dev
 from . import doctor
 from . import live
@@ -525,14 +526,30 @@ def cmd_wait_online(args) -> int:
     return 0 if ok else EXIT_FAIL
 
 
+def _linked(ctx: Ctx, ids: list[str] | None) -> dict:
+    """`--for`: the expected results of the case in progress this check proves ({} without --for)."""
+    if not ids:
+        return {}
+    case = ctx.run.current_case() if ctx.run else None
+    if not case:
+        raise UserError("--for needs a case in progress: tnazar case start <id>")
+    have = len(coverage.expects_of(ctx.run.events(), case))
+    missing = [i for i in ids if int(i[1:]) > have]
+    if missing:
+        raise UserError(f"case {case} has no {', '.join(missing)}: it has {have} expected result(s) "
+                        f"(declare them with `case plan {case} --expect ...`)")
+    return {"for": ids}
+
+
 def cmd_check(args) -> int:
     ctx = Ctx.from_args(args.device)
+    linked = _linked(ctx, args.for_)
     if args.result:
         if not args.what:
             raise UserError("--what is required: say what was verified")
         ok = args.result == "pass"
         event = {"type": "check", "kind": args.kind, "ok": ok, "what": args.what,
-                 "detail": args.detail or ""}
+                 "detail": args.detail or "", **linked}
         if args.shot and (shot := evidence_shot(ctx, f"check-{args.kind}")):
             event["shot"] = shot
         ctx.log(event)
@@ -551,7 +568,8 @@ def cmd_check(args) -> int:
     what = args.what or _describe_check(sel, args)
     label = "pass" if ok else "fail"
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
-             "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls")}
+             "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls"),
+             **linked}
     if screen is not None:
         # Same screen, same fingerprint: the report shows one screenshot for all its checks.
         event["screen_sig"] = hashlib.sha1(screen.signature().encode()).hexdigest()[:12]
@@ -602,10 +620,19 @@ def cmd_case(args) -> int:
     ctx = Ctx.from_args(args.device)
     if not ctx.run:
         raise UserError("cases need an active run: tnazar start <name>")
+    if args.action == "plan":
+        ctx.log({"type": "case_plan", "case": args.id, "title": args.title or "", "expects": args.expect,
+                 "added": False})
+        listed = "; ".join(f"E{i} {text}" for i, text in enumerate(args.expect, 1))
+        print(f"{args.id} planned" + (f": {listed}" if listed else ""))
+        return 0
     if args.action == "start":
         if ctx.run.current_case():
             _end_case(ctx, None, "next case started without an explicit result")
         dev.logcat_clear(ctx.adb)
+        events = ctx.run.events()
+        if coverage.declared(events) and all(c["id"] != args.id for c in coverage.requested(events)):
+            ctx.log({"type": "case_plan", "case": args.id, "title": args.title or "", "expects": [], "added": True})
         ctx.log({"type": "case_start", "case": args.id, "title": args.title or ""})
         print(f"case {args.id} started")
         return 0
@@ -868,6 +895,11 @@ def build_parser() -> argparse.ArgumentParser:
     cs = csub.add_parser("start")
     cs.add_argument("id")
     cs.add_argument("title", nargs="?")
+    cp = csub.add_parser("plan", help="declare a case before testing, so the report shows it even if it never runs")
+    cp.add_argument("id")
+    cp.add_argument("title", nargs="?")
+    cp.add_argument("--expect", action="append", default=[], metavar="TEXT",
+                    help="one expected result (repeat: E1, E2… in order); prove each with `check --for`")
     ce = csub.add_parser("end")
     ce.add_argument("status", nargs="?", choices=["pass", "fail", "blocked", "skipped"],
                     help="omit to derive from the case's checks")

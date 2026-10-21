@@ -261,5 +261,155 @@ class PlanExpectTest(unittest.TestCase):
         self.assertIn("expect", parse_err('app a.b\ncase T1\n  expect "a" "b"\n  check X\n'))
 
 
+import sys  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).parent))
+from fakedevice import PACKAGE, tnazar  # noqa: E402,F401
+from test_cli import CliTestCase  # noqa: E402
+from teesri_nazar.session import get_active  # noqa: E402
+
+
+class CaseCliBase(CliTestCase):
+    def events(self, type_=None):
+        evs = get_active()[0].events() if get_active() else self.finished.events()
+        return [e for e in evs if type_ is None or e["type"] == type_]
+
+    def fails(self, *argv, code=2):
+        c, out, err = tnazar(*argv)
+        self.assertEqual(c, code, out + err)
+        return out + err
+
+
+class CasePlanTest(CaseCliBase):
+    def test_cli_1_case_plan_declares_a_case_with_numbered_expected_results(self):
+        self.start()
+        out = self.ok("case", "plan", "TC-02", "Wrong MPIN", "--expect", "Error text shown", "--expect", "Stays on MPIN")
+        self.assertIn("E1 Error text shown", out)
+        self.assertIn("E2 Stays on MPIN", out)
+        [e] = self.events("case_plan")
+        self.assertEqual((e["case"], e["title"], e["expects"], e["added"]),
+                         ("TC-02", "Wrong MPIN", ["Error text shown", "Stays on MPIN"], False))
+
+    def test_cli_2_case_plan_needs_an_active_run(self):
+        self.assertIn("active run", self.fails("case", "plan", "TC-01"))
+
+    def test_cli_7_case_plan_does_not_end_the_case_in_progress(self):
+        self.start()
+        self.ok("case", "start", "TC-01")
+        self.ok("case", "plan", "TC-02")
+        self.assertEqual(get_active()[0].current_case(), "TC-01")
+        self.assertEqual(self.events("case_end"), [])
+
+
+class CheckForTest(CaseCliBase):
+    def setUp(self):
+        super().setUp()
+        self.start()
+        self.ok("case", "plan", "TC-02", "Wrong MPIN", "--expect", "Login shown", "--expect", "Phone field shown")
+        self.ok("case", "start", "TC-02")
+
+    def test_cli_3_for_an_expected_result_the_case_does_not_have_records_nothing(self):
+        self.assertIn("E3", self.fails("check", "Login", "--for", "E3"))
+        self.assertEqual(self.events("check"), [])
+
+    def test_cli_4_for_needs_a_case_in_progress(self):
+        self.ok("case", "end", "skipped")
+        self.assertIn("case", self.fails("check", "Login", "--for", "E1"))
+        self.assertEqual(self.events("check"), [])
+
+    def test_cli_5_ui_and_agent_verified_checks_record_what_they_prove(self):
+        self.ok("check", "Login", "--for", "E1")
+        self.ok("check", "--result", "pass", "--kind", "db", "--what", "attempts = 1", "--for", "E2,E1")
+        self.assertEqual([e["for"] for e in self.events("check")], [["E1"], ["E2", "E1"]])
+
+    def test_a_check_without_for_records_no_link(self):
+        self.ok("check", "Login")
+        self.assertNotIn("for", self.events("check")[0])
+
+
+class UndeclaredStartTest(CaseCliBase):
+    def test_cli_6_starting_an_unplanned_case_in_a_declared_run_adds_it(self):
+        self.start()
+        self.ok("case", "plan", "TC-01")
+        self.ok("case", "start", "TC-09", "Found while testing")
+        plans = self.events("case_plan")
+        self.assertEqual([(e["case"], e["added"]) for e in plans], [("TC-01", False), ("TC-09", True)])
+        self.assertEqual(plans[1]["title"], "Found while testing")
+        types = [e["type"] for e in self.events()]
+        last_plan = max(i for i, t in enumerate(types) if t == "case_plan")
+        self.assertLess(last_plan, types.index("case_start"))
+
+    def test_an_undeclared_run_records_no_case_plan(self):
+        self.start()
+        self.ok("case", "start", "TC-01")
+        self.assertEqual(self.events("case_plan"), [])
+
+    def test_restarting_a_planned_case_adds_nothing(self):
+        self.start()
+        self.ok("case", "plan", "TC-01")
+        self.ok("case", "start", "TC-01")
+        self.assertEqual(len(self.events("case_plan")), 1)
+
+
+class CaseResultTest(CaseCliBase):
+    """The result of a case with expected results (Q9, R4)."""
+
+    def setUp(self):
+        super().setUp()
+        self.run = self.start()
+        self.ok("case", "plan", "TC-02", "Login screen", "--expect", "Login shown", "--expect", "Card 4242 listed")
+        self.ok("case", "start", "TC-02")
+
+    def test_cli_8_an_unproven_expected_result_blocks_the_case_and_names_it(self):
+        self.ok("check", "Login", "--for", "E1")
+        self.ok("case", "end")
+        e = self.case_end_event(self.run, "TC-02")
+        self.assertEqual(e["status"], "blocked")
+        self.assertIn("not verified: E2 Card 4242 listed", e["reason"])
+        self.assertEqual([(x["id"], x["state"]) for x in e["expects"]], [("E1", "verified"), ("E2", "unverified")])
+
+    def test_every_expected_result_proven_passes(self):
+        self.ok("check", "Login", "--for", "E1,E2")
+        self.ok("case", "end")
+        e = self.case_end_event(self.run, "TC-02")
+        self.assertEqual((e["status"], e["reason"]), ("pass", ""))
+
+    def test_cli_9_a_tester_pass_with_an_unproven_expected_result_is_blocked(self):
+        self.ok("check", "Login", "--for", "E1")
+        self.ok("case", "end", "pass")
+        e = self.case_end_event(self.run, "TC-02")
+        self.assertEqual(e["status"], "blocked")
+        self.assertIn("marked pass by the tester", e["reason"])
+        self.assertIn("not verified: E2", e["reason"])
+
+    def test_cli_10_a_failed_linked_check_fails_the_case(self):
+        self.ok("check", "Login", "--for", "E1")
+        tnazar("check", "Nowhere", "--for", "E2", "--timeout", "1")
+        self.ok("case", "end")
+        e = self.case_end_event(self.run, "TC-02")
+        self.assertEqual(e["status"], "fail")
+        self.assertEqual([x["state"] for x in e["expects"]], ["verified", "failed"])
+
+    def test_cli_10_a_crash_fails_even_when_every_expected_result_is_proven(self):
+        self.ok("check", "Login", "--for", "E1,E2")
+        self.adb.crash_log = f"FATAL EXCEPTION: main\nProcess: {PACKAGE}, PID: 4242\n"
+        self.ok("case", "end")
+        self.assertEqual(self.case_end_event(self.run, "TC-02")["status"], "fail")
+
+    def test_cli_13_an_auto_ended_case_still_names_the_unproven_expected_result(self):
+        self.ok("check", "Login", "--for", "E1")
+        self.ok("case", "start", "TC-03")
+        e = self.case_end_event(self.run, "TC-02")
+        self.assertEqual(e["status"], "blocked")
+        self.assertIn("next case started", e["reason"])
+        self.assertIn("not verified: E2", e["reason"])
+
+    def test_explicit_fail_or_skip_by_the_tester_is_kept(self):
+        self.ok("case", "end", "skipped", "--reason", "out of scope")
+        e = self.case_end_event(self.run, "TC-02")
+        self.assertEqual(e["status"], "skipped")
+        self.assertEqual(len(e["expects"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
