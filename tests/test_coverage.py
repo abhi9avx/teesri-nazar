@@ -675,6 +675,62 @@ case TC-01 "Login"
         self.assertIn("**Result:** all passed", rpt.to_markdown(run, rpt.summarize(run)))
 
 
+class PreconditionBlockTest(PlanRunBase):
+    """S7: a shared flow that fails twice blocks the rest of the cases that need it, at once."""
+
+    BROKEN = """
+flow enter
+  tap "Nowhere"
+end
+""" + "".join(f'case TC-{i:02d} "uses the broken flow"\n  run enter\n  check Login\n' for i in range(1, 5)) + \
+        'case TC-05 "does not need it"\n  check Login\n'
+
+    def case_events(self, run, case):
+        return [e["type"] for e in run.events() if e.get("case") == case and e["type"] != "case_plan"]
+
+    def test_two_failures_block_the_remaining_cases_without_touching_the_device(self):
+        out, run = self.run_plan(self.BROKEN, expect=1)
+        st = {c["id"]: (c["status"], c["reason"]) for c in rpt.summarize(run)["cases"]}
+        self.assertEqual((st["TC-01"][0], st["TC-02"][0]), ("fail", "fail"))
+        for cid in ("TC-03", "TC-04"):
+            self.assertEqual(st[cid], ("blocked", "precondition failed: flow enter (failed in TC-01, TC-02)"))
+            self.assertEqual(self.case_events(run, cid), ["case_start", "case_end"])
+        self.assertEqual(st["TC-05"][0], "pass")
+        self.assertIn("TC-03    BLOCKED  precondition failed: flow enter", out)
+        self.assertIn("verified 3/5", out)
+
+    def test_a_flow_that_fails_once_then_works_blocks_nothing(self):
+        self.adb.drop_taps = 1
+        out, run = self.run_plan('''
+flow enter
+  tap Login
+  wait "Pay now" --timeout 1
+end
+case TC-01 "first try loses the tap"
+  run enter
+  check "Pay now"
+case TC-02 "works"
+  key back
+  run enter
+  check "Pay now"
+case TC-03 "works"
+  key back
+  run enter
+  check "Pay now"
+''', expect=1)
+        st = {c["id"]: c["status"] for c in rpt.summarize(run)["cases"]}
+        self.assertEqual(st, {"TC-01": "fail", "TC-02": "pass", "TC-03": "pass"})
+
+    def test_a_blocked_case_keeps_its_expected_results_unverified(self):
+        body = self.BROKEN.replace('case TC-03 "uses the broken flow"\n',
+                                   'case TC-03 "uses the broken flow"\n  expect "Login shown"\n') \
+                          .replace('case TC-03 "uses the broken flow"\n  expect "Login shown"\n  run enter\n  check Login\n',
+                                   'case TC-03 "uses the broken flow"\n  expect "Login shown"\n  run enter\n  check Login --for E1\n')
+        _, run = self.run_plan(body, expect=1)
+        end = [e for e in run.events() if e["type"] == "case_end" and e["case"] == "TC-03"][0]
+        self.assertEqual([x["state"] for x in end["expects"]], ["unverified"])
+
+
 from test_replay import ReplayTestCase  # noqa: E402
 
 

@@ -35,6 +35,7 @@ DETAIL_LINES = 6
 class Failed:
     detail: str
     code: int = 1  # the failing step's exit code
+    flow: str | None = None  # the flow the case ran that the failing step was in
 
 
 @dataclass
@@ -90,8 +91,16 @@ def run(args) -> int:
 
     failed = False
     since = live.Since()
+    broken: dict[str, list[str]] = {}  # flow -> the cases it failed in, in a row
     for case in cases:
         began = time.monotonic()
+        needs = _flows_used(case.body)
+        if dead := [f for f in needs if len(broken.get(f, [])) >= 2]:
+            why = "; ".join(f"flow {f} (failed in {', '.join(broken[f])})" for f in dead)
+            _block(the_run, case, f"precondition failed: {why}")
+            print(f"{case.id:8} BLOCKED  precondition failed: {why}")
+            failed = True
+            continue
         # "--": a title (or id) starting with "-" is not an option.
         call(["case", "start", "--", case.id] + ([case.title] if case.title else []))
         try:
@@ -110,6 +119,11 @@ def run(args) -> int:
             return live.EXIT_HELD
         call(["case", "end"])
         status = _last_status(the_run, case.id)
+        for f in needs:  # a flow that worked here is not a broken precondition any more
+            if isinstance(result, Failed) and result.flow == f:
+                broken.setdefault(f, []).append(case.id)
+            else:
+                broken.pop(f, None)
         print(f"{case.id:8} {status.upper():7} {time.monotonic() - began:5.1f}s  {case.title}")
         if isinstance(result, Failed):
             print(indent(result.detail))
@@ -150,7 +164,10 @@ class Executor:
 
     def item(self, item, record: bool):
         if isinstance(item, RunFlow):
-            return self.body(self.plan.flows[item.flow].body, record)
+            result = self.body(self.plan.flows[item.flow].body, record)
+            if isinstance(result, Failed):
+                result.flow = item.flow  # set again on the way out: the case's own `run` names it
+            return result
         if isinstance(item, If):
             held = self.hold()
             if held:
@@ -223,6 +240,29 @@ class Executor:
         stats: dict = {}
         found, _, _ = dev.wait_for(adb, sel, wait, stats=stats, alternatives=others)
         return found, stats["polls"]
+
+
+def _flows_used(body: list) -> list[str]:
+    """The flows a case runs itself (`run X` in its body, in `if`/`else`/`retry` too)."""
+    out: list[str] = []
+    for item in body:
+        if isinstance(item, RunFlow):
+            out.append(item.flow)
+        elif isinstance(item, If):
+            out += _flows_used(item.then) + _flows_used(item.other)
+        elif isinstance(item, Retry):
+            out += _flows_used(item.body)
+    return list(dict.fromkeys(out))
+
+
+def _block(the_run: Run, case: Case, reason: str) -> None:
+    """End a case unrun: no device call, so a dead precondition costs nothing per case."""
+    events = the_run.events()
+    the_run.log({"type": "case_start", "case": case.id, "title": case.title})
+    end = {"type": "case_end", "case": case.id, "status": "blocked", "reason": reason}
+    if expects := coverage.expects_of(events, case.id):
+        end["expects"] = coverage.expectation_states(expects, [])
+    the_run.log(end)
 
 
 def _select(cases: list[Case], only: str | None, start: str | None) -> list[Case]:
