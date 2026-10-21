@@ -104,7 +104,8 @@ def run(args) -> int:
         # "--": a title (or id) starting with "-" is not an option.
         call(["case", "start", "--", case.id] + ([case.title] if case.title else []))
         try:
-            result = Executor(p, the_run, case.id, since).body(case.body)
+            executor = Executor(p, the_run, case.id, since)
+            result = executor.body(case.body)
         except Exception as exc:  # noqa: BLE001 - whatever broke, the run must not stay open
             call(["case", "end", "blocked", "--reason", f"error: {exc}"])
             print(f"{case.id:8} BLOCKED  error: {exc}")
@@ -119,10 +120,10 @@ def run(args) -> int:
             return live.EXIT_HELD
         call(["case", "end"])
         status = _last_status(the_run, case.id)
-        for f in needs:  # a flow that worked here is not a broken precondition any more
+        for f in needs:
             if isinstance(result, Failed) and f in result.flows:
                 broken.setdefault(f, []).append(case.id)
-            else:
+            elif f in executor.completed:  # it worked here: not a broken precondition any more
                 broken.pop(f, None)
         print(f"{case.id:8} {status.upper():7} {time.monotonic() - began:5.1f}s  {case.title}")
         if isinstance(result, Failed):
@@ -148,6 +149,7 @@ class Executor:
     def __init__(self, plan: Plan, the_run: Run, case_id: str, since: live.Since):
         self.plan, self.run, self.case_id, self.since = plan, the_run, case_id, since
         self.failed_checks = 0
+        self.completed: set[str] = set()  # flows that ran to their end in this case
 
     def long_pause(self) -> Paused | None:
         """The user kept the run paused past PAUSE_WAIT: keep waiting (None) or give the turn back."""
@@ -167,6 +169,8 @@ class Executor:
             result = self.body(self.plan.flows[item.flow].body, record)
             if isinstance(result, Failed):
                 result.flows.append(item.flow)
+            elif result is None:
+                self.completed.add(item.flow)
             return result
         if isinstance(item, If):
             held = self.hold()
@@ -243,13 +247,12 @@ class Executor:
 
 
 def _flows_used(body: list, flows: dict, seen: frozenset = frozenset()) -> list[str]:
-    """Every flow a case needs: those it runs, and those they run (in `if`/`else`/`retry` too)."""
+    """The flows a case always runs, and those they run. A flow in an `if` branch may not be
+    needed (the screen decides), so it never blocks the case."""
     out: list[str] = []
     for item in body:
         if isinstance(item, RunFlow) and item.flow not in seen:
             out += [item.flow] + _flows_used(flows[item.flow].body, flows, seen | {item.flow})
-        elif isinstance(item, If):
-            out += _flows_used(item.then, flows, seen) + _flows_used(item.other, flows, seen)
         elif isinstance(item, Retry):
             out += _flows_used(item.body, flows, seen)
     return list(dict.fromkeys(out))

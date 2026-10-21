@@ -25,11 +25,16 @@ FIELDS = {
     "status": {"status"},
     "account": {"account", "phone", "phonenumber", "mobile", "uid", "user", "userid", "testaccount", "login"},
 }
-# Never copied into a plan: plans hold only `--env` names for these.
-SECRET = {"otp", "mpin", "pin", "password", "passcode", "secret", "token"}
-COMMENTED = (("description", "description"), ("precondition", "precondition"), ("data", "test data"),
-             ("priority", "priority"), ("status", "status"), ("account", "account"))
-BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])\s+")
+# A column whose header has one of these words is never copied into a plan; neither is a
+# `word: value` with one inside another cell. Plans hold only `--env` names for secrets.
+SECRET = {"otp", "mpin", "pin", "password", "passcode", "passwd", "secret", "token"}
+SECRET_VALUE = re.compile(r"\b(" + "|".join(sorted(SECRET)) + r")\b(\s*[:=]\s*)\S+", re.I)
+COMMENTED = ("description", "precondition", "data", "priority", "status", "account")
+LABEL = {"data": "test data"}
+BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])(?:\s+|$)")
+SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$")
+BR = re.compile(r"<br\s*/?>", re.I)
+MD_RULE = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$")
 
 
 class IntakeError(ValueError):
@@ -46,6 +51,10 @@ class Imported:
     fields: dict = field(default_factory=dict)  # every other column, by field name or original header
 
 
+def _flat(s: str) -> str:
+    return " ".join(s.split())
+
+
 def _key(header: str) -> str:
     return re.sub(r"[^a-z0-9]", "", header.casefold())
 
@@ -55,49 +64,54 @@ def _field_of(header: str) -> str | None:
     return next((f for f, names in FIELDS.items() if k in names), None)
 
 
+def _secret(header: str) -> bool:
+    return bool(set(re.findall(r"[a-z]+", header.casefold())) & SECRET)
+
+
+def _hide(value: str) -> str:
+    return SECRET_VALUE.sub(lambda m: m.group(1) + m.group(2) + "••••", value)
+
+
 def _rows(text: str) -> list[list[str]]:
-    lines = [ln for ln in text.replace("\r\n", "\n").split("\n")]
-    first = next((ln for ln in lines if ln.strip()), "")
-    if first.lstrip().startswith("|"):
-        rows = []
-        for ln in lines:
-            if not ln.strip().startswith("|"):
-                continue
-            cells = [c.strip().replace("<br>", "\n").replace("<br/>", "\n") for c in ln.strip().strip("|").split("|")]
-            if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
-                continue
-            rows.append(cells)
-        return rows
-    if "\t" in first:
-        return _tsv(lines, first.count("\t"))
+    text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        return []
+    if lines[0].lstrip().startswith("|") or (len(lines) > 1 and "|" in lines[0] and MD_RULE.match(lines[1].strip())):
+        return [_md_cells(ln) for ln in lines if not MD_RULE.match(ln.strip())]
+    if "\t" in lines[0]:
+        return _tsv(text, lines[0].count("\t") + 1)
     return [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
 
 
-def _tsv(lines: list[str], tabs: int) -> list[list[str]]:
-    """Sheets paste a cell's line breaks as they are: a row ends once it has all its tabs."""
-    rows, buf = [], ""
-    for ln in lines:
-        buf = f"{buf}\n{ln}" if buf else ln
-        if buf.count("\t") >= tabs:
-            rows.append([_unquote(c) for c in buf.split("\t")])
-            buf = ""
-    if buf.strip():
-        rows.append([_unquote(c) for c in buf.split("\t")])
-    return [r for r in rows if any(c.strip() for c in r)]
+def _md_cells(line: str) -> list[str]:
+    line = line.strip()
+    line = line[1:] if line.startswith("|") else line
+    line = line[:-1] if line.endswith("|") and not line.endswith("\\|") else line
+    return [BR.sub("\n", c.replace("\0", "|")).strip() for c in line.replace("\\|", "\0").split("|")]
 
 
-def _unquote(cell: str) -> str:
-    cell = cell.strip()
-    if len(cell) >= 2 and cell[0] == cell[-1] == '"':
-        cell = cell[1:-1].replace('""', '"')
-    return cell
+def _tsv(text: str, width: int) -> list[list[str]]:
+    """Tab-separated rows. A sheet quotes a cell with line breaks; a chat paste may not, so an
+    unquoted short line continues the row before it while the two still fit in `width` cells."""
+    rows: list[list[str]] = []
+    for cells in csv.reader(io.StringIO(text), delimiter="\t"):
+        if not any(c.strip() for c in cells):
+            continue
+        prev = rows[-1] if rows else None
+        if prev is not None and len(prev) < width and len(prev) + len(cells) - 1 <= width:
+            prev[-1] += "\n" + cells[0]
+            prev += cells[1:]
+        else:
+            rows.append(cells)
+    return rows
 
 
 def _split_expected(cell: str) -> list[str]:
     parts = [p for p in cell.split("\n") if p.strip()]
     if len(parts) == 1 and ";" in parts[0]:
         parts = parts[0].split(";")
-    return [" ".join(BULLET.sub("", p).split()) for p in parts if BULLET.sub("", p).strip()]
+    return [t for t in (_flat(BULLET.sub("", p)) for p in parts) if t]
 
 
 def read(text: str, columns: str | None = None) -> list[Imported]:
@@ -106,7 +120,7 @@ def read(text: str, columns: str | None = None) -> list[Imported]:
         raise IntakeError("no rows found")
     if columns:
         headers = [c.strip() for c in columns.split(",")]
-        unknown = [h for h in headers if h and not _field_of(h) and _key(h) not in SECRET]
+        unknown = [h for h in headers if h and not _field_of(h) and not _secret(h)]
         if unknown:
             raise IntakeError(f"--columns: unknown name(s) {', '.join(unknown)}; use {', '.join(FIELDS)}")
         body = rows
@@ -118,30 +132,41 @@ def read(text: str, columns: str | None = None) -> list[Imported]:
             raise IntakeError(f"no header row found (first case row: {preview}). Name the columns in order, e.g. "
                               f"--columns title,description,precondition,steps,data,expected,priority,status,account")
     names = [_field_of(h) or h.strip() for h in headers]
+    for f in FIELDS:
+        same = [h for h, n in zip(headers, names) if n == f]
+        if len(same) > 1:
+            raise IntakeError(f"columns {' and '.join(repr(h) for h in same)} both mean {f}: rename or remove one")
     if "title" not in names and "id" not in names:
         raise IntakeError("no title or ID column: name one in the header or with --columns")
 
-    cases, section, seen = [], "", {}
+    taken = {r[names.index("id")].strip() for r in body if "id" in names and len(r) > names.index("id")}
+    cases, section, seen, next_n = [], "", {}, 1
     for n, row in enumerate(body, 1):
-        cells = dict(zip(names, (c.strip() for c in row)))
+        cells = {name: c.strip() for name, c in zip(names, row)}
+        cells.update({f"column {i}": c.strip() for i, c in enumerate(row[len(names):], len(names) + 1) if c.strip()})
         filled = [c for c in row if c.strip()]
-        # A heading row ("Overdue users") fills only its first cell; in a narrow table that is a case.
-        if len(filled) == 1 and row[0].strip() and len(names) >= 3:
-            section = row[0].strip()
-            continue
         if not filled:
             continue
-        cid = cells.get("id") or f"TC-{len(cases) + 1:02d}"
-        if re.search(r"\s", cid):
-            raise IntakeError(f"row {n}: case ID {cid!r} has spaces; a plan case ID is one word")
+        # A heading row ("Notes app") fills only a title in the first column; an ID alone is a case.
+        if len(filled) == 1 and names[0] == "title" and row[0].strip() and len(names) >= 3:
+            section = row[0].strip()
+            continue
+        cid = cells.get("id", "")
+        if not cid:
+            while f"TC-{next_n:02d}" in taken:
+                next_n += 1
+            cid = f"TC-{next_n:02d}"
+            taken.add(cid)
+        if not SAFE_ID.match(cid):
+            raise IntakeError(f"row {n}: case ID {cid!r} must be one word of letters, digits, '.', '_', ':', '/' or '-'")
         if cid in seen:
             raise IntakeError(f"case ID {cid} is used twice: rows {seen[cid]} and {n}")
         seen[cid] = n
-        extra = {k: v for k, v in cells.items() if v and k not in ("id", "title", "expected", "steps")
-                 and _key(k) not in SECRET}
-        cases.append(Imported(cid, " ".join(cells.get("title", "").split()),
-                              _split_expected(cells.get("expected", "")),
-                              [s.strip() for s in cells.get("steps", "").split("\n") if s.strip()], section, extra))
+        extra = {k: _hide(v) for k, v in cells.items() if v and k not in ("id", "title", "expected", "steps")
+                 and not _secret(k)}
+        cases.append(Imported(cid, _flat(cells.get("title", "")), _split_expected(_hide(cells.get("expected", ""))),
+                              [_hide(s.strip()) for s in cells.get("steps", "").split("\n") if s.strip()],
+                              section, extra))
     return cases
 
 
@@ -160,12 +185,12 @@ def to_plan(cases: list[Imported], app: str, name: str, source: str) -> str:
             out += [f"# == {c.section} ==", ""]
         section = c.section
         out.append(f"case {c.id} {_q(c.title)}" if c.title else f"case {c.id}")
-        for key, label in COMMENTED:
+        for key in COMMENTED:
             if c.fields.get(key):
-                out.append(f"  # {label}: {' '.join(c.fields[key].split())}")
+                out.append(f"  # {LABEL.get(key, key)}: {_flat(c.fields[key])}")
         for key, value in c.fields.items():
             if key not in FIELDS:
-                out.append(f"  # {key}: {' '.join(value.split())}")
+                out.append(f"  # {key}: {_flat(value)}")
         if c.steps:
             out.append("  # steps:")
             out += [f"  #   {s}" for s in c.steps]

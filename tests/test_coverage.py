@@ -744,6 +744,43 @@ case TC-03 "runs inner directly"
         st = {c["id"]: c["reason"] for c in rpt.summarize(run)["cases"]}
         self.assertIn("flow inner (failed in TC-01, TC-02)", st["TC-03"])
 
+    def test_a_dead_flow_in_a_branch_does_not_block_a_case_that_may_not_need_it(self):
+        out, run = self.run_plan(self.BROKEN.split("case TC-05")[0] + '''case TC-05 "only needs it when logged out"
+  if Login
+    say "already there"
+  else
+    run enter
+  end
+  check Login
+''', expect=1)
+        st = {c["id"]: c["status"] for c in rpt.summarize(run)["cases"]}
+        self.assertEqual(st["TC-05"], "pass")
+
+    def test_a_flow_the_case_never_reached_keeps_its_failures(self):
+        out, run = self.run_plan('''
+flow enter
+  tap "Nowhere"
+end
+flow other
+  tap "Also nowhere"
+end
+case TC-01 "fails in enter"
+  run enter
+  check Login
+case TC-02 "fails in other before reaching enter"
+  run other
+  run enter
+  check Login
+case TC-03 "fails in enter"
+  run enter
+  check Login
+case TC-04 "needs enter"
+  run enter
+  check Login
+''', expect=1)
+        st = {c["id"]: (c["status"], c["reason"]) for c in rpt.summarize(run)["cases"]}
+        self.assertEqual(st["TC-04"], ("blocked", "precondition failed: flow enter (failed in TC-01, TC-03)"))
+
     def test_a_flow_that_fails_once_then_works_blocks_nothing(self):
         self.adb.drop_taps = 1
         out, run = self.run_plan('''

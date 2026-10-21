@@ -138,8 +138,9 @@ def load(path: str | Path, flows_only: bool = False, draft: bool = False) -> Pla
 def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool = False) -> Plan:
     """flows_only: an app map (`tnazar flow`) may hold flows and no case.
 
-    draft: a plan still being written (`plan review`, `cases import`): what keeps it from running
-    is listed in `Plan.gaps`, all of it, instead of stopping at the first.
+    draft: a plan still being written (`plan review`, `cases import`): every completeness gap (no
+    steps, no check, an unproven `expect`, a wrong `--for`) is listed in `Plan.gaps` instead of
+    stopping at the first. Syntax errors still stop at once.
     """
     app = name = ""
     flows: dict[str, Flow] = {}

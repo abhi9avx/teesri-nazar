@@ -753,11 +753,18 @@ def cmd_cases(args) -> int:
         raise UserError(str(exc))
     if not cases:
         raise UserError("no test cases found in the input")
-    draft = intake.to_plan(cases, args.app, name, "stdin" if args.source == "-" else Path(args.source).name)
+    source = "stdin" if args.source == "-" else Path(args.source).name
+    draft = intake.to_plan(cases, args.app, name, source)
+    try:
+        gaps = plan_mod.parse(draft, str(target), draft=True).gaps
+    except plan_mod.PlanError as exc:
+        raise UserError(f"the imported cases do not make a valid plan, nothing written: {exc}")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(draft)
     expects = sum(len(c.expects) for c in cases)
     print(f"wrote {target}: {len(cases)} case(s), {expects} expected result(s)")
+    if sections := list(dict.fromkeys(c.section for c in cases if c.section)):
+        print(f"section headings: {'; '.join(sections)} (rows with only a title in the first column)")
     if missing := [c.id for c in cases if not c.expects]:
         print(f"no expected result in: {', '.join(missing)} (add `expect` lines before writing checks)")
     accounts: dict[str, list[str]] = {}
@@ -767,7 +774,6 @@ def cmd_cases(args) -> int:
     if accounts:
         print("accounts: " + ", ".join(f"{a} ({', '.join(ids)})" for a, ids in accounts.items())
               + "  (log in as each account before its cases)")
-    gaps = plan_mod.parse(draft, str(target), draft=True).gaps
     print(f"next: write each case's steps and checks, then `./tnazar plan review {target}` ({len(gaps)} gap(s) now)")
     return 0
 

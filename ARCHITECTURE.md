@@ -905,8 +905,9 @@ case TC-01 "Network & internet opens"
 - **Dead preconditions.** A case whose failing step was inside a flow it ran (`run login`)
   marks that flow as failing; the next case running it tries again. After two failures in a
   row, every later case running that flow is ended at once as blocked, "precondition failed:
-  flow login (failed in TC-01, TC-02)", with no device call. A case where the flow worked
-  clears it.
+  flow login (failed in TC-01, TC-02)", with no device call. A failure counts for every flow
+  it happened inside (nested flows too); a case where the flow ran to its end clears it; a
+  flow that only runs in an `if` branch never blocks a case (it may not be needed).
 - **Drafts and review.** `plan.parse(..., draft=True)` collects every completeness gap (a
   case with no steps or no check, an `expect` with no `check --for`, a `--for` naming a
   missing E, a `--for` in a flow) in `Plan.gaps` instead of stopping at the first;
