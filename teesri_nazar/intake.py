@@ -29,10 +29,14 @@ FIELDS = {
 # following one of them inside any cell is masked. Plans hold only `--env` names for secrets.
 SECRET = {"otp", "mpin", "pin", "password", "passcode", "passwd", "secret", "token"}
 _WORD = r"\b(otp(?:\s+code)?|" + "|".join(sorted(SECRET - {"otp"})) + r")\b"  # "pin code" is a postcode
-# Only the value is hidden, the sentence around it stays: a number after the word ("OTP 1234",
-# "otp code: 12 34", "PIN is 0852"), or any one word after `:`/`=` ("password: hunter2").
-SECRET_VALUE = (re.compile(_WORD + r"(\s*[:=]\s*|\s+is\s+|\s+)(\d[\d ]*\d|\d)(?![\w-])", re.I),
-                re.compile(_WORD + r"(\s*[:=]\s*|\s+is\s+)((?=\S*\d)[^\s;,]+|(?<=[:=])\s*[^\s;,]+)", re.I))
+# Hide the value, keep the sentence: a number after OTP/PIN/MPIN… ("OTP 1234", "otp - 12 34",
+# "PIN is 0852", "OTP 0000/1111"); after a password-like word and `:`, `=` or ` - `, everything up
+# to the next `;` or `,` (a password may hold spaces). Hiding a little too much beats a leak.
+_SEP = r"(\s*[:=]\s*|\s+-\s+|\s+is\s+|\s+)"
+_PASSWORDS = r"\b(password|passcode|passwd|secret|token)\b"
+SECRET_VALUE = (re.compile(_PASSWORDS + r"(\s*[:=]\s*|\s+-\s+)([^;,\n]+)", re.I),
+                re.compile(_WORD + _SEP + r"(\d[^\s;,]*(?:\s+\d[^\s;,]*)*)", re.I),
+                re.compile(_PASSWORDS + r"(\s+is\s+)((?=[^\s;,]*[\d\W])[^\s;,]+)", re.I))
 COMMENTED = ("description", "precondition", "data", "priority", "status", "account")
 LABEL = {"data": "test data"}
 BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])(?:\s+|$)")
@@ -150,7 +154,8 @@ def _tsv(records: list[tuple[list[str], bool]], width: int) -> tuple[list[list[s
     for cells, spans in records:
         if spans:
             joined.add(len(rows))
-        if rows and len(cells) == 1 and len(rows[-1]) < width and not _is_header(rows[-1]):
+        # A one-cell row is a heading or a lone ID, never a cell broken over lines.
+        if rows and len(cells) == 1 and 1 < len(rows[-1]) < width and not _is_header(rows[-1]):
             rows[-1][-1] += "\n" + cells[0]
             joined.add(len(rows) - 1)
             open_cell = True

@@ -249,7 +249,7 @@ class FinalReviewFixesTest(unittest.TestCase):
                                  ("pin-code 560001", None, "560001"),
                                  ("otp 12 34 then go", "12 34", "then go"),
                                  ("OTP code 123456", "123456", "OTP code"),
-                                 ("password: hunter2 now", "hunter2", "now")):
+                                 ("password: hunter2; now", "hunter2", "now")):
             text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
             if gone:
                 self.assertNotIn(gone, text, cell)
@@ -259,6 +259,28 @@ class FinalReviewFixesTest(unittest.TestCase):
         report: dict = {}
         intake.read('ID\tTitle\tExpected\nTC-1\t"Hello\tstep\nok"\tdone\nTC-2\tPay\tok\n', report=report)
         self.assertEqual(report["joined"], ["TC-1"])
+
+
+class LastReviewFixesTest(unittest.TestCase):
+    def masked(self, cell):
+        return intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,\"{cell}\"\n"), app="a.b", name="s", source="x")
+
+    def test_numbers_with_separators_and_dash_phrasing_are_hidden(self):
+        for cell, gone in (("otp - 1234", "1234"), ("OTP - 123456", "123456"), ("password - hunter2", "hunter2"),
+                           ("otp 1234-5678", "5678"), ("otp 1234abcd", "abcd"), ("pin 12a4", "12a4"),
+                           ("OTP 1234_5678", "5678"), ("OTP 12.34", "34"), ("Use OTP 0000/1111", "1111")):
+            self.assertNotIn(gone, self.masked(cell), cell)
+
+    def test_a_password_after_a_colon_is_hidden_up_to_the_next_separator(self):
+        for cell, gone in (("password: hunter 2", " 2"), ("password: 'p@ss w0rd'", "w0rd"),
+                           ("secret: my secret phrase", "phrase")):
+            self.assertNotIn(gone, self.masked(cell), cell)
+        self.assertIn("then go", self.masked("password: x y; then go"))
+
+    def test_a_lone_id_row_never_takes_the_lines_after_it(self):
+        report: dict = {}
+        cases = intake.read("ID\tTitle\tSteps\tExpected\nTC1\tA\ts\te\nTC2\nNotes\nTC-3\tPay\tx\ty\n", report=report)
+        self.assertEqual([(c.id, c.section) for c in cases], [("TC1", ""), ("TC2", ""), ("TC-3", "Notes")])
 
 
 class DraftPlanTest(unittest.TestCase):
