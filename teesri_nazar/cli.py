@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -569,6 +570,17 @@ def cmd_check(args) -> int:
     return 0 if ok else EXIT_FAIL
 
 
+EXPECTED_ID = re.compile(r"^E[1-9][0-9]*$")
+
+
+def expected_ids(value: str) -> list[str]:
+    """`--for E1,E2` -> ["E1", "E2"]: the case's expected results, numbered by order."""
+    ids = value.split(",")
+    if not all(EXPECTED_ID.match(i) for i in ids):
+        raise argparse.ArgumentTypeError(f"--for takes expected results like E1 or E1,E2, not {value!r}")
+    return list(dict.fromkeys(ids))
+
+
 def _describe_check(sel: scr.Selector, args) -> str:
     s = f"{sel} is {'gone' if args.gone else 'visible'}"
     if args.checked is not None:
@@ -845,6 +857,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--what", help="the expectation, in words")
     p.add_argument("--detail", help="evidence: query + result, mismatch details, ...")
     p.add_argument("--shot", action="store_true", help="attach a screenshot to a manual check")
+    p.add_argument("--for", dest="for_", type=expected_ids, metavar="E1[,E2]",
+                   help="the expected result(s) of the case this check proves")
 
     p = add("shot", cmd_shot, "save a screenshot as evidence")
     p.add_argument("label", nargs="?")

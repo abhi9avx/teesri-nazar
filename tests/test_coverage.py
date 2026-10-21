@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from teesri_nazar import plan
+from teesri_nazar import coverage, plan
 from teesri_nazar import report as rpt
 from teesri_nazar import ui, usage
 from teesri_nazar.session import Run
@@ -109,6 +109,156 @@ class Phase0UndeclaredRunsTest(unittest.TestCase):
                                   ["step", "note"], ["case_end", "case_end"], ["case_start", "case_start"],
                                   ["case_end", "case_end"], ["case_start", "case_start"], ["case_end", "case_end"],
                                   ["step", "check"]])
+
+
+def ev_plan(case, title="", expects=(), added=False):
+    return {"type": "case_plan", "case": case, "title": title, "expects": list(expects), "added": added}
+
+
+def ev_start(case, title=""):
+    return {"type": "case_start", "case": case, "title": title}
+
+
+def ev_check(ok, for_=None, case=None, kind="ui", what="a check"):
+    e = {"type": "check", "kind": kind, "ok": ok, "what": what, "case": case}
+    if for_ is not None:
+        e["for"] = list(for_)
+    return e
+
+
+def ev_end(case, status, reason=""):
+    return {"type": "case_end", "case": case, "status": status, "reason": reason}
+
+
+class RequestedTest(unittest.TestCase):
+    def test_cov_1_a_run_without_case_plan_is_not_declared(self):
+        events = [ev_start("TC-01"), ev_end("TC-01", "pass")]
+        self.assertFalse(coverage.declared(events))
+        self.assertEqual(coverage.requested(events), [])
+
+    def test_cov_2_requested_keeps_first_order_and_the_latest_declaration_wins(self):
+        events = [ev_plan("TC-01", "Old title", ["a"]), ev_plan("TC-02", "Second"),
+                  ev_plan("TC-01", "New title", ["a", "b"])]
+        self.assertTrue(coverage.declared(events))
+        self.assertEqual(coverage.requested(events), [
+            {"id": "TC-01", "title": "New title", "expects": ["a", "b"], "added": False},
+            {"id": "TC-02", "title": "Second", "expects": [], "added": False}])
+        self.assertEqual(coverage.expects_of(events, "TC-01"), ["a", "b"])
+        self.assertEqual(coverage.expects_of(events, "TC-09"), [])
+
+
+class ExpectationStatesTest(unittest.TestCase):
+    EXPECTS = ["Amount shown", "Card listed"]
+
+    def states(self, *checks):
+        return [(x["id"], x["state"]) for x in coverage.expectation_states(self.EXPECTS, list(checks))]
+
+    def test_cov_3_a_passing_linked_check_verifies_its_expected_result(self):
+        [e1, _] = coverage.expectation_states(self.EXPECTS, [ev_check(True, ["E1"], what="₹500 shown")])
+        self.assertEqual((e1["id"], e1["text"], e1["state"], e1["by"]), ("E1", "Amount shown", "verified", ["₹500 shown"]))
+
+    def test_cov_4_one_failed_linked_check_fails_it_even_if_another_passed(self):
+        self.assertEqual(self.states(ev_check(True, ["E1"]), ev_check(False, ["E1"]), ev_check(True, ["E2"])),
+                         [("E1", "failed"), ("E2", "verified")])
+
+    def test_cov_5_no_linked_check_leaves_it_unverified(self):
+        self.assertEqual(self.states(ev_check(True, ["E1"]), ev_check(True)),
+                         [("E1", "verified"), ("E2", "unverified")])
+
+    def test_cov_6_a_check_naming_the_same_expected_result_twice_counts_once(self):
+        [e1, _] = coverage.expectation_states(self.EXPECTS, [ev_check(True, ["E1", "E1"], what="x")])
+        self.assertEqual(e1["by"], ["x"])
+
+
+class LedgerTest(unittest.TestCase):
+    def test_cov_7_not_started_lists_requested_cases_that_never_began_or_were_closed(self):
+        events = [ev_plan("TC-01"), ev_plan("TC-02", "Two"), ev_plan("TC-03"), ev_start("TC-01"),
+                  {"type": "not_run", "case": "TC-03", "title": "", "reason": "x"}]
+        self.assertEqual([c["id"] for c in coverage.not_started(events)], ["TC-02"])
+
+    def test_cov_8_verified_counts_definite_answers_and_green_needs_every_case_passed(self):
+        t = coverage.tally(["pass", "fail", "blocked", "not_run"], checks_failed=1)
+        self.assertEqual((t["requested"], t["verified"], t["complete"], t["green"]), (4, 2, False, False))
+        t = coverage.tally(["pass", "fail"], checks_failed=1)
+        self.assertEqual((t["verified"], t["complete"], t["green"]), (2, True, False))
+        t = coverage.tally(["pass", "pass"], checks_failed=0)
+        self.assertEqual((t["verified"], t["complete"], t["green"]), (2, True, True))
+
+    def test_cov_8_skipped_or_pending_is_not_complete(self):
+        self.assertFalse(coverage.tally(["pass", "skipped"], checks_failed=0)["green"])
+        self.assertFalse(coverage.tally(["pass", "pending"], checks_failed=0)["complete"])
+
+    def test_r6_a_failed_check_outside_any_case_is_never_green(self):
+        self.assertFalse(coverage.tally(["pass", "pass"], checks_failed=1)["green"])
+
+
+EXPECTS_PLAN = """app com.example.app
+case TC-04 "Pay with saved card"
+  expect "Confirmation screen shows the amount"
+  expect "Card ending 4242 is listed"
+  if "Saved cards"
+    check "4242" --for E2
+  end
+  tap Pay
+  check "500" --for E1
+  check id=loader --gone
+"""
+
+
+def parse_err(text: str) -> str:
+    try:
+        plan.parse(text, "x.plan")
+    except plan.PlanError as exc:
+        return str(exc)
+    raise AssertionError("expected a PlanError")
+
+
+class PlanExpectTest(unittest.TestCase):
+    def test_plan_1_expected_results_are_read_in_order(self):
+        p = plan.parse(EXPECTS_PLAN, "x.plan")
+        self.assertEqual(p.cases[0].expects, ["Confirmation screen shows the amount", "Card ending 4242 is listed"])
+
+    def test_plan_1_a_case_without_expect_has_none(self):
+        self.assertEqual(plan.parse("app a.b\ncase T1\n  check X\n", "x.plan").cases[0].expects, [])
+
+    def test_plan_2_expect_after_a_step_is_refused(self):
+        msg = parse_err('app a.b\ncase T1\n  tap X\n  expect "late"\n  check X --for E1\n')
+        self.assertIn("line 4", msg)
+        self.assertIn("expect", msg)
+
+    def test_plan_3_expect_only_belongs_to_a_case(self):
+        for text in ('app a.b\nflow f\n  expect "x"\nend\ncase T1\n  check X\n',
+                     'app a.b\ncase T1\n  if X\n    expect "x"\n  end\n  check X\n',
+                     'app a.b\nexpect "x"\ncase T1\n  check X\n'):
+            self.assertIn("expect", parse_err(text))
+
+    def test_plan_4_an_expected_result_with_no_linked_check_is_refused(self):
+        msg = parse_err('app a.b\ncase T1\n  expect "One"\n  expect "Two things"\n  check X --for E1\n')
+        self.assertIn("E2", msg)
+        self.assertIn("Two things", msg)
+        self.assertIn("line 4", msg)
+
+    def test_plan_5_for_must_name_an_expected_result_of_its_case(self):
+        self.assertIn("E9", parse_err('app a.b\ncase T1\n  expect "One"\n  check X --for E1\n  check Y --for E9\n'))
+        self.assertIn("E1", parse_err('app a.b\ncase T1\n  check X --for E1\n'))
+
+    def test_plan_6_a_flow_cannot_link_expected_results(self):
+        msg = parse_err('app a.b\nflow f\n  check X --for E1\nend\ncase T1\n  expect "One"\n  run f\n  check X --for E1\n')
+        self.assertIn("line 3", msg)
+        self.assertIn("flow", msg)
+
+    def test_plan_7_a_linked_check_inside_if_or_else_counts(self):
+        p = plan.parse('app a.b\ncase T1\n  expect "One"\n  expect "Two"\n  if X\n    check X --for E1\n'
+                       '  else\n    check Y --for E2\n  end\n', "x.plan")
+        self.assertEqual(len(p.cases[0].expects), 2)
+
+    def test_plan_8_a_malformed_for_is_refused(self):
+        for bad in ("X1", "E0", "E1,", "e1"):
+            self.assertIn("line 4", parse_err(f'app a.b\ncase T1\n  expect "One"\n  check X --for {bad}\n'))
+
+    def test_plan_9_expect_needs_exactly_one_non_empty_text(self):
+        self.assertIn("expect", parse_err('app a.b\ncase T1\n  expect ""\n  check X\n'))
+        self.assertIn("expect", parse_err('app a.b\ncase T1\n  expect "a" "b"\n  check X\n'))
 
 
 if __name__ == "__main__":

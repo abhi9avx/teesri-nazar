@@ -112,6 +112,8 @@ class Case:
     id: str
     title: str
     body: list = field(default_factory=list)
+    expects: list = field(default_factory=list)       # expected results E1, E2… in order
+    expect_lines: list = field(default_factory=list)  # the plan line of each, for errors
 
 
 @dataclass
@@ -185,6 +187,13 @@ def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
             if stack[-1] is opened[-1][1].other:
                 fail(n, f"a second `else` for the `if` on line {opened[-1][0]}")
             stack[-1] = opened[-1][1].other
+        elif head == "expect":
+            if not isinstance(top, Case) or opened or top.body:
+                fail(n, "`expect` belongs directly inside a `case`, before its first step")
+            if len(args) != 1 or not args[0].strip():
+                fail(n, 'use `expect "<one expected result>"`')
+            top.expects.append(args[0])
+            top.expect_lines.append(n)
         elif top is None:
             fail(n, "steps belong inside a `case` or a `flow`")
         elif head == "retry":
@@ -237,6 +246,21 @@ def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
     for c in cases:
         if not _has_check(c.body, flows):
             fail(c.line, f"case {c.id} has no `check`: a case that verifies nothing ends as blocked")
+    for f in flows.values():
+        for step in _checks(f.body):
+            if _for_ids(step.argv):
+                fail(step.line, f"flow `{f.name}`: a flow's checks are shared by cases; "
+                                "link expected results with `check --for` in the case itself")
+    for c in cases:
+        linked: set[str] = set()
+        for step in _checks(c.body):
+            for eid in _for_ids(step.argv):
+                if int(eid[1:]) > len(c.expects):
+                    fail(step.line, f"case {c.id} has no {eid}: it lists {len(c.expects)} `expect` line(s)")
+                linked.add(eid)
+        for i, (text, line) in enumerate(zip(c.expects, c.expect_lines), 1):
+            if f"E{i}" not in linked:
+                fail(line, f"case {c.id}: E{i} \"{text}\" has no `check ... --for E{i}`")
     return Plan(app, name or Path(source).stem, flows, cases)
 
 
@@ -281,6 +305,29 @@ def _has_check(body: list, flows: dict[str, Flow], seen: frozenset = frozenset()
         if isinstance(item, If) and (_has_check(item.then, flows, seen) or _has_check(item.other, flows, seen)):
             return True
     return False
+
+
+def _checks(body: list):
+    """The `check` steps written in this body, inside `if`/`else` too (a `retry` holds none)."""
+    for item in body:
+        if isinstance(item, Step) and item.argv[0] == "check":
+            yield item
+        elif isinstance(item, If):
+            yield from _checks(item.then)
+            yield from _checks(item.other)
+        elif isinstance(item, Retry):
+            yield from _checks(item.body)
+
+
+def _for_ids(argv: list[str]) -> list[str]:
+    from .cli import expected_ids
+    ids: list[str] = []
+    for i, word in enumerate(argv):
+        if word == "--for" and i + 1 < len(argv):
+            ids += expected_ids(argv[i + 1])
+        elif word.startswith("--for="):
+            ids += expected_ids(word.split("=", 1)[1])
+    return ids
 
 
 def _check_args(words: list[str], fail) -> None:
