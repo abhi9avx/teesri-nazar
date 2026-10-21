@@ -748,7 +748,8 @@ def cmd_cases(args) -> int:
     if target.exists() and not args.force:
         raise UserError(f"{target} exists: pass --force to replace it, or --out <file>")
     try:
-        cases = intake.read(text, args.columns)
+        report: dict = {}
+        cases = intake.read(text, args.columns, report)
     except intake.IntakeError as exc:
         raise UserError(str(exc))
     if not cases:
@@ -763,8 +764,14 @@ def cmd_cases(args) -> int:
     target.write_text(draft)
     expects = sum(len(c.expects) for c in cases)
     print(f"wrote {target}: {len(cases)} case(s), {expects} expected result(s)")
-    if sections := list(dict.fromkeys(c.section for c in cases if c.section)):
-        print(f"section headings: {'; '.join(sections)} (rows with only a title in the first column)")
+    if report["headings"]:
+        print(f"section headings: {'; '.join(report['headings'])} (rows with only their first cell filled)")
+    if report["joined"]:
+        print(f"lines joined into a cell above (a line break without quotes): {', '.join(report['joined'])}: check them")
+    if report["short"]:
+        print(f"rows with fewer cells than the header: {', '.join(report['short'])}: check them")
+    if report["not_copied"]:
+        print(f"columns not copied (they look like secrets): {', '.join(report['not_copied'])}")
     if missing := [c.id for c in cases if not c.expects]:
         print(f"no expected result in: {', '.join(missing)} (add `expect` lines before writing checks)")
     accounts: dict[str, list[str]] = {}

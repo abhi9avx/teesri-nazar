@@ -267,7 +267,7 @@ accepted):
 | S3 | `tnazar plan review <plan>` prints every case → expected results → proving checks, and **all** gaps at once. |
 | S4 | Case IDs from the ID column, kept exactly; else `TC-01`… in row order. Duplicate IDs are an import error naming both rows. |
 | S5 | Expected results split into E1… only on line breaks, bullets or `;`; never inside a sentence. |
-| S6 | A row with only its first cell is a section heading (comment above its cases). The account column becomes `# account: …`; OTP/MPIN never written. |
+| S6 | A row with only its first cell is a section heading (comment above its cases); under an ID column, a lone value that could be an ID is a case. The import prints every heading, joined line, short row and secret column it decided on, so nothing is decided silently. The account column becomes `# account: …`; OTP/MPIN never written. |
 | S7 | A `flow` that fails gets one more try in the next case that runs it; if that fails too, every later case running it ends at once as `blocked: precondition failed: flow <name> …`, without touching the device. |
 | S8 | No general failure classification (step 4). |
 | S9 | `observe --full` prints complete text, multi-line, secrets redacted. Checks already match full text. |

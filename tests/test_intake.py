@@ -16,7 +16,7 @@ PASTED = (
     "Notes - create a note\tVerify a note can be created.\tUser is signed in; empty list\t"
     "1. Sign in.\n2. Open Notes.\n3. Tap \"New note\"\tTitle: Groceries; Body: milk\t"
     "The note shows in the list with its title.\tP0\tDONE\tuser-one\n"
-    "Notes - delete a note\tVerify delete.\tUser is signed in; one note\t1. Sign in.\n2. Delete the note\t"
+    "Notes - delete a note\tVerify delete.\tUser is signed in; one note\t1. Sign in.\n2. Open it.\n3. Delete the note\t"
     "Title: Groceries\tThe note is gone after 3 seconds.\n- An undo bar shows, plus a count.\tP1\tDONE\tuser-two\n"
 )
 COLUMNS = "title,description,precondition,steps,data,expected,priority,status,account"
@@ -91,7 +91,7 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertEqual([(c.title, c.expects) for c in cases], [("T1", ["A"]), ("T2", ["B"]), ("T3", ["C"])])
 
     def test_m1_line_breaks_inside_a_cell_still_join(self):
-        cases = intake.read("Title\tSteps\tExpected\nT1\t1. a\n2. b\tDone\nT2\tx\tOk\n")
+        cases = intake.read("Title\tSteps\tExpected\nT1\t1. a\n2. b\n\tDone\nT2\tx\tOk\n")
         self.assertEqual([(c.title, c.steps, c.expects) for c in cases],
                          [("T1", ["1. a", "2. b"], ["Done"]), ("T2", ["x"], ["Ok"])])
 
@@ -152,6 +152,82 @@ class SpecReviewFixesTest(unittest.TestCase):
         self.assertEqual(c.expects, ["first", "second"])
 
 
+class ThirdReviewFixesTest(unittest.TestCase):
+    def test_a_row_without_its_trailing_tabs_never_swallows_the_next(self):
+        cases = intake.read("ID\tTitle\tExpected\tNotes\nTC-1\tLogin\tok\nTC-2\tLogout\n")
+        self.assertEqual([(c.id, c.title, c.expects) for c in cases], [("TC-1", "Login", ["ok"]), ("TC-2", "Logout", [])])
+
+    def test_short_rows_are_reported(self):
+        report: dict = {}
+        intake.read("ID\tTitle\tExpected\tNotes\nTC-1\tLogin\tok\nTC-2\tLogout\tfine\tn\n", report=report)
+        self.assertEqual(report["short"], ["TC-1 (3 of 4 cells)"])
+
+    def test_a_multiline_cell_closed_by_a_line_with_tabs_still_joins(self):
+        [c] = intake.read("Title\tSteps\tExpected\tPriority\nT\t1. a\n2. b\n3. c\tShown\tP1\n")
+        self.assertEqual((c.steps, c.expects, c.fields["priority"]), (["1. a", "2. b", "3. c"], ["Shown"], "P1"))
+
+    def test_a_stray_quote_is_just_a_character(self):
+        cases = intake.read('ID\tTitle\tExpected\nTC-1\t"open quote never closed\tok\nTC-2\tb\tc\n')
+        self.assertEqual([(c.id, c.title) for c in cases], [("TC-1", '"open quote never closed'), ("TC-2", "b")])
+
+    def test_a_quote_in_the_middle_of_a_cell_is_kept(self):
+        [c] = intake.read('ID\tTitle\tExpected\nTC-1\t"quoted" start\tok\n')
+        self.assertEqual(c.title, '"quoted" start')
+
+    def test_secret_values_in_any_phrasing_are_hidden(self):
+        for cell, gone, kept in (("Enter OTP 123456 then wait", "123456", "then wait"),
+                                 ("password is hunter2", "hunter2", "password is"),
+                                 ("Token = abc def; next", "abc def", "next"),
+                                 ("pin code: 560001", None, "560001"),
+                                 ("spinner shows", None, "spinner shows")):
+            text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
+            if gone:
+                self.assertNotIn(gone, text, cell)
+            self.assertIn(kept, text, cell)
+
+    def test_columns_not_copied_are_reported(self):
+        report: dict = {}
+        intake.read("Title,Expected,PIN code,OTP\nT,E,560001,1234\n", report=report)
+        self.assertEqual(report["not_copied"], ["PIN code", "OTP"])
+
+
+class FourthReviewFixesTest(unittest.TestCase):
+    def test_a_one_cell_row_never_absorbs_the_next_full_row(self):
+        report: dict = {}
+        cases = intake.read("Title\tSteps\tExpected\nA\nB\ts\tx\n", report=report)
+        self.assertEqual([(c.title, c.section, c.steps) for c in cases], [("B", "A", ["s"])])
+        self.assertEqual(report["headings"], ["A"])
+
+    def test_an_id_alone_in_tsv_is_a_case(self):
+        cases = intake.read("ID\tTitle\tExpected\nT1\nT2\tB\tx\n")
+        self.assertEqual([c.id for c in cases], ["T1", "T2"])
+
+    def test_an_unquoted_line_break_in_the_last_column_is_joined_and_reported(self):
+        report: dict = {}
+        cases = intake.read("Title\tExpected\nA\tline1\nline2\nB\tx\n", report=report)
+        self.assertEqual([(c.title, c.expects) for c in cases], [("A", ["line1", "line2"]), ("B", ["x"])])
+        self.assertEqual(report["joined"], ["TC-01"])
+
+    def test_titles_are_masked_too_and_punctuation_kept(self):
+        text = intake.to_plan(intake.read("Title,Expected,Test data\n"
+                                          "Login with password: hunter2,E,\"MPIN: 1 2 3 4; pin=5678, otp - 9999\"\n"),
+                              app="a.b", name="s", source="x")
+        for value in ("hunter2", "1 2 3 4", "5678", "9999"):
+            self.assertNotIn(value, text)
+        self.assertIn("pin=••••,", text)
+
+    def test_a_camel_case_secret_header_is_not_copied(self):
+        report: dict = {}
+        intake.read("Title,Expected,PINCode\nT,E,4321\n", report=report)
+        self.assertEqual(report["not_copied"], ["PINCode"])
+
+    def test_id_first_tables_keep_headings_that_cannot_be_ids(self):
+        report: dict = {}
+        cases = intake.read("ID,Title,Expected\nOverdue users,,\nX-1,a,b\n", report=report)
+        self.assertEqual([(c.id, c.section) for c in cases], [("X-1", "Overdue users")])
+        self.assertEqual(report["headings"], ["Overdue users"])
+
+
 class DraftPlanTest(unittest.TestCase):
     def draft(self, text=PASTED, **kw):
         return intake.to_plan(intake.read(text, columns=kw.pop("columns", COLUMNS)), app="com.example.app",
@@ -206,6 +282,14 @@ class ImportCliTest(CliTestCase):
         src.write_text(PASTED)
         out = self.ok("cases", "import", str(src), "--app", PACKAGE, "--columns", COLUMNS)
         self.assertIn("section headings: Notes app", out)
+
+    def test_import_prints_every_decision_it_made(self):
+        src = Path(self.home, "cases.tsv")
+        src.write_text("Title\tExpected\tOTP\tNotes\nA\tline1\t1234\nline2\nB\tx\t5678\tn\n")
+        out = self.ok("cases", "import", str(src), "--app", PACKAGE)
+        self.assertIn("lines joined into a cell above (a line break without quotes): TC-01", out)
+        self.assertIn("columns not copied (they look like secrets): OTP", out)
+        self.assertNotIn("1234", Path(self.home, "plans", "cases.plan").read_text())
 
     def test_stdin_with_a_byte_order_mark(self):
         import io
