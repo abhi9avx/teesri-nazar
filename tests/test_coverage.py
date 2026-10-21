@@ -778,6 +778,68 @@ class OtherViewsTest(CaseCliBase):
         self.assertIn("verified 1/2", self.ok("report", run.name))
 
 
+DRAFT = """app com.example.app
+case TC-01 "Login works"
+  expect "Home shows the user"
+  expect "Balance shown"
+  run login
+  check "Hi Asha" --for E1
+case TC-02 "Not written yet"
+  expect "Error shown"
+case TC-03 "Has steps, verifies nothing"
+  tap Login
+flow login
+  tap Login
+end
+"""
+
+
+class PlanReviewTest(CliTestCase):
+    """S3: every case, its expected results and their proving checks, and all gaps at once."""
+
+    def write(self, text):
+        path = os.path.join(self.home, "draft.plan")
+        Path(path).write_text(text)
+        return path
+
+    def test_a_draft_lists_every_gap_at_once(self):
+        p = plan.parse(DRAFT, "draft.plan", draft=True)
+        text = "\n".join(p.gaps)
+        self.assertIn("draft.plan line 7: case TC-02 has no steps", text)
+        self.assertIn("draft.plan line 4: case TC-01: E2", text)
+        self.assertIn("draft.plan line 9: case TC-03 has no `check`", text)
+        self.assertIn('draft.plan line 8: case TC-02: E1 "Error shown"', text)
+        self.assertEqual(len(p.gaps), 4)
+
+    def test_run_still_stops_at_the_first_gap_with_todays_message(self):
+        with self.assertRaises(plan.PlanError) as ctx:
+            plan.parse(DRAFT, "draft.plan")
+        self.assertEqual(str(ctx.exception), "draft.plan line 7: case TC-02 has no steps")
+        code, _, err = tnazar("run", self.write(DRAFT))
+        self.assertEqual(code, 2)
+        self.assertIn("case TC-02 has no steps", err)
+
+    def test_review_shows_each_expected_result_and_what_proves_it(self):
+        code, out, _ = tnazar("plan", "review", self.write(DRAFT))
+        self.assertEqual(code, 1)
+        self.assertIn("TC-01  Login works", out)
+        self.assertIn('E1 Home shows the user  <- line 6: check "Hi Asha"', out)
+        self.assertIn("E2 Balance shown  <- NOT PROVEN", out)
+        self.assertIn("4 gap(s): not ready to run", out)
+
+    def test_review_of_a_ready_plan_exits_0(self):
+        ready = (DRAFT.split('case TC-02')[0].replace('  expect "Balance shown"\n', "")
+                 + "flow login\n  tap Login\nend\n")
+        code, out, _ = tnazar("plan", "review", self.write(ready))
+        self.assertEqual(code, 0, out)
+        self.assertIn("ready to run: 1 case(s), 1 expected result(s), every one proven", out)
+
+    def test_review_of_a_broken_plan_is_a_plan_error(self):
+        code, _, err = tnazar("plan", "review", self.write("app a.b\ncase T1\n  teleport\n"))
+        self.assertEqual(code, 2)
+        self.assertIn("line 3", err)
+
+
 LONG = ("Your repayment due date is the 7th of every month. A late fee applies 3 days after the due date.\n\n"
         "It is slab-based on the Total Amount Due, plus GST.")
 

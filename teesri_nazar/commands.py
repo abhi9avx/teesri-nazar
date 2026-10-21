@@ -43,6 +43,8 @@ COMMANDS = (
     Command("runs", None),
     Command("replay", None),
     Command("run", None),
+    Command("plan", None),   # read-only: a plan file's review
+    Command("cases", None),  # writes a draft plan file: never touches the device
     Command("flow", None, device=True),  # its steps record their own events
     Command("flows", None),
     Command("goto", None, device=True),  # like flow: its taps record their own events

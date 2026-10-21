@@ -127,15 +127,20 @@ class Plan:
     name: str
     flows: dict[str, Flow]
     cases: list[Case]
+    gaps: list = field(default_factory=list)  # draft only: what still keeps it from running
 
 
-def load(path: str | Path, flows_only: bool = False) -> Plan:
+def load(path: str | Path, flows_only: bool = False, draft: bool = False) -> Plan:
     p = Path(path)
-    return parse(p.read_text(), str(p), flows_only)
+    return parse(p.read_text(), str(p), flows_only, draft)
 
 
-def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
-    """flows_only: an app map (`tnazar flow`) may hold flows and no case."""
+def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool = False) -> Plan:
+    """flows_only: an app map (`tnazar flow`) may hold flows and no case.
+
+    draft: a plan still being written (`plan review`, `cases import`): what keeps it from running
+    is listed in `Plan.gaps`, all of it, instead of stopping at the first.
+    """
     app = name = ""
     flows: dict[str, Flow] = {}
     cases: list[Case] = []
@@ -243,30 +248,61 @@ def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
         raise PlanError(f"{source}: the plan needs `app <package>` at the top")
     if not cases and not flows_only:
         raise PlanError(f"{source}: the plan has no `case`")
+    gaps: list[str] = []
+
+    def gap(n: int, msg: str) -> None:
+        if not draft:
+            fail(n, msg)
+        gaps.append(f"{source} line {n}: {msg}")
+
     for c in cases:
         if not c.body:
-            fail(c.line, f"case {c.id} has no steps")
+            gap(c.line, f"case {c.id} has no steps")
     for owner in [*flows.values(), *cases]:
         _check_flows(owner.body, flows, [getattr(owner, "name", None)], source)
     for c in cases:
-        if not _has_check(c.body, flows):
-            fail(c.line, f"case {c.id} has no `check`: a case that verifies nothing ends as blocked")
+        if c.body and not _has_check(c.body, flows):
+            gap(c.line, f"case {c.id} has no `check`: a case that verifies nothing ends as blocked")
     for f in flows.values():
         for step in _checks(f.body):
             if _for_ids(step.argv):
-                fail(step.line, f"flow `{f.name}`: a flow's checks are shared by cases; "
-                                "link expected results with `check --for` in the case itself")
+                gap(step.line, f"flow `{f.name}`: a flow's checks are shared by cases; "
+                               "link expected results with `check --for` in the case itself")
     for c in cases:
         linked: set[str] = set()
         for step in _checks(c.body):
             for eid in _for_ids(step.argv):
                 if int(eid[1:]) > len(c.expects):
-                    fail(step.line, f"case {c.id} has no {eid}: it lists {len(c.expects)} `expect` line(s)")
+                    gap(step.line, f"case {c.id} has no {eid}: it lists {len(c.expects)} `expect` line(s)")
                 linked.add(eid)
         for i, (text, line) in enumerate(zip(c.expects, c.expect_lines), 1):
             if f"E{i}" not in linked:
-                fail(line, f"case {c.id}: E{i} \"{text}\" has no `check ... --for E{i}`")
-    return Plan(app, name or Path(source).stem, flows, cases)
+                gap(line, f"case {c.id}: E{i} \"{text}\" has no `check ... --for E{i}`")
+    return Plan(app, name or Path(source).stem, flows, cases, gaps)
+
+
+def review(p: Plan) -> tuple[str, bool]:
+    """Every case, each expected result and the checks that prove it, then every gap: (text, ready)."""
+    out = []
+    for c in p.cases:
+        out.append(f"{c.id}  {c.title}".rstrip())
+        proof: dict[str, list[str]] = {}
+        for step in _checks(c.body):
+            for eid in _for_ids(step.argv):
+                proof.setdefault(eid, []).append(f"line {step.line}: {step.summary()}")
+        for i, text in enumerate(c.expects, 1):
+            by = proof.get(f"E{i}")
+            out.append(f"  E{i} {text}  <- " + ("; ".join(by) if by else "NOT PROVEN"))
+        if not c.expects:
+            checks = sum(1 for _ in _checks(c.body))
+            out.append(f"  (no expected results listed; {checks} check(s))")
+    out.append("")
+    if p.gaps:
+        out += [f"{len(p.gaps)} gap(s): not ready to run"] + [f"  {g}" for g in p.gaps]
+    else:
+        n = sum(len(c.expects) for c in p.cases)
+        out.append(f"ready to run: {len(p.cases)} case(s), {n} expected result(s), every one proven")
+    return "\n".join(out), not p.gaps
 
 
 def _count(args: list[str]) -> int | None:

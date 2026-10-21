@@ -737,6 +737,17 @@ def cmd_runs(args) -> int:
     return 0
 
 
+def cmd_plan(args) -> int:
+    from . import plan as plan_mod
+    try:
+        p = plan_mod.load(args.plan, draft=True)
+    except (plan_mod.PlanError, OSError) as exc:
+        raise UserError(str(exc))
+    text, ready = plan_mod.review(p)
+    print(text)
+    return 0 if ready else EXIT_FAIL
+
+
 def cmd_run(args) -> int:
     from . import runner
     return runner.run(args)
@@ -888,6 +899,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("shot", cmd_shot, "save a screenshot as evidence")
     p.add_argument("label", nargs="?")
+
+    p = add("plan", cmd_plan, "check a plan file before running it")
+    psub = p.add_subparsers(dest="action", required=True)
+    pr = psub.add_parser("review", help="every case, its expected results and what proves them; all gaps at once")
+    pr.add_argument("plan")
 
     p = add("case", cmd_case, "mark test case boundaries")
     csub = p.add_subparsers(dest="action", required=True)
