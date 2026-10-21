@@ -737,6 +737,41 @@ def cmd_runs(args) -> int:
     return 0
 
 
+def cmd_cases(args) -> int:
+    from . import intake
+    from . import plan as plan_mod
+    text = sys.stdin.read() if args.source == "-" else Path(args.source).read_text(encoding="utf-8-sig")
+    name = args.name or ("imported" if args.source == "-" else re.sub(r"[^A-Za-z0-9_-]+", "-", Path(args.source).stem))
+    if not NAME_RE.match(name):
+        raise UserError(f"--name: {name!r} must be letters, digits, '-' or '_'")
+    target = Path(args.out) if args.out else home() / "plans" / f"{name}.plan"
+    if target.exists() and not args.force:
+        raise UserError(f"{target} exists: pass --force to replace it, or --out <file>")
+    try:
+        cases = intake.read(text, args.columns)
+    except intake.IntakeError as exc:
+        raise UserError(str(exc))
+    if not cases:
+        raise UserError("no test cases found in the input")
+    draft = intake.to_plan(cases, args.app, name, "stdin" if args.source == "-" else Path(args.source).name)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(draft)
+    expects = sum(len(c.expects) for c in cases)
+    print(f"wrote {target}: {len(cases)} case(s), {expects} expected result(s)")
+    if missing := [c.id for c in cases if not c.expects]:
+        print(f"no expected result in: {', '.join(missing)} (add `expect` lines before writing checks)")
+    accounts: dict[str, list[str]] = {}
+    for c in cases:
+        if c.fields.get("account"):
+            accounts.setdefault(c.fields["account"], []).append(c.id)
+    if accounts:
+        print("accounts: " + ", ".join(f"{a} ({', '.join(ids)})" for a, ids in accounts.items())
+              + "  (log in as each account before its cases)")
+    gaps = plan_mod.parse(draft, str(target), draft=True).gaps
+    print(f"next: write each case's steps and checks, then `./tnazar plan review {target}` ({len(gaps)} gap(s) now)")
+    return 0
+
+
 def cmd_plan(args) -> int:
     from . import plan as plan_mod
     try:
@@ -899,6 +934,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("shot", cmd_shot, "save a screenshot as evidence")
     p.add_argument("label", nargs="?")
+
+    p = add("cases", cmd_cases, "bring test cases from a sheet into a draft plan")
+    csub2 = p.add_subparsers(dest="action", required=True)
+    ci = csub2.add_parser("import", help="CSV, TSV (pasted from a sheet) or a Markdown table -> plans/<name>.plan")
+    ci.add_argument("source", help="the file, or - to read pasted text from stdin")
+    ci.add_argument("--app", required=True, help="the app's package, e.g. com.example.app")
+    ci.add_argument("--name", help="plan name (default: the file name)")
+    ci.add_argument("--out", help="where to write the draft (default: plans/<name>.plan)")
+    ci.add_argument("--columns", help="column names in order, for a table without a header row "
+                                      "(e.g. title,description,precondition,steps,data,expected,priority,status,account)")
+    ci.add_argument("--force", action="store_true", help="replace an existing plan file")
 
     p = add("plan", cmd_plan, "check a plan file before running it")
     psub = p.add_subparsers(dest="action", required=True)
