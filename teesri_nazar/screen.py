@@ -45,14 +45,15 @@ class Element:
     def short_cls(self) -> str:
         return self.cls.rsplit(".", 1)[-1]
 
-    def describe(self) -> str:
+    def describe(self, full: bool = False) -> str:
+        quote = _whole if full else _quote
         parts = [f"[{self.index}]", self.short_cls]
         if self.rid:
             parts.append(f"id={self.short_id}")
         if self.text:
-            parts.append(f"text={_quote(self.text)}")
+            parts.append(f"text={quote(self.text)}")
         if self.desc:
-            parts.append(f"desc={_quote(self.desc)}")
+            parts.append(f"desc={quote(self.desc)}")
         x, y = self.center
         parts.append(f"@{x},{y}")
         flags = [name for name, on in (
@@ -68,6 +69,12 @@ class Element:
 def _quote(s: str, limit: int = 60) -> str:
     s = " ".join(s.split())
     return '"' + (s if len(s) <= limit else s[: limit - 1] + "…") + '"'
+
+
+def _whole(s: str) -> str:
+    """All of it, line breaks kept (indented under the element), for reading long messages."""
+    lines = [" ".join(ln.split()) for ln in s.strip().splitlines() if ln.strip()]
+    return '"' + "\n    ".join(lines) + '"'
 
 
 _QUOTES = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})

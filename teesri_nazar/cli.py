@@ -332,7 +332,7 @@ def cmd_open_url(args) -> int:
 def cmd_observe(args) -> int:
     ctx = Ctx.from_args(args.device)
     screen = ctx.capture()
-    print_screen(screen, args.all)
+    print_screen(screen, args.all, args.full)
     if sid := ctx.stamp(screen):
         ctx.log({"type": "seen", "sid": sid})
     if ctx.run:
@@ -343,12 +343,12 @@ def cmd_observe(args) -> int:
     return 0
 
 
-def print_screen(screen: scr.Screen, everything: bool = False) -> None:
+def print_screen(screen: scr.Screen, everything: bool = False, full: bool = False) -> None:
     shown = screen.elements if everything else screen.interesting()
     print(f"screen: {screen.package or '?'}  {len(screen.elements)} elements ({len(shown)} shown)")
     values = secret_values()
     for e in shown:
-        print(describe(e, values))
+        print(describe(e, values, full))
 
 
 def _missed(ctx: "Ctx", event: dict, exc: NotFound) -> NotFound:
@@ -822,6 +822,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("observe", cmd_observe, "list what is on screen (elements, ids, centers)")
     p.add_argument("--all", action="store_true", help="include unlabelled layout nodes")
+    p.add_argument("--full", action="store_true", help="print whole texts, never cut (long messages, chat replies)")
     p.add_argument("--shot", action="store_true", help="also save a screenshot")
     p.add_argument("--label", help="name for saved artifacts")
 

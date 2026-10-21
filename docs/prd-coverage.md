@@ -253,3 +253,24 @@ ends, not-run ones as grey rows with their reason*.
 | R5 | No trailing `#` comments in plan examples | The parser treats them as arguments; `#12` targets forbid changing that |
 | R6 | Green also needs zero failed checks outside cases | A failed `--visual` check (case-less) must not sit under "all passed" |
 | R7 | Cut: `status` line, `source` field beyond `added`, `reason_hint`, `.pill.not_run`, the timing test | Not needed for the goal |
+
+## 11. Step 1 completion (v0.4, decided 2026-10-21)
+
+After real runs on a banking app (an 11-case FAQ regression and a 5-case chatbot table), the
+owner chose to finish all of step 1 before merging. Decisions (round 2 of grilling, all
+accepted):
+
+| # | Decision |
+|---|---|
+| S1 | `tnazar cases import <file\|->` reads CSV, TSV (copied from a sheet) or a Markdown table, detecting which; columns matched by header with synonyms (ID, Test case/Title/Scenario, Description, Precondition, Steps, Expected, Priority, Status, Account/Phone/UID, Test data); unknown columns kept as notes. |
+| S2 | Import writes a **draft plan**: one `case` per row, metadata as `#` comments, expected results as `expect` lines, no steps. `run` refuses it until every case has steps and checks and every `expect` a `check --for`: the coverage gate. |
+| S3 | `tnazar plan review <plan>` prints every case → expected results → proving checks, and **all** gaps at once. |
+| S4 | Case IDs from the ID column, kept exactly; else `TC-01`… in row order. Duplicate IDs are an import error naming both rows. |
+| S5 | Expected results split into E1… only on line breaks, bullets or `;`; never inside a sentence. |
+| S6 | A row with only its first cell is a section heading (comment above its cases). The account column becomes `# account: …`; OTP/MPIN never written. |
+| S7 | A `flow` that fails gets one more try in the next case that runs it; if that fails too, every later case running it ends at once as `blocked: precondition failed: flow <name> …`, without touching the device. |
+| S8 | No general failure classification (step 4). |
+| S9 | `observe --full` prints complete text, multi-line, secrets redacted. Checks already match full text. |
+| S10 | Proof: example plan with `expect`; the FAQ plan rewritten with expected results on a real device; the chatbot table imported and reviewed; the login-failure scenario re-run; edge cases (Ctrl-C, replay of a replay, `--from` on a fresh run, unicode and long expected results, 200 cases, old runs in the dashboard). |
+| S11 | One PR from `feature/coverage` once all is green, after the owner's review. |
+

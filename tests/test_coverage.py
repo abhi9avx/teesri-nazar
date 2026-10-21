@@ -778,6 +778,44 @@ class OtherViewsTest(CaseCliBase):
         self.assertIn("verified 1/2", self.ok("report", run.name))
 
 
+LONG = ("Your repayment due date is the 7th of every month. A late fee applies 3 days after the due date.\n\n"
+        "It is slab-based on the Total Amount Due, plus GST.")
+
+
+def chat_app():
+    from fakedevice import FakeApp, node
+    return FakeApp(screens={"chat": [node(id="text", text=LONG, clickable=False, bounds=(60, 400, 1020, 900)),
+                                     node(id="otp", text="4321", clickable=False, bounds=(60, 950, 1020, 1000))]},
+                   start="chat")
+
+
+class ObserveFullTest(CliTestCase):
+    """S9: the whole text of an element, never cut; checks already match it."""
+    app = staticmethod(chat_app)
+
+    def test_observe_cuts_long_text_as_before(self):
+        out = self.ok("observe")
+        self.assertIn("…", out)
+        self.assertNotIn("plus GST", out)
+
+    def test_observe_full_prints_every_word_and_keeps_line_breaks(self):
+        out = self.ok("observe", "--full")
+        self.assertIn("A late fee applies 3 days after the due date.", out)
+        self.assertIn("It is slab-based on the Total Amount Due, plus GST.", out)
+        self.assertNotIn("…", out)
+        self.assertGreater(out.count("\n"), 3)
+
+    def test_observe_full_still_hides_secrets(self):
+        Path(self.home, ".env").write_text("APP_OTP=4321\n")
+        with mock.patch.dict(os.environ, {}):
+            out = self.ok("observe", "--full")
+        self.assertNotIn("4321", out)
+
+    def test_a_partial_check_matches_words_beyond_the_cut(self):
+        self.start()
+        self.ok("check", "~slab-based on the Total Amount Due, plus GST")
+
+
 class AddedDuringRunReportTest(CaseCliBase):
     def test_q12_a_case_added_during_the_run_is_marked_in_the_report(self):
         run = self.start()
