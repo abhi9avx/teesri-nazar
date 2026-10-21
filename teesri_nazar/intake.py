@@ -229,8 +229,8 @@ def read(text: str, columns: str | None = None, report: dict | None = None) -> l
         # that could be an ID is a case.
         first = row[0].strip()
         if len(filled) == 1 and first and len(names) >= 3 and (names[0] != "id" or not _looks_like_id(first)):
-            section = first
-            report["headings"].append(first)
+            section = _hide(first)
+            report["headings"].append(section)
             continue
         cid = cells.get("id", "")
         if not cid:
@@ -273,7 +273,7 @@ def to_plan(cases: list[Imported], app: str, name: str, source: str) -> str:
                 out.append(f"  # {LABEL.get(key, key)}: {_flat(c.fields[key])}")
         for key, value in c.fields.items():
             if key not in FIELDS:
-                out.append(f"  # {key}: {_flat(value)}")
+                out.append(f"  # {_flat(key)}: {_flat(value)}")
         if c.steps:
             out.append("  # steps:")
             out += [f"  #   {s}" for s in c.steps]

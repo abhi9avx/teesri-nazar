@@ -283,6 +283,21 @@ class LastReviewFixesTest(unittest.TestCase):
         self.assertEqual([(c.id, c.section) for c in cases], [("TC1", ""), ("TC2", ""), ("TC-3", "Notes")])
 
 
+class HeadingSecretTest(unittest.TestCase):
+    def test_a_heading_with_a_secret_is_masked_in_the_plan_and_the_report(self):
+        report: dict = {}
+        cases = intake.read("Title,Steps,Expected\nLogin OTP 123456 section,,\nA,s,e\n", report=report)
+        text = intake.to_plan(cases, app="a.b", name="s", source="x")
+        self.assertNotIn("123456", text)
+        self.assertNotIn("123456", " ".join(report["headings"]))
+
+    def test_a_header_with_a_line_break_imports(self):
+        [c] = intake.read('Title,Expected,"Owner\nteam"\nT,E,QA\n')
+        text = intake.to_plan([c], app="a.b", name="s", source="x")
+        from teesri_nazar import plan
+        plan.parse(text, "x.plan", draft=True)
+
+
 class DraftPlanTest(unittest.TestCase):
     def draft(self, text=PASTED, **kw):
         return intake.to_plan(intake.read(text, columns=kw.pop("columns", COLUMNS)), app="com.example.app",
