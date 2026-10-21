@@ -28,10 +28,11 @@ FIELDS = {
 # A column whose header has one of these words is never copied into a plan, and a value
 # following one of them inside any cell is masked. Plans hold only `--env` names for secrets.
 SECRET = {"otp", "mpin", "pin", "password", "passcode", "passwd", "secret", "token"}
-_WORD = r"\b(" + "|".join(sorted(SECRET)) + r")\b"
-# "otp: 1234", "OTP - 1234", "password is x y" (to the next ; or ,), "Enter OTP 123456".
-SECRET_VALUE = (re.compile(_WORD + r"(\s*[:=-]\s*|\s+is\s+)([^;,\n]+)", re.I),
-                re.compile(_WORD + r"(\s+)(\d[^;,\s]*)", re.I))
+_WORD = r"\b(otp(?:\s+code)?|" + "|".join(sorted(SECRET - {"otp"})) + r")\b"  # "pin code" is a postcode
+# Only the value is hidden, the sentence around it stays: a number after the word ("OTP 1234",
+# "otp code: 12 34", "PIN is 0852"), or any one word after `:`/`=` ("password: hunter2").
+SECRET_VALUE = (re.compile(_WORD + r"(\s*[:=]\s*|\s+is\s+|\s+)(\d[\d ]*\d|\d)(?![\w-])", re.I),
+                re.compile(_WORD + r"(\s*[:=]\s*|\s+is\s+)((?=\S*\d)[^\s;,]+|(?<=[:=])\s*[^\s;,]+)", re.I))
 COMMENTED = ("description", "precondition", "data", "priority", "status", "account")
 LABEL = {"data": "test data"}
 BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])(?:\s+|$)")
@@ -99,11 +100,12 @@ def _md_cells(line: str) -> list[str]:
     return [BR.sub("\n", c.replace("\0", "|")).strip() for c in line.replace("\\|", "\0").split("|")]
 
 
-def _tsv_records(text: str) -> list[list[str]]:
+def _tsv_records(text: str) -> list[tuple[list[str], bool]]:
     """Tab-separated lines. A cell is quoted (and may hold line breaks) only when it starts with
     `"` and its closing quote comes right before a tab or the line's end; any other quote is text."""
     records, row, cell, i, n = [], [], [], 0, len(text)
     at_start = True
+    spans: set[int] = set()  # records with a quoted cell holding a tab and a line break
     while i < n:
         ch = text[i]
         if at_start and ch == '"':
@@ -118,6 +120,8 @@ def _tsv_records(text: str) -> list[list[str]]:
                     buf.append(text[j])
                     j += 1
             if j < n and text[j + 1:j + 2] in ("", "\t", "\n"):
+                if "\n" in buf and "\t" in buf:
+                    spans.add(len(records))
                 cell, i, at_start = buf, j + 1, False
                 continue
         if ch == "\t":
@@ -133,17 +137,20 @@ def _tsv_records(text: str) -> list[list[str]]:
         i += 1
     if cell or row:
         records.append(row + ["".join(cell)])
-    return [r for r in records if any(c.strip() for c in r)]
+    return [(r, k in spans) for k, r in enumerate(records) if any(c.strip() for c in r)]
 
 
-def _tsv(records: list[list[str]], width: int) -> tuple[list[list[str]], set[int]]:
-    """A chat paste drops a cell's quotes: a line with no tab continues the cell above, and the
-    line with tabs that ends such a cell completes its row. A row is never joined otherwise."""
+def _tsv(records: list[tuple[list[str], bool]], width: int) -> tuple[list[list[str]], set[int]]:
+    """A chat paste drops a cell's quotes: while a row is still short, a line with no tab continues
+    its last cell, and the line with tabs that ends that cell completes the row. A complete row is
+    never joined; a quoted cell holding a tab and a line break is reported like a join."""
     rows: list[list[str]] = []
     joined: set[int] = set()
     open_cell = False
-    for cells in records:
-        if rows and len(cells) == 1 and not _is_header(rows[-1]):
+    for cells, spans in records:
+        if spans:
+            joined.add(len(rows))
+        if rows and len(cells) == 1 and len(rows[-1]) < width and not _is_header(rows[-1]):
             rows[-1][-1] += "\n" + cells[0]
             joined.add(len(rows) - 1)
             open_cell = True
@@ -159,6 +166,10 @@ def _tsv(records: list[list[str]], width: int) -> tuple[list[list[str]], set[int
 
 def _is_header(row: list[str]) -> bool:
     return sum(1 for h in row if _field_of(h)) >= 2
+
+
+def _looks_like_id(value: str) -> bool:
+    return bool(SAFE_ID.match(value)) and any(ch.isdigit() for ch in value)
 
 
 def _split_expected(cell: str) -> list[str]:
@@ -212,7 +223,7 @@ def read(text: str, columns: str | None = None, report: dict | None = None) -> l
         # A heading row ("Notes app") fills only its first cell. Under an ID column, a lone value
         # that could be an ID is a case.
         first = row[0].strip()
-        if len(filled) == 1 and first and len(names) >= 3 and (names[0] != "id" or not SAFE_ID.match(first)):
+        if len(filled) == 1 and first and len(names) >= 3 and (names[0] != "id" or not _looks_like_id(first)):
             section = first
             report["headings"].append(first)
             continue
