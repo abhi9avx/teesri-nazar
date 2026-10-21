@@ -21,6 +21,8 @@ finishing a run on their own app.
   to Anthropic, and how secrets are kept out.
 - *Limits and fixes* opens with a table of what works today, partly, and not yet.
 - The quick start runs `tnazar doctor` before the first test.
+- The website fits small phones: a two-row header, the hero's checks as a grid, one
+  scrolling row for the docs menu, and reports that fit a 320px screen.
 - The README's "Coming next" (parallel emulators, DB checks, Zephyr) is gone: none of it
   is being built now, so it is no longer promised.
 
