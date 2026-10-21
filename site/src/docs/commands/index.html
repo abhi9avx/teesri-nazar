@@ -16,6 +16,7 @@ description: Every tnazar command, grouped by task: runs, reading the screen, ac
       <tr><td><code>start &lt;name&gt; --package &lt;app&gt;</code></td><td>Start a test run: recording, evidence and report</td></tr>
       <tr><td><code>stop</code></td><td>Finish the run and write the report</td></tr>
       <tr><td><code>status</code></td><td>Show the active run</td></tr>
+      <tr><td><code>case plan TC-01 "title" --expect "…"</code></td><td>Declare a case and its expected results first, so the report shows it even if it never runs</td></tr>
       <tr><td><code>case start TC-01 "title"</code> / <code>case end</code></td><td>Group the steps between them into a test case</td></tr>
       <tr><td><code>runs</code> / <code>report</code></td><td>List recent runs, or rewrite a run's <a href="/docs/reports/">report</a></td></tr>
     </tbody>
@@ -39,7 +40,7 @@ description: Every tnazar command, grouped by task: runs, reading the screen, ac
   <div class="table-wrap"><table>
     <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>check "Payment successful"</code></td><td>Verify it is on screen. Exact match; <code>'~text'</code> for partial</td></tr>
+      <tr><td><code>check "Payment successful"</code></td><td>Verify it is on screen. Exact match; <code>'~text'</code> for partial. <code>--for E1</code> says which expected result it proves</td></tr>
       <tr><td><code>wait "Home" --or "Error"</code></td><td>Wait for a screen; stop early if the error shows instead</td></tr>
       <tr><td><code>shot</code> / <code>note</code></td><td>Save a screenshot, or record an observation or bug</td></tr>
     </tbody>
