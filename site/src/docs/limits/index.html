@@ -1,12 +1,24 @@
 <!--
 title: Limits and fixes | Teesri Nazar docs
-description: What Teesri Nazar cannot test yet, and quick fixes for common problems like slow screen reads, no device and busy ports.
+description: What Teesri Nazar can and cannot test today, and quick fixes for common problems like slow screen reads, no device and busy ports.
 -->
 <div class="docs">
 {{include:_docs-nav.html}}
 <article class="docs-main">
   <h1>Limits and fixes</h1>
-  <p class="docs-lede">What it cannot test yet, and what to do when something goes wrong.</p>
+  <p class="docs-lede">What works today, what it cannot test yet, and what to do when something goes wrong.</p>
+
+  <h2 id="works-today">What works today</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Area</th><th scope="col">Works</th><th scope="col">Partly</th><th scope="col">Not yet</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Devices</th><td>Android phones over USB and emulators, any screen size</td><td>One run drives one device at a time</td><td>iOS</td></tr>
+      <tr><th scope="row">Screens</th><td>Native Android views</td><td>Jetpack Compose: ids only with <code>testTagsAsResourceId</code>, otherwise labels and text</td><td>Flutter, WebView and canvas screens</td></tr>
+      <tr><th scope="row">Typing</th><td>ASCII text; secrets from <code>.env</code></td><td></td><td>₹, Hindi, emoji and other non-ASCII text</td></tr>
+      <tr><th scope="row">Checks</th><td>On-screen checks with a screenshot each; crashes and ANRs</td><td>DB and Figma checks: the agent runs them and records the result; replay does not re-run them</td><td>Built-in DB or API checks</td></tr>
+      <tr><th scope="row">Navigation</th><td>Learned routes with <code>goto</code>; saved flows</td><td>Routes through a search box are not replayed</td><td>Money-moving steps are never replayed, by design</td></tr>
+    </tbody>
+  </table></div>
 
   <h2 id="limits">Limits</h2>
   <ul>
@@ -22,6 +34,7 @@ description: What Teesri Nazar cannot test yet, and quick fixes for common probl
   <div class="table-wrap"><table>
     <thead><tr><th scope="col">You see</th><th scope="col">Do this</th></tr></thead>
     <tbody>
+      <tr><td>Not sure what is wrong with the setup</td><td>Run <code>./tnazar doctor</code>. It checks adb, the device, Python and fast screen reads, and prints the fix for each problem.</td></tr>
       <tr><td>No device found</td><td>Run <code>adb devices</code>. Allow USB debugging on the phone, or start an emulator.</td></tr>
       <tr><td><code>screen reads: uiautomator dump</code></td><td>Works, about 2 s per read. Install the UiAutomator2 server APKs it prints for ~0.05 s reads.</td></tr>
       <tr><td>A run is in progress on this device</td><td>Another process is driving it. Wait, or <code>./tnazar stop</code> it.</td></tr>
@@ -31,8 +44,9 @@ description: What Teesri Nazar cannot test yet, and quick fixes for common probl
   </table></div>
   <p>Still stuck? <a href="https://github.com/abhi9avx/teesri-nazar/issues">Open an issue on GitHub</a>.</p>
 
-  <nav class="docs-pager" aria-label="Previous page">
+  <nav class="docs-pager" aria-label="Previous and next page">
     <a class="prev" href="/docs/tech-stack/"><span>Previous</span>Tech stack</a>
+    <a class="next" href="/docs/privacy/"><span>Next</span>Data and privacy</a>
   </nav>
 </article>
 <aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>

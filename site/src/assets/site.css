@@ -271,6 +271,8 @@ p { margin: 0; }
 .shot:not(.is-done) .checks li:not(.is-hit) { opacity: 0.55; }
 .shot-foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0.5rem 1.25rem; margin-top: 1rem; }
 .hero .link-button { text-decoration-color: currentColor; }
+.shot-note { margin: 0; font-size: 0.92rem; text-align: center; }
+.shot-note a { color: inherit; }
 
 /* Sections */
 .demo, .steps, .why, .start, .feedback, .shipped { max-width: var(--wrap); margin: 0 auto; padding: var(--space) var(--gutter) 0; }

@@ -1,13 +1,13 @@
 <!--
 title: Teesri Nazar: the AI tester for Android apps
-description: An open-source AI agent that tests your Android feature on a real phone and hands you pass or fail, with a screenshot for every check.
+description: An open-source AI agent that tests your Android feature on a real phone or emulator and hands you pass or fail, with a screenshot for every check.
 -->
 <section class="hero" aria-labelledby="hero-title">
   <div class="hero-inner shot is-done" id="shot">
     <div class="poster">
       <div class="hero-copy">
         <h1 id="hero-title">Stop tapping through every release by&nbsp;hand.</h1>
-        <p class="lede">Teesri Nazar is an AI agent that tests your Android feature on a real phone and hands you pass or fail, with proof.</p>
+        <p class="lede">Teesri Nazar is an AI agent that tests your Android feature on a real phone or emulator and hands you pass or fail, with proof.</p>
         <div class="actions">
           <a class="btn btn-ink" href="/docs/quick-start/">Quick start</a>
           <a class="btn btn-line" href="https://github.com/abhi9avx/teesri-nazar">View on GitHub</a>
@@ -109,7 +109,7 @@ description: An open-source AI agent that tests your Android feature on a real p
         <g class="arrow arrow-flying" transform="translate(1594 563.3)"><use href="#arrow"/></g>
       </svg>
       <p class="callout" id="callout" aria-hidden="true"></p>
-      <p class="visually-hidden" id="verdict" role="status">Testing complete: 10 checks, 8 passed, 2 bugs found.</p>
+      <p class="visually-hidden" id="verdict" role="status">Illustration: 10 example checks, 8 passed, 2 bugs found.</p>
       <div class="complete" id="complete" aria-hidden="true">
         <p class="complete-title"><span class="hooray">Hooray!</span> Testing complete <span aria-hidden="true">🎉</span></p>
         <p class="complete-stats"><span>10 checks</span> <span class="ok">8 passed</span> <span class="bad">2 bugs found</span></p>
@@ -129,6 +129,7 @@ description: An open-source AI agent that tests your Android feature on a real p
       <li class="check-pass"><span aria-hidden="true">✓</span> Small screen OK</li>
     </ol>
     <div class="shot-foot">
+      <p class="shot-note">An illustration, not a real run. <a href="/sample-report/report.html">See a report from a real run</a></p>
       <button type="button" class="link-button" id="shoot" hidden>Shoot again</button>
     </div>
   </div>
@@ -191,7 +192,7 @@ description: An open-source AI agent that tests your Android feature on a real p
       </div>
     </div>
     <figcaption>
-      <span>Claude Code driving the Android Settings app, based on the example plan in the repo.</span>
+      <span>An animation of a real run: Claude Code testing the Android Settings app on an emulator. <a href="/sample-report/report.html">Its report</a>.</span>
       <button type="button" class="link-button" id="stage-toggle" aria-controls="log" hidden>Pause replay</button>
     </figcaption>
   </figure>
@@ -212,7 +213,7 @@ description: An open-source AI agent that tests your Android feature on a real p
   <ul class="why-list">
     <li><h3>Learns your app</h3><p>Every run maps the screens. Next time, <code>goto</code> takes it straight there.</p></li>
     <li><h3>You steer it live</h3><p>Watch the phone, message the agent, pause it, hand over an OTP.</p></li>
-    <li><h3>Runs on your computer</h3><p>tnazar, the dashboard and your reports stay local. No telemetry, no SDK in your app. Claude Code sends the screens it reads to Anthropic's model.</p></li>
+    <li><h3>Runs on your computer</h3><p>tnazar, the dashboard and your reports stay local. No telemetry, no SDK in your app. Claude Code sends the screens it reads to Anthropic's model. <a href="/docs/privacy/">What leaves your computer</a>.</p></li>
     <li><h3>Android only, for now</h3><p>No iOS yet. <a href="/docs/compare/">See how it compares to Appium, Espresso and Maestro</a>.</p></li>
   </ul>
 </section>
@@ -226,7 +227,9 @@ description: An open-source AI agent that tests your Android feature on a real p
   <pre class="terminal" tabindex="0"><code><span class="t-prompt"># no phone? start an emulator
 </span>emulator -avd &lt;your_avd&gt; &amp;
 git clone https://github.com/abhi9avx/teesri-nazar.git
-cd teesri-nazar &amp;&amp; claude
+cd teesri-nazar
+./tnazar doctor   <span class="t-prompt"># checks adb, the device and Python; prints the fix</span>
+claude
 <span class="t-prompt">› </span><span class="t-say">Check that Settings search finds Wi‑Fi.</span></code></pre>
 </section>
 
