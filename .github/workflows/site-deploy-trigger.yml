@@ -1,0 +1,37 @@
+# Starts the website deploy (deploy.yml in teesrinazar/teesrinazar.github.io, copied in
+# site/deploy.yml) as soon as site/, CHANGELOG.md or the site test changes on main, instead of
+# waiting for its 6-hourly schedule. GITHUB_TOKEN cannot reach another repo, so SITE_DEPLOY_TOKEN
+# is a fine-grained token scoped to that repo with Actions: read and write.
+name: site-deploy-trigger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "CHANGELOG.md"
+      - "tests/test_site_build.py"  # the deploy runs it first, so a fix there unblocks a failed deploy
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the site deploy
+        env:
+          TOKEN: ${{ secrets.SITE_DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Secret SITE_DEPLOY_TOKEN is not set, so the site was not redeployed." \
+              "It updates on its 6-hourly schedule, or run deploy.yml in teesrinazar/teesrinazar.github.io by hand."
+            exit 1
+          fi
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/teesrinazar/teesrinazar.github.io/actions/workflows/deploy.yml/dispatches \
+            -d '{"ref":"main"}'
+          echo "Deploy dispatched: https://github.com/teesrinazar/teesrinazar.github.io/actions/workflows/deploy.yml"
