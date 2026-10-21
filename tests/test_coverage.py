@@ -699,6 +699,51 @@ end
         self.assertIn("TC-03    BLOCKED  precondition failed: flow enter", out)
         self.assertIn("verified 3/5", out)
 
+    def test_a_dead_flow_also_blocks_cases_that_reach_it_through_another_flow(self):
+        out, run = self.run_plan('''
+flow inner
+  tap "Nowhere"
+end
+flow outer
+  run inner
+  check Login
+end
+case TC-01 "runs inner"
+  run inner
+  check Login
+case TC-02 "runs inner"
+  run inner
+  check Login
+case TC-03 "runs outer, which runs inner"
+  run outer
+  check Login
+''', expect=1)
+        st = {c["id"]: (c["status"], c["reason"]) for c in rpt.summarize(run)["cases"]}
+        self.assertEqual(st["TC-03"], ("blocked", "precondition failed: flow inner (failed in TC-01, TC-02)"))
+        self.assertEqual(self.case_events(run, "TC-03"), ["case_start", "case_end"])
+
+    def test_failures_inside_an_outer_flow_count_for_the_inner_one(self):
+        _, run = self.run_plan('''
+flow inner
+  tap "Nowhere"
+end
+flow outer
+  run inner
+  check Login
+end
+case TC-01 "runs outer"
+  run outer
+  check Login
+case TC-02 "runs outer"
+  run outer
+  check Login
+case TC-03 "runs inner directly"
+  run inner
+  check Login
+''', expect=1)
+        st = {c["id"]: c["reason"] for c in rpt.summarize(run)["cases"]}
+        self.assertIn("flow inner (failed in TC-01, TC-02)", st["TC-03"])
+
     def test_a_flow_that_fails_once_then_works_blocks_nothing(self):
         self.adb.drop_taps = 1
         out, run = self.run_plan('''

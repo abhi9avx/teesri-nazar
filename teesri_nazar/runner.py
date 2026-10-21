@@ -20,7 +20,7 @@ import io
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import cli, coverage, live
 from . import device as dev
@@ -35,7 +35,7 @@ DETAIL_LINES = 6
 class Failed:
     detail: str
     code: int = 1  # the failing step's exit code
-    flow: str | None = None  # the flow the case ran that the failing step was in
+    flows: list = field(default_factory=list)  # every flow the failing step was inside, innermost first
 
 
 @dataclass
@@ -94,7 +94,7 @@ def run(args) -> int:
     broken: dict[str, list[str]] = {}  # flow -> the cases it failed in, in a row
     for case in cases:
         began = time.monotonic()
-        needs = _flows_used(case.body)
+        needs = _flows_used(case.body, p.flows)
         if dead := [f for f in needs if len(broken.get(f, [])) >= 2]:
             why = "; ".join(f"flow {f} (failed in {', '.join(broken[f])})" for f in dead)
             _block(the_run, case, f"precondition failed: {why}")
@@ -120,7 +120,7 @@ def run(args) -> int:
         call(["case", "end"])
         status = _last_status(the_run, case.id)
         for f in needs:  # a flow that worked here is not a broken precondition any more
-            if isinstance(result, Failed) and result.flow == f:
+            if isinstance(result, Failed) and f in result.flows:
                 broken.setdefault(f, []).append(case.id)
             else:
                 broken.pop(f, None)
@@ -166,7 +166,7 @@ class Executor:
         if isinstance(item, RunFlow):
             result = self.body(self.plan.flows[item.flow].body, record)
             if isinstance(result, Failed):
-                result.flow = item.flow  # set again on the way out: the case's own `run` names it
+                result.flows.append(item.flow)
             return result
         if isinstance(item, If):
             held = self.hold()
@@ -242,16 +242,16 @@ class Executor:
         return found, stats["polls"]
 
 
-def _flows_used(body: list) -> list[str]:
-    """The flows a case runs itself (`run X` in its body, in `if`/`else`/`retry` too)."""
+def _flows_used(body: list, flows: dict, seen: frozenset = frozenset()) -> list[str]:
+    """Every flow a case needs: those it runs, and those they run (in `if`/`else`/`retry` too)."""
     out: list[str] = []
     for item in body:
-        if isinstance(item, RunFlow):
-            out.append(item.flow)
+        if isinstance(item, RunFlow) and item.flow not in seen:
+            out += [item.flow] + _flows_used(flows[item.flow].body, flows, seen | {item.flow})
         elif isinstance(item, If):
-            out += _flows_used(item.then) + _flows_used(item.other)
+            out += _flows_used(item.then, flows, seen) + _flows_used(item.other, flows, seen)
         elif isinstance(item, Retry):
-            out += _flows_used(item.body)
+            out += _flows_used(item.body, flows, seen)
     return list(dict.fromkeys(out))
 
 
