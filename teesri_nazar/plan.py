@@ -325,14 +325,9 @@ def _checks(body: list):
 
 
 def _for_ids(argv: list[str]) -> list[str]:
-    from .cli import expected_ids
-    ids: list[str] = []
-    for i, word in enumerate(argv):
-        if word == "--for" and i + 1 < len(argv):
-            ids += expected_ids(argv[i + 1])
-        elif word.startswith("--for="):
-            ids += expected_ids(word.split("=", 1)[1])
-    return ids
+    """The expected results a `check` step links, read by the CLI's own parser (already validated)."""
+    from .cli import build_parser
+    return build_parser().parse_args(argv).for_ or []
 
 
 def _check_args(words: list[str], fail) -> None:

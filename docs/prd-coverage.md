@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Draft v0.2**: design grilled and agreed 2026-10-21 (Q1–Q13, all accepted); independent review 2026-10-21 (3 HIGH, 9 MED, 9 LOW) folded in as R1–R7 (§10). Not built. |
+| Status | **Built v0.3** on `feature/coverage` (2026-10-21); see the TRD for the code review outcome. Design grilled and agreed 2026-10-21 (Q1–Q13, all accepted); independent review 2026-10-21 (3 HIGH, 9 MED, 9 LOW) folded in as R1–R7 (§10). Not built. |
 | Branch | `feature/coverage`, stacked on `feature/site-trust` |
 | Date | 2026-10-21 |
 | Technical design | [trd-coverage.md](trd-coverage.md) |
@@ -169,9 +169,10 @@ With declared cases:
 
 Without declarations (unchanged): `3 case(s): ✅ 3 pass  | checks 4/4 passed`. The declared line
 is today's line with additions only, so every tool and test that reads today's line still matches
-(R1). During a live run, `⏳ k pending` is added among the counts.
+(R1). During a live run, `◌ k pending` is added among the counts (`⏳` already means running).
 
-The HTML/Markdown report adds, only for declared runs: a **Result** line (`all passed` / `failed` /
+The HTML/Markdown report adds, only for declared runs: a **Result** line (and, in HTML, a
+*not run* tile and the `verified V/N` line, since the page has no summary line) (`all passed` / `failed` /
 `incomplete`), the selection line, grey not-run rows with their reason, and under each case its
 expected results with ✅ / ❌ / ○ and the check that proved each. Undeclared runs get one line:
 `requested cases not declared: completeness unknown`.

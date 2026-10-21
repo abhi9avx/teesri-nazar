@@ -7,6 +7,11 @@ dashboard all ask here, so the rules live in one place (docs/trd-coverage.md §3
 from __future__ import annotations
 
 
+def case_plan(case: str, title: str = "", expects: list[str] | None = None, added: bool = False) -> dict:
+    """The event that puts a case on the requested list."""
+    return {"type": "case_plan", "case": case, "title": title, "expects": list(expects or []), "added": added}
+
+
 def declared(events: list[dict]) -> bool:
     """A run is declared once any case was planned: only then can it say what never ran."""
     return any(e["type"] == "case_plan" for e in events)

@@ -12,6 +12,10 @@ from .session import Run
 
 ICON = {"pass": "✅", "fail": "❌", "blocked": "⛔", "skipped": "⏭", "running": "⏳", "not_run": "○", "pending": "◌"}
 WORD = {"not_run": "not run"}
+
+
+def label(status: str) -> str:
+    return WORD.get(status, status)
 UNDECLARED = "requested cases not declared: completeness unknown"
 SLOW_MS = 5000
 
@@ -40,6 +44,8 @@ def build_cases(events: list[dict], finished: bool = True) -> list[dict]:
     for e in events:
         if e["type"] == "case_start":
             title = e.get("title") or planned.get(e["case"], {}).get("title", "")
+            if planned.get(e["case"], {}).get("added"):
+                title += " (added during run)"
             current = {"id": e["case"], "title": title, "status": "running",
                        "reason": "", "events": [], "start": e["t"], "end": None,
                        "evidence": [], "crash": None}
@@ -57,7 +63,7 @@ def build_cases(events: list[dict], finished: bool = True) -> list[dict]:
             if all(c["id"] != e["case"] for c in cases):
                 cases.append(_unrun(e["case"], e.get("title", ""), "not_run", e.get("reason", "")))
         elif e["type"] == "case_plan":
-            pass
+            pass  # the requested list, read above; not a step of the case in progress
         else:
             (current or loose)["events"].append(e)
     if not finished:
@@ -121,7 +127,7 @@ def slow_reason(e: dict) -> str:
 
 def summary_line(s: dict) -> str:
     c = s["counts"]
-    parts = [f"{ICON[k]} {c[k]} {WORD.get(k, k)}"
+    parts = [f"{ICON[k]} {c[k]} {label(k)}"
              for k in ("pass", "fail", "blocked", "skipped", "not_run", "pending", "running") if c.get(k)]
     total = sum(c.values())
     head = f"{total} case(s): " + ("  ".join(parts) if parts else "none recorded")
@@ -199,7 +205,7 @@ def to_markdown(run: Run, s: dict) -> str:
         for c in cases:
             ok = sum(1 for ch in c["checks"] if ch["ok"])
             cost = f" {usage.label(tokens.get(c['id'])) or '-'} |" if tokens else ""
-            out.append(f"| {c['id']} | {c['title']} | {ICON.get(c['status'], '')} {WORD.get(c['status'], c['status'])} | "
+            out.append(f"| {c['id']} | {c['title']} | {ICON.get(c['status'], '')} {label(c['status'])} | "
                        f"{ok}/{len(c['checks'])} |{cost} {c['reason']} |")
         out.append("")
     for c in cases:
@@ -207,7 +213,7 @@ def to_markdown(run: Run, s: dict) -> str:
         meta = f"{c['steps']} step(s)"
         if _duration(c.get("start"), c.get("end")):
             meta += f", {_duration(c['start'], c['end'])}"
-        out += [f"*{WORD.get(c['status'], c['status']).upper()}* — {meta}" + (f" — {c['reason']}" if c["reason"] else ""), ""]
+        out += [f"*{label(c['status']).upper()}* — {meta}" + (f" — {c['reason']}" if c["reason"] else ""), ""]
         out += [f"- {expect_line(x)}" for x in c.get("expects", [])]
         for ch in c["checks"]:
             line = "- " + _check_line(ch)
@@ -294,6 +300,7 @@ ul{margin:6px 0;padding-left:20px}code{font-size:13px}
 .tiles{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
 .tile b{display:block;font-size:22px}
 """
+# Kept apart so the Phase 0 test can show it is the only style a report without declared cases gains.
 CSS_COVERAGE = (".not_run,.pending,.exp-unverified{color:var(--muted)}.exp-verified{color:var(--pass)}"
                 ".exp-failed{color:var(--fail)}\n")
 CSS += CSS_COVERAGE
@@ -312,7 +319,7 @@ def to_html(run: Run, s: dict) -> str:
                     f"<td><span class='pill {c['status']}'>{c['status']}</span></td>"
                     f"<td>{ok}/{len(c['checks'])}</td>{cost}<td>{e(c['reason'])}</td></tr>")
     kinds = ("pass", "fail", "blocked", "skipped") + (("not_run",) if s.get("declared") else ())
-    tiles = "".join(f"<div class='tile {k}'><b>{s['counts'].get(k, 0)}</b>{WORD.get(k, k)}</div>" for k in kinds)
+    tiles = "".join(f"<div class='tile {k}'><b>{s['counts'].get(k, 0)}</b>{label(k)}</div>" for k in kinds)
     verdict = "".join(f"<p class=\"muted\">{e(line.replace('**', ''))}</p>\n" for line in coverage_lines(s))
     if s.get("tally"):
         verdict = f"<p class=\"muted\">verified {s['tally']['verified']}/{s['tally']['requested']}</p>\n" + verdict

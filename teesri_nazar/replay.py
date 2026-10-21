@@ -18,7 +18,7 @@ from . import report as rpt
 from . import screen as scr
 from . import visual
 from .adb import Adb, AdbError, adb_binary, pick_serial
-from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, check_device_owner, device_owner_of, evidence_shot
+from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, close_run, check_device_owner, device_owner_of, evidence_shot
 from .errors import UserError
 from .session import Run, get_active, now_iso, stamp
 
@@ -237,11 +237,7 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
-        if case := target.current_case():
-            target.log({"type": "case_end", "case": case, "status": "blocked",
-                        "reason": "replay stopped before the case finished"})
-        for c in coverage.not_started(target.events()):
-            target.log({"type": "not_run", "case": c["id"], "title": c["title"], "reason": "not run in the recorded run"})
+        close_run(target, "replay stopped before the case finished", "not run in the recorded run")
         try:
             dev.release_device(adb, owner)
         except AdbError as exc:  # never at the cost of restoring the device or writing the report

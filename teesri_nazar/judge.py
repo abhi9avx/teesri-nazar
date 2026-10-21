@@ -19,6 +19,22 @@ def evidence_shot(ctx, label: str) -> str | None:
         return None
 
 
+def close_run(run, open_reason: str, not_run_reason: str) -> None:
+    """End the case still open and give every requested case that never started its row.
+
+    Touches no device, so callers run it before any device cleanup that might fail.
+    """
+    events = run.events()
+    if case := run.current_case():
+        end = {"type": "case_end", "case": case, "status": "blocked", "reason": open_reason}
+        if expects := coverage.expects_of(events, case):
+            checks = [e for e in rpt.case_events(events, case) if e["type"] == "check"]
+            end["expects"] = coverage.expectation_states(expects, checks)
+        run.log(end)
+    for c in coverage.not_started(events):
+        run.log({"type": "not_run", "case": c["id"], "title": c["title"], "reason": not_run_reason})
+
+
 def _end_case(ctx, status: str | None, reason: str | None) -> str:
     run = ctx.run
     case = run.current_case()

@@ -22,7 +22,7 @@ import sys
 import time
 from dataclasses import dataclass
 
-from . import cli, live
+from . import cli, coverage, live
 from . import device as dev
 from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
 from .session import Run, claim_active, get_active
@@ -70,6 +70,10 @@ def run(args) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return cli.EXIT_ERROR
         claim_active()
+        sel = active[0].meta().get("selection") or {}
+        if sel.get("how") and (args.only or args.from_):  # a selection's continuation: name both
+            more = f"--only {args.only}" if args.only else f"--from {args.from_}"
+            active[0].update_meta(selection={**sel, "how": f"{sel['how']}, then {more}"})
     else:
         device = ["--device", args.device] if getattr(args, "device", None) else []
         code, out = call([*device, "start", p.name, "--package", p.app, "--prompt", f"plan {os.path.basename(path)}"])
@@ -81,8 +85,7 @@ def run(args) -> int:
         get_active()[0].update_meta(plan=path, selection={"plan_cases": len(p.cases), "how": how})
     the_run = get_active()[0]
     for case in cases:  # requested before any runs, so a case that never starts still has a row
-        the_run.log({"type": "case_plan", "case": case.id, "title": case.title, "expects": case.expects,
-                     "added": False})
+        the_run.log(coverage.case_plan(case.id, case.title, case.expects))
     print(f"plan {p.name}: {len(cases)} case(s) on {p.app}")
 
     failed = False

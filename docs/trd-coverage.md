@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Draft v0.2**, 2026-10-21: review findings H1–H3, M1–M9, L1–L9 folded in (PRD R1–R7). Not built. |
+| Status | **Built v0.3**, 2026-10-21. Design review findings H1–H3, M1–M9, L1–L9 folded in (PRD R1–R7). Code review (`ai-code-review`, standards + spec): no HIGH; MED test gaps and the LOWs fixed (shared `judge.close_run`, one `coverage.case_plan` builder, `--for` read by the CLI parser, "added during run" mark, both selections named on a continuation). |
 | PRD | [prd-coverage.md](prd-coverage.md) (Q-numbers refer to its decisions log) |
 | Test plan | [test-plan-coverage.md](test-plan-coverage.md) |
 | Constraints | Standard library only; Python 3.9 (no `match`, no `X | None` outside annotations); append-only `events.jsonl`; exit-code meanings unchanged (ARCHITECTURE.md §11) |
@@ -136,8 +136,9 @@ unverified = [s for s in states if s["state"] == "unverified"]
 
 - `status is None`: `fail` if `failed or crash` (unchanged; a failed linked check is already in
   `failed`), else `blocked` if `unverified`, else today's rule.
-- Whenever `unverified` is non-empty, `not verified: E2 <text>; E3 …` is **appended** to the
-  reason, even when a reason was passed in (R4): `cmd_case start` auto-ends with "next case started
+- Whenever `unverified` is non-empty and the case did not fail, `not verified: E2 <text>; E3 …`
+  is **appended** to the reason, even when a reason was passed in (R4; a failed case already
+  says why): `cmd_case start` auto-ends with "next case started
   without an explicit result", which today would hide it (`judge.py:30`).
 - `status == "pass"` with `unverified` (and no failure) → `blocked`,
   `"marked pass by the tester; not verified: …"`.
@@ -194,12 +195,14 @@ Cases with no expects take exactly today's path (characterisation test PH0-3).
 ### 4.7 `ui.py` / `ui.html`
 
 - `ui.py`: no change (it already sends `summary_line` and the events).
+- The case-end row needs no change for expected results: an unproven one is named in the
+  reason it already shows (UI-3).
 - `ui.html` (pure functions, node-tested):
   - `layout()`: `case_plan` skipped (M1); `not_run` closes any open `say` group and becomes its own
     block kind `not_run` (L9), so it never lands under a `say`.
   - `describe()`: `not_run` → `○`, `TC-07 not run — <reason>`; the row renderer gives the
     `not_run` block the muted style.
-  - The case-end row shows `E2 not verified` when its `expects` states say so.
+
 
 ### 4.8 `commands.py`
 

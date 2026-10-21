@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Draft v0.2**, 2026-10-21: review findings folded in. Not implemented. |
+| Status | **v0.3**: implemented in `tests/test_coverage.py` (78 tests); full suite 711 on Python 3.9; device smoke on the Pixel 9 Pro emulator (§6). |
 | PRD / TRD | [prd-coverage.md](prd-coverage.md) · [trd-coverage.md](trd-coverage.md) (section refs below are TRD sections) |
 | Branch | `feature/coverage` |
 | Rule | **Test first** (`tdd`): Phase 0 green on today's code, then one failing test → the code that makes it pass, one behaviour at a time. |
@@ -38,10 +38,10 @@ names, exit codes), never full sentences, except the Phase 0 golden strings.
 | PH0-1 | `summary_line` for undeclared runs: exact strings for 0 cases, all pass, mixed (the existing `test_cli.py:619` assertion + one with skipped/blocked) |
 | PH0-1b | `tnazar run` output still contains today's `N case(s): ✅ …  \| checks x/y passed` substring (the existing `test_plan.py:193` assertion, kept **unchanged**) |
 | PH0-2 | `build_cases` rows/status/reason for an undeclared mixed run |
-| PH0-3 | `_end_case` without expects: none→blocked "no checks", failed check→fail, crash→fail, tester `pass` with failed check→fail, tester `skipped` kept |
+| PH0-3 | `_end_case` without expects: already pinned by `test_cli.py` (no checks → blocked, tester pass with a failed check → fail, crash → fail, auto-end reason); referenced, not duplicated |
 | PH0-4 | `run` exit codes 0/1/2/3: already pinned by `test_plan.py` and `test_review_fixes.py:68`; referenced, not duplicated |
 | PH0-5 | every `examples/*.plan` (tracked, app-agnostic) parses to the same cases, expects `[]`. `plans/` is gitignored and local, so it is not used |
-| PH0-6 | the legacy run reports and replays (FakeDevice) without error and with today's rows |
+| PH0-6 | old runs: `legacy_run()` (built in the test, no real app content) reports against golden files; replay of an undeclared run is RPL-5 plus the existing `test_replay.py` |
 | PH0-7 | ui.html `layout` output for a legacy event list unchanged (node) |
 
 ## 4. L1 / L2 cases
@@ -107,13 +107,13 @@ names, exit codes), never full sentences, except the Phase 0 golden strings.
 | RUN-6 | `expects.plan`, `if` branch skips E2's check → case blocked naming E2; `run` exits 1 |
 | RUN-7 | all pass with all E verified → exit 0, `Result: all passed` |
 | RUN-8 | `run` prints the declared summary line (it survives `_stop()`'s filter) with `verified V/N` |
-| RUN-9 | `--from` continuation keeps `selection` from the first invocation; header says `10 of 10` |
+| RUN-9 | a full run continued with `--from` shows no selection header; `--only` then `--from` names both: `6 of 10 plan cases selected (--only TC-05, then --from TC-05)` |
 
 ### REP — report (TRD §4.5)
 
 | ID | Given → expect |
 |---|---|
-| REP-1 | declared summary line = today's line + additions only; zero counts omitted; live run shows `⏳ k pending` |
+| REP-1 | declared summary line = today's line + additions only; zero counts omitted; live run shows `◌ k pending` |
 | REP-7 | all cases pass but a case-less check failed → not green (`Result: failed`) |
 | REP-2 | Markdown: `Result: incomplete` when any not run/blocked/skipped; `failed` when only fails; `all passed` |
 | REP-3 | per-case expected results with ✅/❌/○ and the linked check text |
@@ -140,7 +140,7 @@ names, exit codes), never full sentences, except the Phase 0 golden strings.
 | UI-1 | `describe({type:"not_run"…})` → "TC-07 not run — reason" (node) |
 | UI-2 | `layout` gives `not_run` its own block kind, never inside a `say` group, in requested order |
 | UI-5 | `layout` skips `case_plan` (no `• case_plan` rows) |
-| UI-3 | `case_end` with `expects` states → row mentions `E2 not verified` |
+| UI-3 | covered by the case-end reason (`not verified: E2 …`, CLI-8/CLI-13); no separate rendering |
 | UI-4 | `/api/state` summary for a declared live run shows `requested` line |
 
 ## 5. Acceptance mapping

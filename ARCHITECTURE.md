@@ -568,7 +568,7 @@ Claude (and CI) can act on them without reading the output:
 | Code | Meaning | What to do |
 |---|---|---|
 | `0` | OK: the command worked; for `run` / `replay`, every case passed | Go on. |
-| `1` | Failed: a check failed, an element was not found, or an adb command failed | Read the output; for `run`, see the report. |
+| `1` | Failed: a check failed, an element was not found, or an adb command failed. For `run` / `replay`, any requested case that did not pass: fail, blocked (e.g. an expected result not verified) or not run | Read the output; for `run`, see the report. |
 | `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags, another process's run still in progress on the device) | Fix the line or the setup; nothing was tested. For a run in progress, wait for it or `./tnazar stop` it. |
 | `3` | Held: the user sent a dashboard message, so the command was **not run**. For `wait-message`: a message arrived | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. An *info* message (the dashboard already typed a secret) is shown without holding. |
 | `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |

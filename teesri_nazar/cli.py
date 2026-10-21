@@ -26,7 +26,7 @@ from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, adb_version, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
-from .judge import _end_case, evidence_shot
+from .judge import _end_case, close_run, evidence_shot
 from .session import (NAME_RE, Run, active_owner, clear_active, get_active, home, now_iso, runs_dir, set_active,
                       state_dir)
 from .targets import _not_found_msg, parse_target, resolve, selector_of
@@ -249,17 +249,8 @@ def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
         return None
     run, serial = active
     meta = run.meta()
-    # Before any device call: a device that fails cleanup must not leave a case open or lose a case.
-    if case := run.current_case():
-        events = run.events()
-        end = {"type": "case_end", "case": case, "status": "blocked", "reason": "run stopped before the case finished"}
-        if expects := coverage.expects_of(events, case):
-            checks = [e for e in rpt.case_events(events, case) if e["type"] == "check"]
-            end["expects"] = coverage.expectation_states(expects, checks)
-        run.log(end)
-    why = reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started"
-    for c in coverage.not_started(run.events()):
-        run.log({"type": "not_run", "case": c["id"], "title": c["title"], "reason": why})
+    close_run(run, "run stopped before the case finished",
+              reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started")
     try:
         adb = Adb(serial)
         dev.release_device(adb, device_owner_of(run))
@@ -534,7 +525,7 @@ def cmd_wait_online(args) -> int:
     return 0 if ok else EXIT_FAIL
 
 
-def _linked(ctx: Ctx, ids: list[str] | None) -> dict:
+def _for_fields(ctx: Ctx, ids: list[str] | None) -> dict:
     """`--for`: the expected results of the case in progress this check proves ({} without --for)."""
     if not ids:
         return {}
@@ -551,7 +542,7 @@ def _linked(ctx: Ctx, ids: list[str] | None) -> dict:
 
 def cmd_check(args) -> int:
     ctx = Ctx.from_args(args.device)
-    linked = _linked(ctx, args.for_)
+    linked = _for_fields(ctx, args.for_)
     if args.result:
         if not args.what:
             raise UserError("--what is required: say what was verified")
@@ -629,8 +620,7 @@ def cmd_case(args) -> int:
     if not ctx.run:
         raise UserError("cases need an active run: tnazar start <name>")
     if args.action == "plan":
-        ctx.log({"type": "case_plan", "case": args.id, "title": args.title or "", "expects": args.expect,
-                 "added": False})
+        ctx.log(coverage.case_plan(args.id, args.title or "", args.expect))
         listed = "; ".join(f"E{i} {text}" for i, text in enumerate(args.expect, 1))
         print(f"{args.id} planned" + (f": {listed}" if listed else ""))
         return 0
@@ -640,7 +630,7 @@ def cmd_case(args) -> int:
         dev.logcat_clear(ctx.adb)
         events = ctx.run.events()
         if coverage.declared(events) and all(c["id"] != args.id for c in coverage.requested(events)):
-            ctx.log({"type": "case_plan", "case": args.id, "title": args.title or "", "expects": [], "added": True})
+            ctx.log(coverage.case_plan(args.id, args.title or "", added=True))
         ctx.log({"type": "case_start", "case": args.id, "title": args.title or ""})
         print(f"case {args.id} started")
         return 0

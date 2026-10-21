@@ -254,6 +254,9 @@ class PlanExpectTest(unittest.TestCase):
                        '  else\n    check Y --for E2\n  end\n', "x.plan")
         self.assertEqual(len(p.cases[0].expects), 2)
 
+    def test_plan_5_an_abbreviated_for_is_validated_too(self):
+        self.assertIn("E9", parse_err('app a.b\ncase T1\n  expect "One"\n  check X --for E1\n  check Y --fo E9\n'))
+
     def test_plan_8_a_malformed_for_is_refused(self):
         for bad in ("X1", "E0", "E1,", "e1"):
             self.assertIn("line 4", parse_err(f'app a.b\ncase T1\n  expect "One"\n  check X --for {bad}\n'))
@@ -622,7 +625,24 @@ class PlanRunCoverageTest(PlanRunBase):
         self.assertEqual(self.not_run(run), {})
         self.assertEqual([c["id"] for c in coverage.requested(run.events())], [f"TC-{i:02d}" for i in range(1, 11)])
         self.assertTrue(rpt.summarize(run)["tally"]["green"])
-        self.assertNotIn("selected", rpt.to_markdown(run, rpt.summarize(run)))  # run_9
+        self.assertNotIn("selected", rpt.to_markdown(run, rpt.summarize(run)))  # run_9: all cases, no header
+
+    def test_run_9_only_then_from_names_both_selections(self):
+        path = self.write_plan(TEN.replace('case TC-05 "case 5"\n', 'case TC-05 "case 5"\n  say four\n'))
+        real_main = __import__("teesri_nazar.cli", fromlist=["main"]).main
+        posted = []
+
+        def main(argv):
+            if argv[:2] == ["say", "four"] and not posted:
+                posted.append(1)
+                live.post("stop here")
+            return real_main(argv)
+        with mock.patch("teesri_nazar.cli.main", main):
+            tnazar("run", path, "--only", "TC-05")
+        tnazar("run", path, "--from", "TC-05")
+        run = Run.load("demo")
+        md = rpt.to_markdown(run, rpt.summarize(run))
+        self.assertIn("6 of 10 plan cases selected (--only TC-05, then --from TC-05)", md)
 
     def test_run_5_only_requests_the_selected_case_and_says_so(self):
         out, run = self.run_plan(TEN, "--only", "TC-05")
@@ -700,6 +720,16 @@ class ReplayCoverageTest(ReplayTestCase):
         self.assertEqual((rows["TC-03"]["status"], rows["TC-03"]["reason"]), ("not_run", "not run in the recorded run"))
         self.assertIn("verified 1/3", out)
 
+    def test_rpl_5_an_undeclared_run_replays_exactly_as_before(self):
+        self.record_login()
+        self.fresh_device()
+        code, out, run = self.replay()
+        self.assertEqual(code, 0, out)
+        types = {e["type"] for e in run.events()}
+        self.assertFalse(types & {"case_plan", "not_run"})
+        self.assertIn("2 case(s): ✅ 2 pass  | checks 2/2 passed", out)
+        self.assertNotIn("verified", out)
+
     def test_rpl_6_new_events_add_no_steps_and_no_waits(self):
         self.record_declared()
         sleeps = []
@@ -719,6 +749,45 @@ class ReplayCoverageTest(ReplayTestCase):
         runs = sorted(p.name for p in Run.load("demo").path.parent.iterdir() if "-replay-" in p.name)
         run = Run.load(runs[-1])
         self.assertEqual({e["case"] for e in run.events() if e["type"] == "not_run"}, {"TC-02", "TC-03"})
+        end = [e for e in run.events() if e["type"] == "case_end" and e["case"] == "TC-01"][0]
+        self.assertEqual([x["state"] for x in end["expects"]], ["unverified", "unverified"])
+
+
+class OtherViewsTest(CaseCliBase):
+    """REP-6 / UI-4: every place that prints the summary line shows the declared one."""
+
+    def declared(self):
+        run = self.start()
+        self.ok("case", "plan", "TC-01")
+        self.ok("case", "plan", "TC-02")
+        self.ok("case", "start", "TC-01")
+        self.ok("check", "Login")
+        self.ok("case", "end")
+        return run
+
+    def test_ui_4_the_dashboard_summary_shows_pending_cases_live(self):
+        self.declared()
+        summary = ui.Dashboard(0).state()["active"]["summary"]
+        self.assertIn("◌ 1 pending", summary)
+        self.assertIn("verified 1/2", summary)
+
+    def test_rep_6_runs_and_report_print_the_declared_line(self):
+        run = self.declared()
+        self.ok("stop")
+        self.assertIn("○ 1 not run", self.ok("runs"))
+        self.assertIn("verified 1/2", self.ok("report", run.name))
+
+
+class AddedDuringRunReportTest(CaseCliBase):
+    def test_q12_a_case_added_during_the_run_is_marked_in_the_report(self):
+        run = self.start()
+        self.ok("case", "plan", "TC-01")
+        self.ok("case", "start", "TC-09", "Found while testing")
+        self.ok("check", "Login")
+        self.ok("case", "end")
+        self.ok("stop")
+        md = (run.path / "report.md").read_text()
+        self.assertIn("| TC-09 | Found while testing (added during run) |", md)
 
 
 @unittest.skipUnless(shutil.which("node"), "needs node to run the dashboard's describe() and layout()")
