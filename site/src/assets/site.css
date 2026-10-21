@@ -435,7 +435,7 @@ article.release.prose h1 { margin-top: 0.75rem; }
 @media (max-width: 59.99rem) {
   .docs-nav { display: flex; gap: 0.25rem; align-items: baseline; position: relative; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
   .docs-nav::-webkit-scrollbar { display: none; }
-  .docs-nav .docs-link { white-space: nowrap; flex-shrink: 0; }
+  .docs-nav .docs-link { white-space: nowrap; }
   .docs-group { display: none; }
   .docs-nav ul { display: contents; }
 }
