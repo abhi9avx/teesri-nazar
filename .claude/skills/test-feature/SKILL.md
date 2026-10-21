@@ -15,17 +15,25 @@ Follow `CLAUDE.md` (the playbook). In short:
    and prints the fix for each problem. Exit 2 → follow its `fix:` lines (or tell the user
    the ones only they can do, such as accepting the USB debugging prompt). One ready device →
    use it. Several → ask which one.
-3. **Plan.** Numbered cases `TC-NN` with steps, expected result and verification type
-   (ui / db / figma), plus added edge cases and an explicit "not testing" list.
+3. **Plan.** Numbered cases `TC-NN` with steps, expected results (E1, E2…: one per outcome
+   the case must prove) and verification type (ui / db / figma), plus added edge cases and an
+   explicit "not testing" list. Test cases given as a table or CSV/Markdown file:
+   `./tnazar cases import <file|-> --app <pkg> [--columns …]` keeps every case and its ID in a
+   draft plan; note each case's account and log in as it. Before running, show
+   `./tnazar plan review plans/<name>.plan` (every expected result and what proves it).
    Wait for approval unless the user said to go ahead.
 4. **Run.** Check the app map first (`./tnazar flows`; `./tnazar flow <name>` runs a saved
    route). Explore the screens the cases touch (`observe`), save new routes as `flow`s, write `plans/<name>.plan`
-   (format: `teesri_nazar/plan.py`, example `examples/settings.plan`), then
+   (format: `teesri_nazar/plan.py`, example `examples/settings.plan`; each expected result
+   is an `expect` line proven by a `check ... --for E<n>`), then
    `./tnazar run plans/<name>.plan` in the background. Exit 1 = a case failed, 2 = plan
    or setup error, 3 = the user sent a dashboard message: act on it, then `--from <case>`
    (all codes: `ARCHITECTURE.md` §11). Re-run one case with `--only`. Keep going after a failure; a failed
    case doesn't stop the run. If a precondition breaks (login, backend down), mark the
    dependent cases `blocked` with the reason.
-5. **Finish.** `./tnazar stop`, then report in chat: summary line, case table
+   Driving by hand instead: `./tnazar case plan TC-NN "title" --expect …` for every planned
+   case first, so a case that never runs is still reported.
+5. **Finish.** `./tnazar stop`, then report in chat: summary line with `verified N/M`, case table
+   of every requested case
    (id, title, result, reason), each failure with expected vs actual and the screenshot
    path, bugs found, what was not tested, and the `report.html` path.

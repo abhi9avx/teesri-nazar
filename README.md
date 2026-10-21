@@ -110,7 +110,12 @@ Login with the test user and verify the home screen loads.
 | `./tnazar tap "Pay now"` | Tap by text (or `id=...`, `desc=...`, `#index`) |
 | `./tnazar type --env APP_MPIN --into id=pin` | Type a secret from `.env` |
 | `./tnazar check "Payment successful"` | Verify something is on screen (exact match; `'~text'` for partial) |
+| `./tnazar cases import cases.csv --app <pkg>` | Bring test cases from a sheet (CSV, TSV pasted from a spreadsheet, or a Markdown table) into a draft plan, keeping their IDs |
+| `./tnazar plan review plans/x.plan` | Every case, its expected results and the check proving each; all gaps at once |
+| `./tnazar observe --full` | Whole texts, never cut (long messages, chat replies) |
+| `./tnazar case plan TC-01 "title" --expect "…"` | Declare a case and its expected results before testing, so it is reported even if it never runs |
 | `./tnazar case start TC-01 "title"` / `case end` | Group steps into a test case |
+| `./tnazar check "₹500" --for E1` | A check that proves the case's expected result E1 |
 | `./tnazar stop` | Finish and write the report |
 | `./tnazar run plans/x.plan` | Run every case of a plan file in one go (no AI turn per step) |
 | `./tnazar flows` | List the saved routes (the app map: `flow`s in `plans/*.plan` for the run's app) |

@@ -20,9 +20,9 @@ import io
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from . import cli, live
+from . import cli, coverage, live
 from . import device as dev
 from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
 from .session import Run, claim_active, get_active
@@ -35,6 +35,7 @@ DETAIL_LINES = 6
 class Failed:
     detail: str
     code: int = 1  # the failing step's exit code
+    flows: list = field(default_factory=list)  # every flow the failing step was inside, innermost first
 
 
 @dataclass
@@ -70,6 +71,10 @@ def run(args) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return cli.EXIT_ERROR
         claim_active()
+        sel = active[0].meta().get("selection") or {}
+        if sel.get("how") and (args.only or args.from_):  # a selection's continuation: name both
+            more = f"--only {args.only}" if args.only else f"--from {args.from_}"
+            active[0].update_meta(selection={**sel, "how": f"{sel['how']}, then {more}"})
     else:
         device = ["--device", args.device] if getattr(args, "device", None) else []
         code, out = call([*device, "start", p.name, "--package", p.app, "--prompt", f"plan {os.path.basename(path)}"])
@@ -77,21 +82,34 @@ def run(args) -> int:
             why = "; ".join(ln.strip().removeprefix("error: ") for ln in out.splitlines() if ln.strip())
             print(f"setup error: {why or 'tnazar start failed'}", file=sys.stderr)
             return cli.EXIT_ERROR
-        get_active()[0].update_meta(plan=path)
+        how = f"--only {args.only}" if args.only else f"--from {args.from_}" if args.from_ else ""
+        get_active()[0].update_meta(plan=path, selection={"plan_cases": len(p.cases), "how": how})
     the_run = get_active()[0]
+    for case in cases:  # requested before any runs, so a case that never starts still has a row
+        the_run.log(coverage.case_plan(case.id, case.title, case.expects))
     print(f"plan {p.name}: {len(cases)} case(s) on {p.app}")
 
     failed = False
     since = live.Since()
+    broken: dict[str, list[str]] = {}  # flow -> the cases it failed in, in a row
     for case in cases:
         began = time.monotonic()
+        needs = _flows_used(case.body, p.flows)
+        if dead := [f for f in needs if len(broken.get(f, [])) >= 2]:
+            why = "; ".join(f"flow {f} (failed in {', '.join(broken[f])})" for f in dead)
+            _block(the_run, case, f"precondition failed: {why}")
+            print(f"{case.id:8} BLOCKED  precondition failed: {why}")
+            failed = True
+            continue
         # "--": a title (or id) starting with "-" is not an option.
         call(["case", "start", "--", case.id] + ([case.title] if case.title else []))
         try:
-            result = Executor(p, the_run, case.id, since).body(case.body)
+            executor = Executor(p, the_run, case.id, since)
+            result = executor.body(case.body)
         except Exception as exc:  # noqa: BLE001 - whatever broke, the run must not stay open
             call(["case", "end", "blocked", "--reason", f"error: {exc}"])
             print(f"{case.id:8} BLOCKED  error: {exc}")
+            the_run.update_meta(stop_reason=f"run stopped at {case.id}: error: {exc}")
             _stop()
             return cli.EXIT_ERROR
         if isinstance(result, HandedBack):
@@ -102,6 +120,11 @@ def run(args) -> int:
             return live.EXIT_HELD
         call(["case", "end"])
         status = _last_status(the_run, case.id)
+        for f in needs:
+            if isinstance(result, Failed) and f in result.flows:
+                broken.setdefault(f, []).append(case.id)
+            elif f in executor.completed:  # it worked here: not a broken precondition any more
+                broken.pop(f, None)
         print(f"{case.id:8} {status.upper():7} {time.monotonic() - began:5.1f}s  {case.title}")
         if isinstance(result, Failed):
             print(indent(result.detail))
@@ -109,6 +132,7 @@ def run(args) -> int:
             failed = True
             if args.stop_on_fail:
                 print("stopping at the first failed case (--stop-on-fail)")
+                the_run.update_meta(stop_reason=f"--stop-on-fail after {case.id}")
                 break
     _stop()
     return cli.EXIT_FAIL if failed else 0
@@ -125,6 +149,7 @@ class Executor:
     def __init__(self, plan: Plan, the_run: Run, case_id: str, since: live.Since):
         self.plan, self.run, self.case_id, self.since = plan, the_run, case_id, since
         self.failed_checks = 0
+        self.completed: set[str] = set()  # flows that ran to their end in this case
 
     def long_pause(self) -> Paused | None:
         """The user kept the run paused past PAUSE_WAIT: keep waiting (None) or give the turn back."""
@@ -141,7 +166,12 @@ class Executor:
 
     def item(self, item, record: bool):
         if isinstance(item, RunFlow):
-            return self.body(self.plan.flows[item.flow].body, record)
+            result = self.body(self.plan.flows[item.flow].body, record)
+            if isinstance(result, Failed):
+                result.flows.append(item.flow)
+            elif result is None:
+                self.completed.add(item.flow)
+            return result
         if isinstance(item, If):
             held = self.hold()
             if held:
@@ -214,6 +244,28 @@ class Executor:
         stats: dict = {}
         found, _, _ = dev.wait_for(adb, sel, wait, stats=stats, alternatives=others)
         return found, stats["polls"]
+
+
+def _flows_used(body: list, flows: dict, seen: frozenset = frozenset()) -> list[str]:
+    """The flows a case always runs, and those they run. A flow in an `if` branch may not be
+    needed (the screen decides), so it never blocks the case."""
+    out: list[str] = []
+    for item in body:
+        if isinstance(item, RunFlow) and item.flow not in seen:
+            out += [item.flow] + _flows_used(flows[item.flow].body, flows, seen | {item.flow})
+        elif isinstance(item, Retry):
+            out += _flows_used(item.body, flows, seen)
+    return list(dict.fromkeys(out))
+
+
+def _block(the_run: Run, case: Case, reason: str) -> None:
+    """End a case unrun: no device call, so a dead precondition costs nothing per case."""
+    events = the_run.events()
+    the_run.log({"type": "case_start", "case": case.id, "title": case.title})
+    end = {"type": "case_end", "case": case.id, "status": "blocked", "reason": reason}
+    if expects := coverage.expects_of(events, case.id):
+        end["expects"] = coverage.expectation_states(expects, [])
+    the_run.log(end)
 
 
 def _select(cases: list[Case], only: str | None, start: str | None) -> list[Case]:

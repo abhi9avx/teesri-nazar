@@ -87,7 +87,7 @@ const out = [];
 for (const b of layout({json.dumps(events)})) {{
   if (b.kind === "group") {{ out.push("» " + b.e.text); for (const s of b.steps) out.push(describe(s)[1]); }}
   else if (b.kind === "user") out.push("You: " + b.e.text);
-  else if (b.kind === "step") out.push(describe(b.e)[1]);
+  else if (b.kind === "step" || b.kind === "not_run") out.push(describe(b.e)[1]);
 }}
 console.log(JSON.stringify(out));""")
         return json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
@@ -167,6 +167,18 @@ console.log(JSON.stringify(out));""")
         self.check("DA-08", 0 <= say_at < miss_at, "your message is drawn before the steps that came after it")
         self.check("DA-09", 'Tap "Search" (partial)' in lines and "You typed the OTP from the dashboard (hidden)" in lines
                    and not any("timed out" in ln for ln in lines), "timeline lines are plain words")
+
+        # DA-14: a declared case that never started is a row once the run ends
+        self.tn("case", "plan", "SMOKE-1", "Ran")
+        self.tn("case", "plan", "SMOKE-2", "Never started")
+        self.tn("case", "start", "SMOKE-1")
+        self.tn("check", "--result", "pass", "--kind", "other", "--what", "smoke case ran")
+        self.tn("case", "end")
+        code, out = self.tn("stop")
+        self.check("DA-14", code == 0 and "○ 1 not run" in out and "verified 1/2" in out,
+                   "stop counts the case that never started")
+        lines = self.timeline()
+        self.check("DA-14", "SMOKE-2 Never started: not run" in lines, "the dashboard shows it as a not-run row")
         return 0 if all(ok for _, ok, _ in self.results) else 1
 
     def close(self) -> None:

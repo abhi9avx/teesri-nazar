@@ -10,9 +10,10 @@ A plan is the tnazar commands a tester would type, without the `./tnazar` prefix
     end
 
     case TC-01 "Network page opens"   # a case runs until the next `case`, `flow` or the end
+      expect "Internet settings show" # optional: expected results E1, E2… before the steps
       launch --restart
       run open_network
-      check "Internet"
+      check "Internet" --for E1       # proves E1; every `expect` needs a `check --for` in its case
       retry 2                         # repeat until every step in it passes
         ...
       end
@@ -22,7 +23,11 @@ A plan is the tnazar commands a tester would type, without the `./tnazar` prefix
         ...
       end
 
-Lines starting with `#` are comments. Indentation is for people; blocks close with `end`.
+Lines starting with `#` are comments (a line, never the end of a step). Indentation is for
+people; blocks close with `end`. An expected result whose linked check did not run (an `if`
+branch not taken) ends its case blocked, naming it; flows cannot link expected results.
+`tnazar run` records the selected cases first, so a case that never starts (an error,
+`--stop-on-fail`) is still in the report, as not run.
 The whole file is checked before anything runs, so a typo never reaches the device.
 
 `wait A --or B` is a step like any other: when B shows up instead of A it fails (exit 4),
@@ -112,6 +117,8 @@ class Case:
     id: str
     title: str
     body: list = field(default_factory=list)
+    expects: list = field(default_factory=list)       # expected results E1, E2… in order
+    expect_lines: list = field(default_factory=list)  # the plan line of each, for errors
 
 
 @dataclass
@@ -120,15 +127,21 @@ class Plan:
     name: str
     flows: dict[str, Flow]
     cases: list[Case]
+    gaps: list = field(default_factory=list)  # draft only: what still keeps it from running
 
 
-def load(path: str | Path, flows_only: bool = False) -> Plan:
+def load(path: str | Path, flows_only: bool = False, draft: bool = False) -> Plan:
     p = Path(path)
-    return parse(p.read_text(), str(p), flows_only)
+    return parse(p.read_text(), str(p), flows_only, draft)
 
 
-def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
-    """flows_only: an app map (`tnazar flow`) may hold flows and no case."""
+def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool = False) -> Plan:
+    """flows_only: an app map (`tnazar flow`) may hold flows and no case.
+
+    draft: a plan still being written (`plan review`, `cases import`): every completeness gap (no
+    steps, no check, an unproven `expect`, a wrong `--for`) is listed in `Plan.gaps` instead of
+    stopping at the first. Syntax errors still stop at once.
+    """
     app = name = ""
     flows: dict[str, Flow] = {}
     cases: list[Case] = []
@@ -185,6 +198,13 @@ def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
             if stack[-1] is opened[-1][1].other:
                 fail(n, f"a second `else` for the `if` on line {opened[-1][0]}")
             stack[-1] = opened[-1][1].other
+        elif head == "expect":
+            if not isinstance(top, Case) or opened or top.body:
+                fail(n, "`expect` belongs directly inside a `case`, before its first step")
+            if len(args) != 1 or not args[0].strip():
+                fail(n, 'use `expect "<one expected result>"`')
+            top.expects.append(args[0])
+            top.expect_lines.append(n)
         elif top is None:
             fail(n, "steps belong inside a `case` or a `flow`")
         elif head == "retry":
@@ -229,15 +249,61 @@ def parse(text: str, source: str = "plan", flows_only: bool = False) -> Plan:
         raise PlanError(f"{source}: the plan needs `app <package>` at the top")
     if not cases and not flows_only:
         raise PlanError(f"{source}: the plan has no `case`")
+    gaps: list[str] = []
+
+    def gap(n: int, msg: str) -> None:
+        if not draft:
+            fail(n, msg)
+        gaps.append(f"{source} line {n}: {msg}")
+
     for c in cases:
         if not c.body:
-            fail(c.line, f"case {c.id} has no steps")
+            gap(c.line, f"case {c.id} has no steps")
     for owner in [*flows.values(), *cases]:
         _check_flows(owner.body, flows, [getattr(owner, "name", None)], source)
     for c in cases:
-        if not _has_check(c.body, flows):
-            fail(c.line, f"case {c.id} has no `check`: a case that verifies nothing ends as blocked")
-    return Plan(app, name or Path(source).stem, flows, cases)
+        if c.body and not _has_check(c.body, flows):
+            gap(c.line, f"case {c.id} has no `check`: a case that verifies nothing ends as blocked")
+    for f in flows.values():
+        for step in _checks(f.body):
+            if _for_ids(step.argv):
+                gap(step.line, f"flow `{f.name}`: a flow's checks are shared by cases; "
+                               "link expected results with `check --for` in the case itself")
+    for c in cases:
+        linked: set[str] = set()
+        for step in _checks(c.body):
+            for eid in _for_ids(step.argv):
+                if int(eid[1:]) > len(c.expects):
+                    gap(step.line, f"case {c.id} has no {eid}: it lists {len(c.expects)} `expect` line(s)")
+                linked.add(eid)
+        for i, (text, line) in enumerate(zip(c.expects, c.expect_lines), 1):
+            if f"E{i}" not in linked:
+                gap(line, f"case {c.id}: E{i} \"{text}\" has no `check ... --for E{i}`")
+    return Plan(app, name or Path(source).stem, flows, cases, gaps)
+
+
+def review(p: Plan) -> tuple[str, bool]:
+    """Every case, each expected result and the checks that prove it, then every gap: (text, ready)."""
+    out = []
+    for c in p.cases:
+        out.append(f"{c.id}  {c.title}".rstrip())
+        proof: dict[str, list[str]] = {}
+        for step in _checks(c.body):
+            for eid in _for_ids(step.argv):
+                proof.setdefault(eid, []).append(f"line {step.line}: {step.summary()}")
+        for i, text in enumerate(c.expects, 1):
+            by = proof.get(f"E{i}")
+            out.append(f"  E{i} {text}  <- " + ("; ".join(by) if by else "NOT PROVEN"))
+        if not c.expects:
+            checks = sum(1 for _ in _checks(c.body))
+            out.append(f"  (no expected results listed; {checks} check(s))")
+    out.append("")
+    if p.gaps:
+        out += [f"{len(p.gaps)} gap(s): not ready to run"] + [f"  {g}" for g in p.gaps]
+    else:
+        n = sum(len(c.expects) for c in p.cases)
+        out.append(f"ready to run: {len(p.cases)} case(s), {n} expected result(s), every one proven")
+    return "\n".join(out), not p.gaps
 
 
 def _count(args: list[str]) -> int | None:
@@ -281,6 +347,24 @@ def _has_check(body: list, flows: dict[str, Flow], seen: frozenset = frozenset()
         if isinstance(item, If) and (_has_check(item.then, flows, seen) or _has_check(item.other, flows, seen)):
             return True
     return False
+
+
+def _checks(body: list):
+    """The `check` steps written in this body, inside `if`/`else` too (a `retry` holds none)."""
+    for item in body:
+        if isinstance(item, Step) and item.argv[0] == "check":
+            yield item
+        elif isinstance(item, If):
+            yield from _checks(item.then)
+            yield from _checks(item.other)
+        elif isinstance(item, Retry):
+            yield from _checks(item.body)
+
+
+def _for_ids(argv: list[str]) -> list[str]:
+    """The expected results a `check` step links, read by the CLI's own parser (already validated)."""
+    from .cli import build_parser
+    return build_parser().parse_args(argv).for_ or []
 
 
 def _check_args(words: list[str], fail) -> None:

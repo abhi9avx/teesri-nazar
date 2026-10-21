@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Teesri Nazar · legacy</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--muted:#5f5f66;--line:#e5e5ea;--card:#f7f7f9;--pass:#1a7f37;--fail:#cf222e;--block:#9a6700;--link:#0b57d0}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#ececf1;--muted:#b4b4bd;--line:#2a2a30;--card:#1a1a1e;--pass:#3fb950;--fail:#ff7b72;--block:#e3b341;--link:#8ab4f8}}
+a{color:var(--link)}a:visited{color:var(--link)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
+.muted{color:var(--muted)}table{border-collapse:collapse;width:100%;margin:8px 0}@media (max-width:400px){table td,table th{padding:6px 4px}}td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid currentColor}
+.pass{color:var(--pass)}.fail{color:var(--fail)}.blocked,.running{color:var(--block)}.skipped{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
+.shots{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;align-items:flex-start}
+.shot{margin:0;max-width:150px}.shot img{height:300px;max-width:150px;object-fit:contain;border:1px solid var(--line);border-radius:6px;display:block}
+.shot figcaption{font-size:12px;margin-top:4px;color:var(--muted);overflow-wrap:anywhere}
+.shot.failed img{border:3px solid var(--fail)}.shot.failed figcaption{color:var(--fail);font-weight:600}
+ul{margin:6px 0;padding-left:20px}code{font-size:13px}
+.tiles{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+.tile b{display:block;font-size:22px}
+</style></head><body><main>
+<h1>Teesri Nazar · legacy</h1>
+<div class="muted">com.example.app 1.0 · Pixel (fake-1) Android 15
+· 2026-10-21T10:00:00.000Z · 5m 00s</div>
+<p><b>Request:</b> test login</p><div class="tiles"><div class='tile pass'><b>1</b>pass</div><div class='tile fail'><b>1</b>fail</div><div class='tile blocked'><b>1</b>blocked</div><div class='tile skipped'><b>1</b>skipped</div></div>
+<p class="muted">checks 2/3 passed</p>
+<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th><th>Reason</th></tr><tr><td><a href='#c-TC-01'>TC-01</a></td><td>Login works</td><td><span class='pill pass'>pass</span></td><td>1/1</td><td></td></tr><tr><td><a href='#c-TC-02'>TC-02</a></td><td>Wrong MPIN</td><td><span class='pill fail'>fail</span></td><td>0/1</td><td>failed: attempts incremented</td></tr><tr><td><a href='#c-TC-03'>TC-03</a></td><td>Offline</td><td><span class='pill blocked'>blocked</span></td><td>0/0</td><td>network down</td></tr><tr><td><a href='#c-TC-04'>TC-04</a></td><td>Out of scope</td><td><span class='pill skipped'>skipped</span></td><td>0/0</td><td>not in this release</td></tr><tr><td><a href='#c--'>-</a></td><td>outside any case</td><td><span class='pill pass'>pass</span></td><td>1/1</td><td></td></tr></table>
+<h2>Details</h2><div class='card' id='c-TC-01'><div><span class='pill pass'>pass</span> <b>TC-01</b> Login works <span class='muted'>· 1 steps 30s</span></div><ul><li class='pass'>✅ [ui] Home visible</li></ul><div class='shots'><figure class='shot'><a href='shots/a.png'><img loading='lazy' src='shots/a.png' alt='✅ Home visible'></a><figcaption title='Home visible'>✅ Home visible</figcaption></figure></div></div><div class='card' id='c-TC-02'><div><span class='pill fail'>fail</span> <b>TC-02</b> Wrong MPIN <span class='muted'>· 0 steps 30s</span></div><div class='muted'>failed: attempts incremented</div><ul><li class='fail'>❌ [db] attempts incremented — got 0</li><li>📝 <b>bug</b>: no error shown</li><li>evidence: <a href='logs/l.txt'>logs/l.txt</a></li></ul><div class='shots'><figure class='shot failed'><a href='shots/b.png'><img loading='lazy' src='shots/b.png' alt='❌ Screen when the case ended'></a><figcaption title=''>❌ Screen when the case ended</figcaption></figure></div></div><div class='card' id='c-TC-03'><div><span class='pill blocked'>blocked</span> <b>TC-03</b> Offline <span class='muted'>· 0 steps 10s</span></div><div class='muted'>network down</div></div><div class='card' id='c-TC-04'><div><span class='pill skipped'>skipped</span> <b>TC-04</b> Out of scope <span class='muted'>· 0 steps 10s</span></div><div class='muted'>not in this release</div></div><div class='card' id='c--'><div><span class='pill pass'>pass</span> <b>-</b> outside any case <span class='muted'>· 0 steps </span></div><ul><li class='pass'>✅ [ui] loose check</li></ul></div>
+</main></body></html>

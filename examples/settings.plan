@@ -9,21 +9,24 @@ flow home
 end
 
 case TC-01 "Network & internet opens"
+  expect "The Network & internet page shows Internet"
+  expect "Back returns to the Settings list"
   run home
   say "Opening Network & internet"
   tap "Network & internet"
-  check "Internet"
+  check "Internet" --for E1
   key back
-  check "Search Settings"
+  check "Search Settings" --for E2
 
 case TC-02 "Search finds Wi-Fi settings"
+  expect "Searching wifi lists Wi-Fi"
   run home
   tap "Search Settings"
   retry 2
     type "wifi" --into id=open_search_view_edit_text --clear
     wait "~Wi-Fi" --timeout 5
   end
-  check "~Wi-Fi"
+  check "~Wi-Fi" --for E1
 
 case TC-03 "Back from search returns to Settings"
   if "Search Settings"

@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from pathlib import Path
 
 from . import __version__
 from . import commands
+from . import coverage
 from . import device as dev
 from . import doctor
 from . import live
@@ -24,7 +26,7 @@ from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, adb_version, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
-from .judge import _end_case, evidence_shot
+from .judge import _end_case, close_run, evidence_shot
 from .session import (NAME_RE, Run, active_owner, clear_active, get_active, home, now_iso, runs_dir, set_active,
                       state_dir)
 from .targets import _not_found_msg, parse_target, resolve, selector_of
@@ -155,7 +157,7 @@ def cmd_start(args) -> int:
         raise UserError("run name must be letters, digits, '-' or '_' (max 64)")
     if active := get_active():
         refuse_if_owned(active[0])
-        finish_run(quiet=True)
+        finish_run(quiet=True, reason="run closed by a new tnazar start")
     serial = pick_serial(args.device)
     adb = Adb(serial)
     took_over = check_device_owner(adb, serial, args.take_over)
@@ -241,21 +243,20 @@ def refuse_if_owned(run: Run) -> None:
         raise UserError(f"a run is in progress on this device: {run.name} (pid {pid}); stop it or wait")
 
 
-def finish_run(quiet: bool = False) -> Run | None:
+def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     active = get_active()
     if not active:
         return None
     run, serial = active
     meta = run.meta()
+    close_run(run, "run stopped before the case finished",
+              reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started")
     try:
         adb = Adb(serial)
         dev.release_device(adb, device_owner_of(run))
         uia2.stop(adb)
         if meta.get("animations_before"):
             dev.animations_restore(adb, meta["animations_before"])
-        if run.current_case():
-            run.log({"type": "case_end", "case": run.current_case(), "status": "blocked",
-                     "reason": "run stopped before the case finished"})
     except AdbError as exc:
         print(f"warning: device cleanup skipped: {exc}", file=sys.stderr)
     learned = _learn(run, meta)
@@ -331,7 +332,7 @@ def cmd_open_url(args) -> int:
 def cmd_observe(args) -> int:
     ctx = Ctx.from_args(args.device)
     screen = ctx.capture()
-    print_screen(screen, args.all)
+    print_screen(screen, args.all, args.full)
     if sid := ctx.stamp(screen):
         ctx.log({"type": "seen", "sid": sid})
     if ctx.run:
@@ -342,12 +343,12 @@ def cmd_observe(args) -> int:
     return 0
 
 
-def print_screen(screen: scr.Screen, everything: bool = False) -> None:
+def print_screen(screen: scr.Screen, everything: bool = False, full: bool = False) -> None:
     shown = screen.elements if everything else screen.interesting()
     print(f"screen: {screen.package or '?'}  {len(screen.elements)} elements ({len(shown)} shown)")
     values = secret_values()
     for e in shown:
-        print(describe(e, values))
+        print(describe(e, values, full))
 
 
 def _missed(ctx: "Ctx", event: dict, exc: NotFound) -> NotFound:
@@ -524,14 +525,30 @@ def cmd_wait_online(args) -> int:
     return 0 if ok else EXIT_FAIL
 
 
+def _for_fields(ctx: Ctx, ids: list[str] | None) -> dict:
+    """`--for`: the expected results of the case in progress this check proves ({} without --for)."""
+    if not ids:
+        return {}
+    case = ctx.run.current_case() if ctx.run else None
+    if not case:
+        raise UserError("--for needs a case in progress: tnazar case start <id>")
+    have = len(coverage.expects_of(ctx.run.events(), case))
+    missing = [i for i in ids if int(i[1:]) > have]
+    if missing:
+        raise UserError(f"case {case} has no {', '.join(missing)}: it has {have} expected result(s) "
+                        f"(declare them with `case plan {case} --expect ...`)")
+    return {"for": ids}
+
+
 def cmd_check(args) -> int:
     ctx = Ctx.from_args(args.device)
+    linked = _for_fields(ctx, args.for_)
     if args.result:
         if not args.what:
             raise UserError("--what is required: say what was verified")
         ok = args.result == "pass"
         event = {"type": "check", "kind": args.kind, "ok": ok, "what": args.what,
-                 "detail": args.detail or ""}
+                 "detail": args.detail or "", **linked}
         if args.shot and (shot := evidence_shot(ctx, f"check-{args.kind}")):
             event["shot"] = shot
         ctx.log(event)
@@ -550,7 +567,8 @@ def cmd_check(args) -> int:
     what = args.what or _describe_check(sel, args)
     label = "pass" if ok else "fail"
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
-             "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls")}
+             "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls"),
+             **linked}
     if screen is not None:
         # Same screen, same fingerprint: the report shows one screenshot for all its checks.
         event["screen_sig"] = hashlib.sha1(screen.signature().encode()).hexdigest()[:12]
@@ -567,6 +585,17 @@ def cmd_check(args) -> int:
     if not ok and not args.gone and el is None:
         print(_not_found_msg(sel, screen).split("\n", 1)[1])
     return 0 if ok else EXIT_FAIL
+
+
+EXPECTED_ID = re.compile(r"^E[1-9][0-9]*$")
+
+
+def expected_ids(value: str) -> list[str]:
+    """`--for E1,E2` -> ["E1", "E2"]: the case's expected results, numbered by order."""
+    ids = value.split(",")
+    if not all(EXPECTED_ID.match(i) for i in ids):
+        raise argparse.ArgumentTypeError(f"--for takes expected results like E1 or E1,E2, not {value!r}")
+    return list(dict.fromkeys(ids))
 
 
 def _describe_check(sel: scr.Selector, args) -> str:
@@ -590,10 +619,18 @@ def cmd_case(args) -> int:
     ctx = Ctx.from_args(args.device)
     if not ctx.run:
         raise UserError("cases need an active run: tnazar start <name>")
+    if args.action == "plan":
+        ctx.log(coverage.case_plan(args.id, args.title or "", args.expect))
+        listed = "; ".join(f"E{i} {text}" for i, text in enumerate(args.expect, 1))
+        print(f"{args.id} planned" + (f": {listed}" if listed else ""))
+        return 0
     if args.action == "start":
         if ctx.run.current_case():
             _end_case(ctx, None, "next case started without an explicit result")
         dev.logcat_clear(ctx.adb)
+        events = ctx.run.events()
+        if coverage.declared(events) and all(c["id"] != args.id for c in coverage.requested(events)):
+            ctx.log(coverage.case_plan(args.id, args.title or "", added=True))
         ctx.log({"type": "case_start", "case": args.id, "title": args.title or ""})
         print(f"case {args.id} started")
         return 0
@@ -700,6 +737,65 @@ def cmd_runs(args) -> int:
     return 0
 
 
+def cmd_cases(args) -> int:
+    from . import intake
+    from . import plan as plan_mod
+    text = sys.stdin.read() if args.source == "-" else Path(args.source).read_text(encoding="utf-8-sig")
+    name = args.name or ("imported" if args.source == "-" else re.sub(r"[^A-Za-z0-9_-]+", "-", Path(args.source).stem))
+    if not NAME_RE.match(name):
+        raise UserError(f"--name: {name!r} must be letters, digits, '-' or '_'")
+    target = Path(args.out) if args.out else home() / "plans" / f"{name}.plan"
+    if target.exists() and not args.force:
+        raise UserError(f"{target} exists: pass --force to replace it, or --out <file>")
+    try:
+        report: dict = {}
+        cases = intake.read(text, args.columns, report)
+    except intake.IntakeError as exc:
+        raise UserError(str(exc))
+    if not cases:
+        raise UserError("no test cases found in the input")
+    source = "stdin" if args.source == "-" else Path(args.source).name
+    draft = intake.to_plan(cases, args.app, name, source)
+    try:
+        gaps = plan_mod.parse(draft, str(target), draft=True).gaps
+    except plan_mod.PlanError as exc:
+        raise UserError(f"the imported cases do not make a valid plan, nothing written: {exc}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(draft)
+    expects = sum(len(c.expects) for c in cases)
+    print(f"wrote {target}: {len(cases)} case(s), {expects} expected result(s)")
+    if report["headings"]:
+        print(f"section headings: {'; '.join(report['headings'])} (rows with only their first cell filled)")
+    if report["joined"]:
+        print(f"lines joined into a cell above (a line break without quotes): {', '.join(report['joined'])}: check them")
+    if report["short"]:
+        print(f"rows with fewer cells than the header: {', '.join(report['short'])}: check them")
+    if report["not_copied"]:
+        print(f"columns not copied (they look like secrets): {', '.join(report['not_copied'])}")
+    if missing := [c.id for c in cases if not c.expects]:
+        print(f"no expected result in: {', '.join(missing)} (add `expect` lines before writing checks)")
+    accounts: dict[str, list[str]] = {}
+    for c in cases:
+        if c.fields.get("account"):
+            accounts.setdefault(c.fields["account"], []).append(c.id)
+    if accounts:
+        print("accounts: " + ", ".join(f"{a} ({', '.join(ids)})" for a, ids in accounts.items())
+              + "  (log in as each account before its cases)")
+    print(f"next: write each case's steps and checks, then `./tnazar plan review {target}` ({len(gaps)} gap(s) now)")
+    return 0
+
+
+def cmd_plan(args) -> int:
+    from . import plan as plan_mod
+    try:
+        p = plan_mod.load(args.plan, draft=True)
+    except (plan_mod.PlanError, OSError) as exc:
+        raise UserError(str(exc))
+    text, ready = plan_mod.review(p)
+    print(text)
+    return 0 if ready else EXIT_FAIL
+
+
 def cmd_run(args) -> int:
     from . import runner
     return runner.run(args)
@@ -785,6 +881,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("observe", cmd_observe, "list what is on screen (elements, ids, centers)")
     p.add_argument("--all", action="store_true", help="include unlabelled layout nodes")
+    p.add_argument("--full", action="store_true", help="print whole texts, never cut (long messages, chat replies)")
     p.add_argument("--shot", action="store_true", help="also save a screenshot")
     p.add_argument("--label", help="name for saved artifacts")
 
@@ -845,15 +942,38 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--what", help="the expectation, in words")
     p.add_argument("--detail", help="evidence: query + result, mismatch details, ...")
     p.add_argument("--shot", action="store_true", help="attach a screenshot to a manual check")
+    p.add_argument("--for", dest="for_", type=expected_ids, metavar="E1[,E2]",
+                   help="the expected result(s) of the case this check proves")
 
     p = add("shot", cmd_shot, "save a screenshot as evidence")
     p.add_argument("label", nargs="?")
+
+    p = add("cases", cmd_cases, "bring test cases from a sheet into a draft plan")
+    csub2 = p.add_subparsers(dest="action", required=True)
+    ci = csub2.add_parser("import", help="CSV, TSV (pasted from a sheet) or a Markdown table -> plans/<name>.plan")
+    ci.add_argument("source", help="the file, or - to read pasted text from stdin")
+    ci.add_argument("--app", required=True, help="the app's package, e.g. com.example.app")
+    ci.add_argument("--name", help="plan name (default: the file name)")
+    ci.add_argument("--out", help="where to write the draft (default: plans/<name>.plan)")
+    ci.add_argument("--columns", help="column names in order, for a table without a header row "
+                                      "(e.g. title,description,precondition,steps,data,expected,priority,status,account)")
+    ci.add_argument("--force", action="store_true", help="replace an existing plan file")
+
+    p = add("plan", cmd_plan, "check a plan file before running it")
+    psub = p.add_subparsers(dest="action", required=True)
+    pr = psub.add_parser("review", help="every case, its expected results and what proves them; all gaps at once")
+    pr.add_argument("plan")
 
     p = add("case", cmd_case, "mark test case boundaries")
     csub = p.add_subparsers(dest="action", required=True)
     cs = csub.add_parser("start")
     cs.add_argument("id")
     cs.add_argument("title", nargs="?")
+    cp = csub.add_parser("plan", help="declare a case before testing, so the report shows it even if it never runs")
+    cp.add_argument("id")
+    cp.add_argument("title", nargs="?")
+    cp.add_argument("--expect", action="append", default=[], metavar="TEXT",
+                    help="one expected result (repeat: E1, E2… in order); prove each with `check --for`")
     ce = csub.add_parser("end")
     ce.add_argument("status", nargs="?", choices=["pass", "fail", "blocked", "skipped"],
                     help="omit to derive from the case's checks")
