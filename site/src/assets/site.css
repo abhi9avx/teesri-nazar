@@ -100,6 +100,13 @@ p { margin: 0; }
 .theme-toggle svg { width: 1.05rem; height: 1.05rem; }
 .theme-toggle:hover { background: rgb(128 128 128 / 0.15); }
 .theme-toggle .moon, :root[data-theme="dark"] .theme-toggle .sun { display: none; }
+/* Phones: the toggle becomes an icon beside the brand, so the header takes two rows, not three */
+@media (max-width: 30rem) {
+  .site-header { position: relative; }
+  .theme-toggle { position: absolute; top: calc(1rem - 5px); right: var(--gutter); width: 2.5rem; padding: 0; justify-content: center; }
+  .theme-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@media (max-width: 24rem) { .brand-hi { display: none; } }
 :root[data-theme="dark"] .theme-toggle .moon { display: block; }
 
 .site-footer { margin-top: var(--space); }
@@ -262,7 +269,6 @@ p { margin: 0; }
 .callout.is-bug { background: var(--vermilion); color: #FFFFFF; }
 .callout.is-pass { background: var(--peacock); color: #FFFFFF; }
 .callout.is-shown { opacity: 1; }
-@media (max-width: 63.99rem) { .callout { display: none; } }
 
 .checks { list-style: none; margin: 1.25rem 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
 .checks li { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.92rem; font-weight: 600; border: 1.5px solid currentColor; transition: background-color 0.25s, color 0.25s, opacity 0.25s; }
@@ -273,6 +279,16 @@ p { margin: 0; }
 .hero .link-button { text-decoration-color: currentColor; }
 .shot-note { margin: 0; font-size: 0.92rem; text-align: center; }
 .shot-note a { color: inherit; }
+
+/* Phones: a wider scene, the live caption in the space the verdict will take, the checks as a grid */
+@media (max-width: 63.99rem) {
+  .scene { width: calc(100% + 2 * var(--gutter)); margin-inline: calc(-1 * var(--gutter)); }
+  .callout { display: block; top: auto; bottom: 2.75rem; width: max-content; max-width: 100%; white-space: normal; text-align: center; border-radius: 1.25rem; }
+}
+@media (max-width: 30rem) {
+  .checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
+  .checks li { font-size: 0.82rem; line-height: 1.25; padding: 0.45rem 0.6rem; border-radius: 12px; }
+}
 
 /* Sections */
 .demo, .steps, .why, .start, .feedback, .shipped { max-width: var(--wrap); margin: 0 auto; padding: var(--space) var(--gutter) 0; }
@@ -417,7 +433,9 @@ article.release.prose h1 { margin-top: 0.75rem; }
 .docs-group:first-child { margin-top: 0; }
 .docs-nav ul { list-style: none; margin: 0; padding: 0; }
 @media (max-width: 59.99rem) {
-  .docs-nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; align-items: baseline; }
+  .docs-nav { display: flex; gap: 0.25rem; align-items: baseline; position: relative; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .docs-nav::-webkit-scrollbar { display: none; }
+  .docs-nav .docs-link { white-space: nowrap; flex-shrink: 0; }
   .docs-group { display: none; }
   .docs-nav ul { display: contents; }
 }
