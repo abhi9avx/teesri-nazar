@@ -270,3 +270,10 @@ document.querySelectorAll(".docs pre").forEach((pre) => {
 
 // Copy-to-clipboard buttons (the email address).
 document.querySelectorAll("[data-copy]").forEach((button) => copyButton(button, () => button.dataset.copy, "Select it"));
+
+// On phones the docs menu is one scrolling row: bring the current page into view.
+const docsNav = document.querySelector(".docs-nav");
+const docsCurrent = docsNav && docsNav.querySelector('[aria-current="page"]');
+if (docsCurrent && docsNav.scrollWidth > docsNav.clientWidth) {
+  docsNav.scrollLeft = docsCurrent.offsetLeft - (docsNav.clientWidth - docsCurrent.offsetWidth) / 2;
+}

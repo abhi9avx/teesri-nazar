@@ -3,6 +3,29 @@
 What changed in each version of Teesri Nazar, newest first. The website's changelog pages
 are built from this file, so every version shipped here shows up there too.
 
+## v4: Easy to set up, honest to trust
+
+In progress since 21 October 2026: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7) and a website update
+
+v4 is about people outside the project installing Teesri Nazar, trusting what it says and
+finishing a run on their own app.
+
+- `tnazar doctor` checks the setup in one command: adb, each connected device (ready,
+  unauthorised, offline or still booting), Python, the screen size and fast screen reads.
+  It prints the fix for every problem and changes nothing.
+- A device that is not ready now says why (unauthorised, offline) and how to fix it,
+  instead of "no device".
+- The website's hero animation is labelled as an illustration, with a link to a report
+  from a real run.
+- New docs page, *Data and privacy*: what stays on your computer, what Claude Code sends
+  to Anthropic, and how secrets are kept out.
+- *Limits and fixes* opens with a table of what works today, partly, and not yet.
+- The quick start runs `tnazar doctor` before the first test.
+- The website fits small phones: a two-row header, the hero's checks as a grid, one
+  scrolling row for the docs menu, and reports that fit a 320px screen.
+- The README's "Coming next" (parallel emulators, DB checks, Zephyr) is gone: none of it
+  is being built now, so it is no longer promised.
+
 ## v3: It learns your app
 
 Released 19 October 2026 in [PR #4](https://github.com/abhi9avx/teesri-nazar/pull/4)

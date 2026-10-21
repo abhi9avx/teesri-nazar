@@ -1,0 +1,50 @@
+<!--
+title: Data and privacy | Teesri Nazar docs
+description: What stays on your computer when Teesri Nazar tests your Android app, what Claude Code sends to Anthropic, and how secrets are kept out of both.
+-->
+<div class="docs">
+{{include:_docs-nav.html}}
+<article class="docs-main">
+  <h1>Data and privacy</h1>
+  <p class="docs-lede">tnazar runs on your computer. The AI that drives it is Claude Code, which sends what it reads to Anthropic's model. This page says what stays and what goes.</p>
+
+  <h2 id="stays-local">What stays on your computer</h2>
+  <ul>
+    <li><strong>Runs</strong> in <code>runs/&lt;name&gt;/</code>: the step log, screenshots, screen dumps, logs and the report. They stay until you delete them.</li>
+    <li><strong>Run state</strong> in the project's <code>.tnazar/</code>, and <strong>the learned app map</strong> in <code>~/.tnazar/maps/</code>.</li>
+    <li><strong>Secrets and test data</strong> in <code>.env</code> and <code>testdata.yaml</code>. Both are gitignored.</li>
+    <li><strong>The live dashboard</strong> listens on <code>127.0.0.1</code> only, needs a per-session token for every change, and serves files only from <code>runs/</code>.</li>
+  </ul>
+  <p>tnazar has no telemetry, no account and no SDK inside your app. It talks to your device through adb. The one time it calls a model itself is <code>replay --visual</code>, which asks Claude to compare screenshot pairs.</p>
+
+  <h2 id="sent-to-anthropic">What Claude Code sends to Anthropic</h2>
+  <p>Claude Code sends what it reads to Anthropic's model so it can decide the next step. In a test run that is:</p>
+  <ul>
+    <li>Your request, and any test cases, PRD text or links you give it.</li>
+    <li>The screen as text: each <code>observe</code> lists the elements on screen with their ids, labels and text. <strong>Any data shown on screen is in that text</strong>, so test with test accounts, not real customer data.</li>
+    <li>The output of the commands it runs, including the result of any DB query it runs for a check.</li>
+    <li>Screenshots are evidence for you. One is sent only when Claude opens it, as it does for a Figma comparison, or when <code>replay --visual</code> sends the original and replay screenshots for comparison.</li>
+  </ul>
+  <p>How long Anthropic keeps this, and whether it is used for training, depends on your Claude plan. See <a href="https://code.claude.com/docs/en/data-usage">Claude Code data usage</a>.</p>
+
+  <h2 id="secrets">Secrets</h2>
+  <ul>
+    <li>PINs, OTPs and passwords are typed with <code>type --env NAME</code>. Claude sees only the name; the value is never printed, logged or recorded.</li>
+    <li>An OTP sent from the dashboard with <em>Type it now</em> goes straight to the device and never reaches the chat or the disk.</li>
+    <li>Values from <code>.env</code> are masked as <code>••••</code> in printed output and saved screen dumps.</li>
+    <li><strong>Screenshots show what the screen shows.</strong> A secret typed into a plain (non-password) field is visible in them. Secure screens (<code>FLAG_SECURE</code>), such as PIN entry, come out black.</li>
+  </ul>
+
+  <h2 id="checklist">Before you test a real app</h2>
+  <ul>
+    <li>Use a test environment and test accounts. Never point DB checks at production.</li>
+    <li>Keep <code>runs/</code> out of shared drives and repos if screens can show personal data.</li>
+    <li>Check your Claude plan's data settings before sending screens of an internal app.</li>
+  </ul>
+
+  <nav class="docs-pager" aria-label="Previous page">
+    <a class="prev" href="/docs/limits/"><span>Previous</span>Limits and fixes</a>
+  </nav>
+</article>
+<aside class="docs-toc" aria-label="On this page"><p>On this page</p>{{toc}}</aside>
+</div>

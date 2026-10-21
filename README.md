@@ -280,6 +280,6 @@ scripts/smoke_dashboard.py ← live dashboard check on a real device or emulator
 
 ---
 
-## Coming next
+## What's next
 
-📱 Parallel emulators · 🗄️ Built-in DB checks · 📋 Zephyr import
+Decided by what testers ask for. Something you need? [Open an issue](https://github.com/abhi9avx/teesri-nazar/issues).
