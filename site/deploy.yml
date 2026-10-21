@@ -1,8 +1,8 @@
 # Copy of .github/workflows/deploy.yml in teesrinazar/teesrinazar.github.io.
 # The site's source lives in abhi9avx/teesri-nazar (site/ and CHANGELOG.md). That repo is public,
-# so this workflow pulls it without a token, builds it and publishes it to GitHub Pages. A push to main
-# there that touches site/ or CHANGELOG.md starts it within a minute (site-deploy-trigger.yml, using
-# the SITE_DEPLOY_TOKEN secret); the 6-hourly schedule is the fallback if that dispatch fails.
+# so this workflow pulls it without a token, builds it and publishes it to GitHub Pages. A push to
+# main there that touches site/, CHANGELOG.md or tests/test_site_build.py starts it within a minute
+# (site-deploy-trigger.yml, with the SITE_DEPLOY_TOKEN secret). The 6-hourly schedule is the fallback.
 # GitHub disables a schedule after 60 days without commits, and this repo gets none: the last step
 # re-enables the workflow with the job's own token.
 name: deploy
