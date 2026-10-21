@@ -23,6 +23,14 @@ finishing a run on their own app.
   check says which one it proves (`check --for E1`). An expected result nothing proved
   blocks its case, by name, instead of passing; on replay, one proven only in the database
   is not re-verified, so its case is not green.
+- `tnazar cases import` brings test cases from a sheet (CSV, a table pasted from a
+  spreadsheet, or a Markdown table) into a draft plan, keeping their IDs, sections and
+  accounts; `tnazar plan review` shows every expected result and what proves it, and all
+  that is still missing, before a run.
+- A shared step that keeps failing (such as login) no longer makes every later case time
+  out as failed: after two failures in a row, the cases needing it are blocked at once,
+  with the reason.
+- `tnazar observe --full` prints long texts whole, for chat replies and articles.
 - The website's hero animation is labelled as an illustration, with a link to a report
   from a real run.
 - New docs page, *Data and privacy*: what stays on your computer, what Claude Code sends

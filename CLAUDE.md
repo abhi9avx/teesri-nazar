@@ -12,6 +12,15 @@ a Figma link, a Zephyr/Jira link, test accounts, DB access details. Read everyth
 before touching the device. Test data and accounts live in `testdata.yaml` (gitignored;
 see `testdata.example.yaml`) — read it if present.
 
+Test cases pasted as a table (copied from a sheet), or a CSV / Markdown file: import them
+instead of retyping, so every case keeps its ID and none is lost:
+`./tnazar cases import <file> --app <pkg>` (or `-` and the pasted text on stdin). A table
+without a header row needs its columns named in order, e.g. `--columns
+title,description,precondition,steps,data,expected,priority,status,account`. It writes a
+draft `plans/<name>.plan`: each case with its expected results as `expect` lines and the
+rest as comments. Cases can use different accounts (`# account:`): log in as the right
+one before each group of cases. Never write an OTP or MPIN into a plan.
+
 ## Workflow
 
 1. **Plan.** Turn the inputs into a numbered list of test cases: `TC-01 title — steps —
@@ -32,13 +41,20 @@ see `testdata.example.yaml`) — read it if present.
    Fixed values only: write the labels you observed. Secrets only as `--env NAME`.
    Each expected result is an `expect "<text>"` line at the top of its case, and each is
    proven by a `check ... --for E<n>` in that case (the plan is refused otherwise). No
-   trailing `# comments` on plan lines.
+   trailing `# comments` on plan lines. Then `./tnazar plan review plans/<name>.plan`: it
+   lists every case, its expected results and the check proving each, and **every** gap at
+   once; show it to the user as the plan to approve, and run only when it says ready.
+   Long texts (chat replies, articles): `./tnazar observe --full` prints them whole; a
+   partial check matches the whole text (`check '~3 days after the due date' --for E1`).
 4. **Run it**: `./tnazar run plans/<name>.plan` (in the background: a plan can take longer
    than a 2-minute command). No model turn per step: read the output when it finishes.
    Exit 0 = all passed, 1 = something failed, 2 = plan or setup error (fix the line it
    names, or the device/app setup), 3 = the user sent a dashboard message: act on it, then
    continue with `./tnazar run plans/<name>.plan --from <case>` (the run stays open).
    Re-run one case with `--only TC-05`. All exit codes: `ARCHITECTURE.md` §11 *Exit codes*.
+   A shared flow (e.g. `login`) that fails in two cases in a row blocks the rest of the
+   cases that run it at once ("precondition failed: flow login …"): fix the setup or the
+   flow and re-run them, they were not tested.
    For one-off exploration you can still drive cases by hand: first declare every planned
    case, `./tnazar case plan TC-01 "title" --expect "…" --expect "…"`, so one that never
    runs still shows up; then `./tnazar case start TC-01` … `./tnazar check … --for E1` …

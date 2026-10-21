@@ -25,6 +25,13 @@ _Avoid_: skipped (the tester chose that), blocked (that case started).
 
 **Verified**: pass + fail: the requested cases with a definite answer.
 
+**Draft plan**: a plan written by `cases import`, or one still being written: its cases and
+expected results are there, its steps and checks not yet. `run` refuses it; `plan review`
+lists what is missing.
+
+**Precondition failed**: a case blocked without running, because a shared flow it needs
+(such as `login`) failed in the two cases before.
+
 **Expected result** (`E1`, `E2`…): one outcome a case must prove, numbered by order in its
 case and proven by a `check --for`.
 _Avoid_: assertion, acceptance criterion.

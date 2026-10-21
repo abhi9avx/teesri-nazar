@@ -902,6 +902,23 @@ case TC-01 "Network & internet opens"
 - **Failures.** A failed `check` is recorded and the case goes on. A failed action ends its
   case (recorded as a failed check naming the line); the run goes on with the next case, or
   stops with `--stop-on-fail`. Cases after an early stop are reported as not run, with why.
+- **Dead preconditions.** A case whose failing step was inside a flow it ran (`run login`)
+  marks that flow as failing; the next case running it tries again. After two failures in a
+  row, every later case running that flow is ended at once as blocked, "precondition failed:
+  flow login (failed in TC-01, TC-02)", with no device call. A case where the flow worked
+  clears it.
+- **Drafts and review.** `plan.parse(..., draft=True)` collects every completeness gap (a
+  case with no steps or no check, an `expect` with no `check --for`, a `--for` naming a
+  missing E, a `--for` in a flow) in `Plan.gaps` instead of stopping at the first;
+  `tnazar plan review` prints each case's expected results with the checks proving them,
+  then all gaps (exit 0 ready, 1 not ready, 2 a syntax error). `run` parses strictly, so its
+  first error is unchanged.
+- **Import.** `tnazar cases import` (`teesri_nazar/intake.py`) reads CSV, TSV (a sheet's
+  paste: a row ends once it has all its tabs, so a cell's line breaks survive) or a Markdown
+  table; matches columns by header synonyms, or by `--columns` when there is no header;
+  keeps IDs (else `TC-01`…), section rows and an account column as comments; splits expected
+  results only on line breaks, bullets or `;`; never copies an OTP/MPIN/password column. It
+  writes a draft plan that `run` refuses until it is complete.
 - **Dashboard.** Pause holds the runner for as long as the user keeps it paused. A message
   stops the run after the current step, marks the case blocked and leaves the run open
   (exit 3); `--from <case>` continues in the same run.

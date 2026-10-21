@@ -53,6 +53,7 @@ case TC-02 "Search finds Wi-Fi settings"
     </table>
   </div>
   <p>The whole file is checked before anything runs, so a typo never reaches the device. Secrets go in as <code>--env NAME</code>, never as values.</p>
+  <p>Have your test cases in a sheet? <code>./tnazar cases import cases.csv --app &lt;app&gt;</code> writes a draft plan with every case, its ID and its expected results; <code>./tnazar plan review plans/cases.plan</code> lists what is still missing. A run refuses the draft until every expected result has a check.</p>
   <p>Every selected case is in the report. If the run stops early (an error, <code>--stop-on-fail</code>), the cases after it are listed as <em>not run</em> with the reason, and the summary ends with <code>verified N/M</code>.</p>
 
   <h2 id="exit-codes">Exit codes</h2>

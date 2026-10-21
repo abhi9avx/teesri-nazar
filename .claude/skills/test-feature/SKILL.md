@@ -17,7 +17,10 @@ Follow `CLAUDE.md` (the playbook). In short:
    use it. Several → ask which one.
 3. **Plan.** Numbered cases `TC-NN` with steps, expected results (E1, E2…: one per outcome
    the case must prove) and verification type (ui / db / figma), plus added edge cases and an
-   explicit "not testing" list.
+   explicit "not testing" list. Test cases given as a table or CSV/Markdown file:
+   `./tnazar cases import <file|-> --app <pkg> [--columns …]` keeps every case and its ID in a
+   draft plan; note each case's account and log in as it. Before running, show
+   `./tnazar plan review plans/<name>.plan` (every expected result and what proves it).
    Wait for approval unless the user said to go ahead.
 4. **Run.** Check the app map first (`./tnazar flows`; `./tnazar flow <name>` runs a saved
    route). Explore the screens the cases touch (`observe`), save new routes as `flow`s, write `plans/<name>.plan`

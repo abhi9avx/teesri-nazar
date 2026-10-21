@@ -281,3 +281,18 @@ runner → report → replay → ui.html → docs → smoke. One commit per step
 | `ui.html` + DA-14 + smoke step | 0.5 |
 | Docs, agent prompt, code review fixes, device smoke | 0.5 |
 | **Total** | **5** (the PRD's appetite; if it runs over, the HTML expected-results list moves to a follow-up and Markdown keeps it) |
+
+## 11. Step 1 completion (v0.4; PRD §11 S1–S11)
+
+| Piece | Where | Shape |
+|---|---|---|
+| Import | `teesri_nazar/intake.py` (pure: `read(text, columns) -> [Imported]`, `to_plan(...) -> str`), `cli.cmd_cases` | Format from the first non-empty line: `|` Markdown, a tab TSV, else CSV. TSV rows end once they hold the header's tab count, so a pasted cell's line breaks survive. Header synonyms in `FIELDS`; `--columns` when there is no header (the error previews the first case row). Section row = only the first cell filled, in a table of 3+ columns. IDs kept (no spaces) or `TC-NN`; duplicates name both rows. Secret-named columns (`otp`, `mpin`, `password`, …) are dropped. Expected results split only on line breaks, bullets, or `;` in a single line. Draft written to `plans/<name>.plan`; refuses to overwrite without `--force`. |
+| Draft parsing | `plan.parse(..., draft=True)`, `Plan.gaps` | Completeness problems become gaps (all of them, in parse order); syntax errors still raise. Strict mode raises the first gap with the same text as before. |
+| Review | `plan.review(plan) -> (text, ready)`, `tnazar plan review` | Per case: `E<n> text  <- line N: check …` or `NOT PROVEN`; then gaps. Exit 0 ready, 1 gaps, 2 syntax. |
+| Dead preconditions | `runner.run`, `Failed.flow`, `_flows_used`, `_block` | `Failed.flow` is set by every `run X` on the way out, so it ends as the case's own `run`. A flow failing in a case is appended to `broken[flow]`; a case where it did not fail clears it. A case needing a flow with ≥ 2 failures is logged as `case_start` + blocked `case_end` (with `expects` states) directly: no CLI, no device. |
+| Full text | `screen.Element.describe(full)`, `env.describe(..., full)`, `observe --full` | Whole text, line breaks kept and indented, empty lines dropped, secrets masked as before. |
+
+Known limitation found while testing (not changed here): a replay run records checks but not
+its taps or typing, so replaying a replay has nothing to repeat and its UI cases fail (never
+pass). Coverage survives it: the requested list and not-run rows carry over.
+
