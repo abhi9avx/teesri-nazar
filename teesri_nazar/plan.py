@@ -10,9 +10,10 @@ A plan is the tnazar commands a tester would type, without the `./tnazar` prefix
     end
 
     case TC-01 "Network page opens"   # a case runs until the next `case`, `flow` or the end
+      expect "Internet settings show" # optional: expected results E1, E2… before the steps
       launch --restart
       run open_network
-      check "Internet"
+      check "Internet" --for E1       # proves E1; every `expect` needs a `check --for` in its case
       retry 2                         # repeat until every step in it passes
         ...
       end
@@ -22,7 +23,11 @@ A plan is the tnazar commands a tester would type, without the `./tnazar` prefix
         ...
       end
 
-Lines starting with `#` are comments. Indentation is for people; blocks close with `end`.
+Lines starting with `#` are comments (a line, never the end of a step). Indentation is for
+people; blocks close with `end`. An expected result whose linked check did not run (an `if`
+branch not taken) ends its case blocked, naming it; flows cannot link expected results.
+`tnazar run` records the selected cases first, so a case that never starts (an error,
+`--stop-on-fail`) is still in the report, as not run.
 The whole file is checked before anything runs, so a typo never reaches the device.
 
 `wait A --or B` is a step like any other: when B shows up instead of A it fails (exit 4),

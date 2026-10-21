@@ -15,7 +15,8 @@ see `testdata.example.yaml`) — read it if present.
 ## Workflow
 
 1. **Plan.** Turn the inputs into a numbered list of test cases: `TC-01 title — steps —
-   expected result — how it is verified (ui / db / figma)`. Add the edge cases the
+   expected results (E1, E2…, one per outcome the case must prove) — how each is verified
+   (ui / db / figma)`. Add the edge cases the
    inputs missed (empty/invalid input, back navigation mid-flow, retry after failure,
    boundary amounts, kill-and-reopen). Say what you will **not** test and why.
    Show the plan and wait for approval unless the user said to go ahead directly.
@@ -29,15 +30,21 @@ see `testdata.example.yaml`) — read it if present.
    (`if "A" --or "B" --wait 10` to wait for whichever shows). In a plan, `wait A --or B`
    fails the case when B shows (exit 4): use it only when B means failure.
    Fixed values only: write the labels you observed. Secrets only as `--env NAME`.
+   Each expected result is an `expect "<text>"` line at the top of its case, and each is
+   proven by a `check ... --for E<n>` in that case (the plan is refused otherwise). No
+   trailing `# comments` on plan lines.
 4. **Run it**: `./tnazar run plans/<name>.plan` (in the background: a plan can take longer
    than a 2-minute command). No model turn per step: read the output when it finishes.
    Exit 0 = all passed, 1 = something failed, 2 = plan or setup error (fix the line it
    names, or the device/app setup), 3 = the user sent a dashboard message: act on it, then
    continue with `./tnazar run plans/<name>.plan --from <case>` (the run stays open).
    Re-run one case with `--only TC-05`. All exit codes: `ARCHITECTURE.md` §11 *Exit codes*.
-   For one-off exploration you can still drive cases by hand between
-   `./tnazar case start TC-01 "title"` and `./tnazar case end`, then `./tnazar stop`.
-5. **Report back** in chat: the summary line, a table of cases with result and reason,
+   For one-off exploration you can still drive cases by hand: first declare every planned
+   case, `./tnazar case plan TC-01 "title" --expect "…" --expect "…"`, so one that never
+   runs still shows up; then `./tnazar case start TC-01` … `./tnazar check … --for E1` …
+   `./tnazar case end`, then `./tnazar stop`.
+5. **Report back** in chat: the summary line (quote its `verified N/M`), a table of every
+   requested case with result and reason (not-run and not-verified ones included),
    each failure with what you saw vs what was expected, bugs found, and anything you
    could not test. Link the HTML report path.
 
