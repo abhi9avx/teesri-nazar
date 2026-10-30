@@ -110,7 +110,8 @@ def _mask_clause(m: re.Match) -> str:
     clause = m.group(0)
     if not re.search(_WORD, _POSTCODE.sub("", clause), re.I):
         return clause
-    return _TOKEN.sub(lambda t: t.group(0) if _UNIT.match(clause, t.end()) else _mask_token(t), clause)
+    return _TOKEN.sub(lambda t: t.group(0) if re.fullmatch(r"\d{1,3}", t.group(0)) and _UNIT.match(clause, t.end())
+                       else _mask_token(t), clause)
 
 
 def _mask_token(m: re.Match) -> str:
@@ -122,7 +123,7 @@ def _mask_token(m: re.Match) -> str:
         return t
     if digits < 3 and not (re.search(r"[A-Za-z]", t) and len(t) >= 4):
         return t
-    return _LEAD.match(t).group(0) + "••••" + re.search(r"[)\]\"'.!?]*$", t).group(0)
+    return _LEAD.match(t).group(0) + "••••" + re.search(r"[)\]\"']*$", t).group(0)
 
 
 def _rows(text: str) -> tuple[list[list[str]], set[int]]:

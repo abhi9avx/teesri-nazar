@@ -447,7 +447,8 @@ class BranchReviewFixesTest(unittest.TestCase):
         kept = ["Balance ₹1000 shown after PIN entry", "OTP valid for 120 seconds", "OTP screen on iOS 17.2",
                 "Locked after 3 attempts with a wrong PIN"]
         hidden = {"Use password hunter2 → dashboard": "hunter2", "set PIN to 1234 then Home": "1234",
-                  "change MPIN 1234 to 5678 succeeds": "5678", "Enter the OTP received (482913) and see Home": "482913"}
+                  "change MPIN 1234 to 5678 succeeds": "5678", "Enter the OTP received (482913) and see Home": "482913",
+                  "password hunter2 minutes": "hunter2", "set PIN to 1234 seconds": "1234"}
         rows = "".join(f"T{i},{e}\n" for i, e in enumerate(kept + list(hidden)))
         expects = [c.expects[0] for c in intake.read("Title,Expected\n" + rows)]
         self.assertEqual(expects[:len(kept)], kept)
