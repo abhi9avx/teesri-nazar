@@ -75,14 +75,19 @@ class Smoke:
     def status(self) -> dict:
         return self.api("GET", "/api/state")[1]["agent"]
 
-    def timeline(self) -> list[str]:
-        """The timeline as the page draws it: ui.html's own layout() and describe(), in node."""
-        events = self.api("GET", "/api/events?run=smoke&from=0")[1]["events"]
+    def page(self, js: str):
+        """Run `js` after ui.html's own page logic, in node; it prints its result with console.log."""
         html = (ROOT / "teesri_nazar" / "ui.html").read_text()
         a = html.index("const fmtDur")
         js = (html[a:html.index("\n", a)] + "\n"
               + html[html.index("// Ids are written"):html.index("// ------------------------------------------------------------------ timeline")]
-              + f"""
+              + js)
+        return json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+
+    def timeline(self) -> list[str]:
+        """The timeline as the page draws it: ui.html's own layout() and describe(), in node."""
+        events = self.api("GET", "/api/events?run=smoke&from=0")[1]["events"]
+        return self.page(f"""
 const out = [];
 for (const b of layout({json.dumps(events)})) {{
   if (b.kind === "group") {{ out.push("» " + b.e.text); for (const s of b.steps) out.push(describe(s)[1]); }}
@@ -90,7 +95,6 @@ for (const b of layout({json.dumps(events)})) {{
   else if (b.kind === "step" || b.kind === "not_run") out.push(describe(b.e)[1]);
 }}
 console.log(JSON.stringify(out));""")
-        return json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
 
     # ---------------------------------------------------------------- the checks
     def run(self) -> int:
@@ -179,6 +183,20 @@ console.log(JSON.stringify(out));""")
                    "stop counts the case that never started")
         lines = self.timeline()
         self.check("DA-14", "SMOKE-2 Never started: not run" in lines, "the dashboard shows it as a not-run row")
+
+        # DA-15: a page left on the finished run (even one you picked) moves to the next run
+        started = self.api("GET", "/api/runs")[1][0]["started_at"]
+        code, _ = self.tn("start", "smoke-next", "--package", APP)
+        state = self.api("GET", "/api/state")[1]
+        cur = {"view": "smoke", "follow": False, "lastActive": None, "started": started}
+        moved = self.page(f"console.log(JSON.stringify(nextView({json.dumps(cur)}, "
+                          f"{json.dumps((state.get('active') or {}).get('name'))}, [])));")
+        self.check("DA-15", code == 0 and moved == "smoke-next", f"a run that starts takes over the page (-> {moved})")
+        self.tn("stop")
+        runs = self.api("GET", "/api/runs")[1]
+        cur = {"view": "smoke", "follow": True, "lastActive": "smoke-next", "started": started}
+        latest = self.page(f"console.log(JSON.stringify(nextView({json.dumps(cur)}, null, {json.dumps(runs)})));")
+        self.check("DA-15", latest == "smoke-next", f"with nothing running it shows the newest run (-> {latest})")
         return 0 if all(ok for _, ok, _ in self.results) else 1
 
     def close(self) -> None:

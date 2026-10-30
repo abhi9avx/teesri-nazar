@@ -867,6 +867,7 @@ on a real device.
 | DA-12 | run a saved route in one command, and name the existing ones when asked for a missing one | live |
 | DA-13 | show a `goto` as one plain line, a broken learned route as a red row saying what it expected, and no row for the map's screen reads | live |
 | DA-14 | show every requested case once the run ends: a case that never started is a grey row with the reason it did not run | live |
+| DA-15 | move an open page to a run as soon as it starts (even from a past run you picked), and with nothing running show the newest run, never an older one; no reload | live |
 
 ### 15.1 Running a whole plan
 

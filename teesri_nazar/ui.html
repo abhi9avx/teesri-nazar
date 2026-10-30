@@ -172,7 +172,7 @@ const $ = (id) => document.getElementById(id);
 const CHIPS = ["Retry the last step", "Take a screenshot now", "Skip this case and move on",
                "Log out and log back in", "Stop after this case and write the report"];
 
-let state = null, runs = [], view = null, follow = true, offset = 0, events = [], meta = null, report = false;
+let state = null, runs = [], view = null, follow = true, seenActive = null, offset = 0, events = [], meta = null, report = false;
 let pinnedShot = null, stick = true, lastRender = -1, caseUsage = {}, usageKey = "";
 let slowMs = Infinity;  // the server's threshold arrives with the first /api/state
 
@@ -330,6 +330,19 @@ function layout(events) {
     else blocks.push({ kind: "step", e });
   }
   return blocks;
+}
+
+// The run the page moves to, or null to stay. A run that starts takes over, even from a past run
+// you picked; with nothing running, the newest run, unless you picked one. Never moves to a run
+// that started before the one on screen (the run list is polled more slowly than the state).
+// cur: {view, follow, lastActive (the active run at the last poll), started (the viewed run's start)}.
+function nextView(cur, active, runs) {
+  if (active) return active !== cur.view && (active !== cur.lastActive || cur.follow) ? active : null;
+  if (cur.view && !cur.follow) return null;
+  const newest = runs[0];
+  if (!newest || newest.name === cur.view) return null;
+  if (cur.view && !(cur.started && newest.started_at > cur.started)) return null;
+  return newest.name;
 }
 
 // ------------------------------------------------------------------ timeline
@@ -528,8 +541,11 @@ async function tickState() {
   } catch { state = null; renderControl(); return; }
   if (state.slow_ms !== slowMs) { slowMs = state.slow_ms; lastRender = -1; }
   const active = state.active ? state.active.name : null;
-  if (active && follow && view !== active) await switchRun(active, true);
-  if (!view && !active && runs.length) await switchRun(runs[0].name, true);
+  if (active !== seenActive) await tickRuns();  // a run started or ended: list it before choosing
+  const started = (meta && meta.name === view && meta.started_at) || (runs.find((r) => r.name === view) || {}).started_at;
+  const next = nextView({ view, follow, lastActive: seenActive, started }, active, runs);
+  seenActive = active;
+  if (next) await switchRun(next, true);
   renderRunSelect();
   renderControl();
   renderRunCard();
