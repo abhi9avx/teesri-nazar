@@ -438,6 +438,20 @@ class BranchReviewFixesTest(unittest.TestCase):
         cases = intake.read("ID,Title,Expected\nOTP-001,Verify OTP,ok\nPIN-02,Change PIN,ok\n")
         self.assertEqual([c.id for c in cases], ["OTP-001", "PIN-02"])
 
+    def test_a_password_that_starts_like_a_result_is_hidden(self):
+        for cell in ("user: test1 pass: Pass@123", "pass: Pass@123", "pass: Yes@123"):
+            text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
+            self.assertNotIn("@123", text, cell)
+
+    def test_expected_results_keep_amounts_versions_and_codes(self):
+        expected = ["Balance ₹1000 shown after PIN entry", "OTP valid for 120 seconds", "Error 401 after wrong PIN",
+                    "OTP screen on iOS 17.2", "Txn ID TXN123456 shown after PIN"]
+        rows = "".join(f"T{i},{e}\n" for i, e in enumerate(expected))
+        cases = intake.read("Title,Expected\n" + rows)
+        self.assertEqual([c.expects for c in cases], [[e] for e in expected])
+        [c] = intake.read("Title,Expected,Test data\nT,E,Pay ₹5000 then enter PIN 1234\n")
+        self.assertEqual(c.fields["data"], "Pay ₹5000 then enter PIN ••••")
+
     def test_an_id_holding_a_value_is_refused_without_showing_it(self):
         for row in ("OTP:482913,T,E", "OTP 482913,T,E"):
             with self.assertRaises(intake.IntakeError) as cm:
