@@ -9,6 +9,7 @@ import socket
 import shutil
 import stat
 import subprocess
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -16,8 +17,9 @@ from unittest import mock
 from fakedevice import PACKAGE, FakeAdb, fake_device, login_app, tnazar
 from teesri_nazar import cli, commands, live, replay, ui
 from teesri_nazar import report as rpt
-from teesri_nazar.session import get_active
+from teesri_nazar.session import Run, get_active
 
+import test_coverage
 import test_live
 from test_replay import ReplayTestCase
 
@@ -253,3 +255,48 @@ class TimelineWordingTest(unittest.TestCase):
         self.assertTrue(self.agent_line(working, 1000).startswith("⚙️ Working"))
         self.assertTrue(self.agent_line(working, 120000).startswith("🟢 Listening"))
 
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node to run the dashboard's nextView()")
+class LatestRunTest(unittest.TestCase):
+    """The open page moves to a run that starts, and with nothing running shows the newest run."""
+
+    RUNS = [{"name": "new", "started_at": "2026-10-30T10:00:00.000Z"},
+            {"name": "old", "started_at": "2026-10-21T18:00:00.000Z"}]
+
+    def next_view(self, cur: dict, active, runs=None):
+        return TimelineWordingTest.js(self, f"nextView({json.dumps(cur)}, {json.dumps(active)}, "
+                                            f"{json.dumps(self.RUNS if runs is None else runs)})")
+
+    def test_a_run_that_starts_takes_over_the_open_page(self):
+        old = {"view": "old", "follow": True, "lastActive": None, "started": "2026-10-21T18:00:00.000Z"}
+        self.assertEqual(self.next_view(old, "run2"), "run2")
+        picked = {**old, "follow": False}  # a past run you chose from the list
+        self.assertEqual(self.next_view(picked, "run2"), "run2")
+        self.assertIsNone(self.next_view({**old, "view": "run2", "lastActive": "run2"}, "run2"))
+
+    def test_a_past_run_you_pick_while_one_runs_stays_until_another_starts(self):
+        picked = {"view": "old", "follow": False, "lastActive": "run2", "started": "2026-10-21T18:00:00.000Z"}
+        self.assertIsNone(self.next_view(picked, "run2"))
+        self.assertEqual(self.next_view(picked, "run3"), "run3")
+
+    def test_with_nothing_running_the_page_shows_the_newest_run_and_never_an_older_one(self):
+        self.assertEqual(self.next_view({"view": None, "follow": True, "lastActive": None}, None), "new")
+        old = {"view": "old", "follow": True, "lastActive": None, "started": "2026-10-21T18:00:00.000Z"}
+        self.assertEqual(self.next_view(old, None), "new")
+        just_ended = {"view": "run2", "follow": True, "lastActive": "run2", "started": "2026-10-30T11:00:00.000Z"}
+        self.assertIsNone(self.next_view(just_ended, None))  # the list is polled later: keep the newer run
+        self.assertIsNone(self.next_view({**old, "follow": False}, None))  # you picked it
+        self.assertIsNone(self.next_view({**old, "started": None}, None))  # start unknown: stay
+        self.assertIsNone(self.next_view({"view": None, "follow": True, "lastActive": None}, None, []))
+
+    def test_the_run_list_is_newest_start_first_whatever_touched_the_folders(self):
+        test_coverage.temp_home(self)
+        Run.create("newer", {"package": "com.example.app"})
+        older = Run.create("older", {"package": "com.example.app"})
+        older.update_meta(started_at="2020-01-01T00:00:00.000Z")
+        (older.path / "report.html").write_text("rewritten")  # moves the folder's mtime
+        future = time.time() + 60
+        os.utime(older.path, (future, future))
+        (ui.runs_dir() / "not-a-run").mkdir()
+        self.assertEqual([r["name"] for r in ui.Dashboard(0).runs()], ["newer", "older"])

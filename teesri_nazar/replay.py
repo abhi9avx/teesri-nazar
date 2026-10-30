@@ -11,13 +11,14 @@ import sys
 import time
 
 from . import commands
+from . import coverage
 from . import device as dev
 from . import uia2
 from . import report as rpt
 from . import screen as scr
 from . import visual
 from .adb import Adb, AdbError, adb_binary, pick_serial
-from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, check_device_owner, device_owner_of, evidence_shot
+from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, close_run, check_device_owner, device_owner_of, evidence_shot
 from .errors import UserError
 from .session import Run, get_active, now_iso, stamp
 
@@ -131,7 +132,7 @@ def _recheck(ctx: Ctx, e: dict, timeout: float) -> None:
             if e.get(flag) is not None and e[flag] != actual:
                 ok = False
     event = {"type": "check", "kind": "ui", "ok": ok, "what": e["what"], "selector": e["selector"],
-             "gone": e.get("gone", False), "recorded_ok": e["ok"]}
+             "gone": e.get("gone", False), "recorded_ok": e["ok"], **({"for": e["for"]} if e.get("for") else {})}
     if shot := evidence_shot(ctx, f"check-{'pass' if ok else 'fail'}"):
         event["shot"] = shot
     ctx.log(event)
@@ -178,6 +179,9 @@ def run(args) -> int:
             dev.force_stop(adb, meta["package"])
             dev.clear_data(adb, meta["package"])
         size = adb.screen_size()
+        for e in source.events():  # the same requested cases, so one that never ran is still a row
+            if e["type"] == "case_plan":
+                target.log({k: v for k, v in e.items() if k != "t"})
         for e in source.events():
             t = e["type"]
             if t == "case_start":
@@ -233,6 +237,7 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
+        close_run(target, "replay stopped before the case finished", "not run in the recorded run")
         try:
             dev.release_device(adb, owner)
         except AdbError as exc:  # never at the cost of restoring the device or writing the report
@@ -247,6 +252,7 @@ def run(args) -> int:
     print(rpt.summary_line(summary))
     for p in paths:
         print(f"report: {p}")
-    failed = summary["counts"].get("fail", 0) + summary["counts"].get("blocked", 0) + summary["checks_failed"]
+    failed = (summary["counts"].get("fail", 0) + summary["counts"].get("blocked", 0)
+              + summary["counts"].get("not_run", 0) + summary["checks_failed"])
     return 0 if failed == 0 else EXIT_FAIL
 

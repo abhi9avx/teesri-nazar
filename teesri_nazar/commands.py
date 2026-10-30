@@ -43,6 +43,8 @@ COMMANDS = (
     Command("runs", None),
     Command("replay", None),
     Command("run", None),
+    Command("plan", None),   # read-only: a plan file's review
+    Command("cases", None),  # writes a draft plan file: never touches the device
     Command("flow", None, device=True),  # its steps record their own events
     Command("flows", None),
     Command("goto", None, device=True),  # like flow: its taps record their own events
@@ -68,4 +70,5 @@ PLAN_STEPS = frozenset(c.name for c in COMMANDS if c.in_plans)
 NOT_IN_PLANS = frozenset(c.name for c in COMMANDS if not c.in_plans)
 # Events that only narrate or record the user's input: replay skips them.
 NARRATION_EVENTS = frozenset({"note", "say", "user_msg", "hold", "if", "io",  # "io": logged by older runs
-                              "seen", "nav"})  # the navigation map's: a screen read, a goto's outcome
+                              "seen", "nav",  # the navigation map's: a screen read, a goto's outcome
+                              "case_plan", "not_run"})  # the requested cases: copied up front, not steps

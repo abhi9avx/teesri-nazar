@@ -73,7 +73,7 @@ def mask_xml(xml: str) -> str:
     return _ATTR.sub(one, xml)
 
 
-def describe(el: scr.Element, values: set[str] | None = None) -> str:
+def describe(el: scr.Element, values: set[str] | None = None, full: bool = False) -> str:
     # Asking the dashboard for its secrets is an HTTP call: list callers pass `values` once.
     values = secret_values() if values is None else values
-    return dataclasses.replace(el, text=mask(el.text, values), desc=mask(el.desc, values)).describe()
+    return dataclasses.replace(el, text=mask(el.text, values), desc=mask(el.desc, values)).describe(full)

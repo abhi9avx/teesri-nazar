@@ -67,6 +67,7 @@ body.resizing iframe, body.resizing img { pointer-events: none; }
 .row .what .detail { display: block; color: var(--muted); font-size: 12px; }
 .row.bad .what { color: var(--fail); }
 .row.ok-check .ico { color: var(--pass); }
+.row.not-run .what, .row.not-run .ico { color: var(--muted); }
 .row.bug { background: color-mix(in srgb, var(--fail) 8%, transparent); }
 .row.user { background: var(--msg); border-radius: 6px; margin: 6px 0; }
 .dur { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; padding: 0 6px; border-radius: 10px; background: var(--chip); white-space: nowrap; }
@@ -171,7 +172,7 @@ const $ = (id) => document.getElementById(id);
 const CHIPS = ["Retry the last step", "Take a screenshot now", "Skip this case and move on",
                "Log out and log back in", "Stop after this case and write the report"];
 
-let state = null, runs = [], view = null, follow = true, offset = 0, events = [], meta = null, report = false;
+let state = null, runs = [], view = null, follow = true, seenActive = null, offset = 0, events = [], meta = null, report = false;
 let pinnedShot = null, stick = true, lastRender = -1, caseUsage = {}, usageKey = "";
 let slowMs = Infinity;  // the server's threshold arrives with the first /api/state
 
@@ -289,6 +290,7 @@ function describe(e) {
     }
     case "hold": return ["⏸", `Paused by you for ${fmtDur(e.waited_ms || 0)}${e.resumed ? ", then resumed" : ""}`,
                          e.resumed ? "" : "the agent was told to wait until you resume"];
+    case "not_run": return ["○", `${e.case}${e.title ? " " + e.title : ""}: not run`, e.reason || ""];
     default: return ["•", e.type];
   }
 }
@@ -316,6 +318,8 @@ function layout(events) {
   for (const e of events) {
     if (e.type === "io") continue;  // older runs: output size per command, now shown per case
     if (e.type === "seen") continue;  // a screen read for the navigation map: not a step
+    if (e.type === "case_plan") continue;  // the requested list: shown as not-run rows if they never start
+    if (e.type === "not_run") { group = null; blocks.push({ kind: "not_run", e }); continue; }
     if (e.type === "say") { group = { kind: "group", e, steps: [] }; blocks.push(group); continue; }
     if (["user_msg", "case_start", "case_end"].includes(e.type)) {
       group = null;
@@ -326,6 +330,19 @@ function layout(events) {
     else blocks.push({ kind: "step", e });
   }
   return blocks;
+}
+
+// The run the page moves to, or null to stay. A run that starts takes over, even from a past run
+// you picked; with nothing running, the newest run, unless you picked one. Never moves to a run
+// that started before the one on screen (the run list is polled more slowly than the state).
+// cur: {view, follow, lastActive (the active run at the last poll), started (the viewed run's start)}.
+function nextView(cur, active, runs) {
+  if (active) return active !== cur.view && (active !== cur.lastActive || cur.follow) ? active : null;
+  if (cur.view && !cur.follow) return null;
+  const newest = runs[0];
+  if (!newest || newest.name === cur.view) return null;
+  if (cur.view && !(cur.started && newest.started_at > cur.started)) return null;
+  return newest.name;
 }
 
 // ------------------------------------------------------------------ timeline
@@ -349,6 +366,7 @@ function row(e, t0) {
   if (e.type === "check" && e.ok) r.classList.add("ok-check");
   if (e.ok === false || (e.type === "adb" && e.exit)) r.classList.add("bad");
   if (e.type === "note" && e.kind === "bug") r.classList.add("bug");
+  if (e.type === "not_run") r.classList.add("not-run");
   const shot = e.shot || e.file;
   if (shot && view) {
     r.classList.add("has-shot");
@@ -523,8 +541,11 @@ async function tickState() {
   } catch { state = null; renderControl(); return; }
   if (state.slow_ms !== slowMs) { slowMs = state.slow_ms; lastRender = -1; }
   const active = state.active ? state.active.name : null;
-  if (active && follow && view !== active) await switchRun(active, true);
-  if (!view && !active && runs.length) await switchRun(runs[0].name, true);
+  if (active !== seenActive) await tickRuns();  // a run started or ended: list it before choosing
+  const started = (meta && meta.name === view && meta.started_at) || (runs.find((r) => r.name === view) || {}).started_at;
+  const next = nextView({ view, follow, lastActive: seenActive, started }, active, runs);
+  seenActive = active;
+  if (next) await switchRun(next, true);
   renderRunSelect();
   renderControl();
   renderRunCard();

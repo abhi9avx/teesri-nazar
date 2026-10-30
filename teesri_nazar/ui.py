@@ -112,13 +112,22 @@ class Dashboard:
         d = runs_dir()
         if not d.exists():
             return []
-        paths = sorted((p for p in d.iterdir() if (p / "run.json").exists()),
-                       key=lambda p: p.stat().st_mtime, reverse=True)[:40]
-        out = []
-        for p in paths:
-            run = Run(p)
+        # Newest start first: a folder's mtime moves when an old run gets a new file (a report
+        # written again), and the page shows the first run when nothing is running. A new run's
+        # folder is always among the recently modified, so only those are read.
+        recent = sorted((p for p in d.iterdir() if (p / "run.json").exists()),
+                        key=lambda p: p.stat().st_mtime, reverse=True)[:200]
+        dated = []
+        for run in map(Run, recent):
             try:
-                meta = run.meta()
+                dated.append((run, run.meta()))
+            except (ValueError, OSError):
+                continue
+        dated.sort(key=lambda x: str(x[1].get("started_at") or ""), reverse=True)
+        out = []
+        for run, meta in dated[:40]:
+            p = run.path
+            try:
                 line = rpt.summary_line(rpt.summarize(run))
             except (ValueError, KeyError, OSError):
                 continue

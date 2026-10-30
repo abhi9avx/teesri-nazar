@@ -46,12 +46,15 @@ case TC-02 "Search finds Wi-Fi settings"
         <tr><td><code>flow &lt;name&gt;</code> … <code>end</code></td><td>A reusable block, used with <code>run &lt;name&gt;</code>.</td></tr>
         <tr><td><code>retry N</code> … <code>end</code></td><td>Repeat until every step inside passes, up to N times.</td></tr>
         <tr><td><code>if "Text"</code> … <code>else</code> … <code>end</code></td><td>Branch on what is on screen. Never fails the case.</td></tr>
-        <tr><td><code>check "Text"</code></td><td>An expected result. Every expected result should be a check.</td></tr>
-        <tr><td><code># comment</code></td><td>Ignored. Indentation is for people.</td></tr>
+        <tr><td><code>expect "Text"</code></td><td>Optional, at the top of a case: an expected result, E1, E2… in order. Each one needs a <code>check … --for E1</code> in that case, or the plan is refused.</td></tr>
+        <tr><td><code>check "Text"</code></td><td>A verification. <code>--for E1</code> links it to an expected result; a linked check that never ran leaves its case blocked, by name.</td></tr>
+        <tr><td><code># comment</code></td><td>Ignored, on a line of its own. Indentation is for people.</td></tr>
       </tbody>
     </table>
   </div>
   <p>The whole file is checked before anything runs, so a typo never reaches the device. Secrets go in as <code>--env NAME</code>, never as values.</p>
+  <p>Have your test cases in a sheet? <code>./tnazar cases import cases.csv --app &lt;app&gt;</code> writes a draft plan with every case, its ID and its expected results; <code>./tnazar plan review plans/cases.plan</code> lists what is still missing. A run refuses the draft until every expected result has a check.</p>
+  <p>Every selected case is in the report. If the run stops early (an error, <code>--stop-on-fail</code>), the cases after it are listed as <em>not run</em> with the reason, and the summary ends with <code>verified N/M</code>.</p>
 
   <h2 id="exit-codes">Exit codes</h2>
   <p>Every command, <code>run</code>, <code>flow</code> and <code>replay</code> use the same codes, so CI can act on them.</p>

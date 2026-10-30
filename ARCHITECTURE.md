@@ -516,14 +516,32 @@ flowchart TD
     C -->|no| K{"any failed check?"}
     K -->|yes| F
     K -->|no| H{"any checks at all?"}
-    H -->|yes| P["✅ pass"]
+    H -->|yes| X{"every expected result<br/>(E1, E2…) proven?"}
+    X -->|yes| P["✅ pass"]
+    X -->|no| B2["⛔ blocked<br/>(not verified: E2 …)"]
     H -->|no| B["⛔ blocked<br/>(nothing was verified)"]
 ```
+
+**Requested cases (the coverage ledger).** A run is *declared* once it records `case_plan`
+events: `tnazar run` writes one per selected case before the first starts; by hand,
+`case plan <id> [title] --expect TEXT…`. When the run ends (`stop`, the end of `run`, a new
+`start`, or replay's end) every declared case that never started gets a `not_run` event with
+the reason (`run stopped at TC-03: error: …`, `--stop-on-fail after TC-03`, `run stopped
+with tnazar stop…`). The summary line then counts every requested case and ends with
+`| verified V/N` (V = pass + fail); the report adds `Result: all passed | failed |
+incomplete`, where *all passed* also needs no failed check anywhere. A run with no
+`case_plan` reports exactly as before, plus "requested cases not declared: completeness
+unknown". Rules: `teesri_nazar/coverage.py`; design: `docs/trd-coverage.md`.
 
 - logcat is cleared at `case start`, so a crash found at `case end` belongs to this case.
 - The agent **can** pass `blocked --reason "backend down"` or `skipped` explicitly.
 - The agent **cannot** mark a case `pass` if a check failed or the app crashed —
-  `tnazar` overrides it to `fail` and notes that the tester tried to pass it.
+  `tnazar` overrides it to `fail` and notes that the tester tried to pass it. Nor while an
+  expected result is unproven: it becomes `blocked`, naming it.
+- Expected results: `expect` lines in a plan case (or `case plan --expect`) are E1, E2… in
+  order; `check … --for E1` links a check to one. A failed linked check fails the case. On
+  replay, an expected result proven only by a DB/Figma check is not re-verified, so its case
+  is blocked, not green.
 - On fail / blocked / crash, an end-of-case screenshot and a logcat dump are attached
   automatically as evidence.
 
@@ -550,7 +568,7 @@ Claude (and CI) can act on them without reading the output:
 | Code | Meaning | What to do |
 |---|---|---|
 | `0` | OK: the command worked; for `run` / `replay`, every case passed | Go on. |
-| `1` | Failed: a check failed, an element was not found, or an adb command failed | Read the output; for `run`, see the report. |
+| `1` | Failed: a check failed, an element was not found, or an adb command failed. For `run` / `replay`, any requested case that did not pass: fail, blocked (e.g. an expected result not verified) or not run | Read the output; for `run`, see the report. |
 | `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags, another process's run still in progress on the device) | Fix the line or the setup; nothing was tested. For a run in progress, wait for it or `./tnazar stop` it. |
 | `3` | Held: the user sent a dashboard message, so the command was **not run**. For `wait-message`: a message arrived | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. An *info* message (the dashboard already typed a secret) is shown without holding. |
 | `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |
@@ -848,6 +866,8 @@ on a real device.
 | DA-11 | stop a plan or flow before its next step for a message the agent got, even through the listener | |
 | DA-12 | run a saved route in one command, and name the existing ones when asked for a missing one | live |
 | DA-13 | show a `goto` as one plain line, a broken learned route as a red row saying what it expected, and no row for the map's screen reads | live |
+| DA-14 | show every requested case once the run ends: a case that never started is a grey row with the reason it did not run | live |
+| DA-15 | move an open page to a run as soon as it starts (even from a past run you picked), and with nothing running show the newest run, never an older one; no reload | live |
 
 ### 15.1 Running a whole plan
 
@@ -872,7 +892,9 @@ case TC-01 "Network & internet opens"
 
 - **Checked first.** The whole file is parsed and every step's flags are validated by the
   CLI's own parser before anything runs; errors name the line. A case without a `check`
-  is rejected (it would end blocked), as is a `check` inside `retry`.
+  is rejected (it would end blocked), as is a `check` inside `retry`. So is an `expect`
+  with no `check --for` linking it, a `--for` naming an expected result the case does not
+  have, and a `--for` inside a flow (a flow's checks are shared by cases).
 - **Blocks.** `flow`/`run` reuse steps; `retry N … end` repeats a block until all its steps
   pass (failed attempts are not recorded); `if "<target>" … else … end` reads the screen
   once and never fails the case; `if "A" --or "B" --wait 10` keeps reading until A or B shows
@@ -880,7 +902,25 @@ case TC-01 "Network & internet opens"
   `wait A --or B` fails the case when B shows (exit 4).
 - **Failures.** A failed `check` is recorded and the case goes on. A failed action ends its
   case (recorded as a failed check naming the line); the run goes on with the next case, or
-  stops with `--stop-on-fail`.
+  stops with `--stop-on-fail`. Cases after an early stop are reported as not run, with why.
+- **Dead preconditions.** A case whose failing step was inside a flow it ran (`run login`)
+  marks that flow as failing; the next case running it tries again. After two failures in a
+  row, every later case running that flow is ended at once as blocked, "precondition failed:
+  flow login (failed in TC-01, TC-02)", with no device call. A failure counts for every flow
+  it happened inside (nested flows too); a case where the flow ran to its end clears it; a
+  flow that only runs in an `if` branch never blocks a case (it may not be needed).
+- **Drafts and review.** `plan.parse(..., draft=True)` collects every completeness gap (a
+  case with no steps or no check, an `expect` with no `check --for`, a `--for` naming a
+  missing E, a `--for` in a flow) in `Plan.gaps` instead of stopping at the first;
+  `tnazar plan review` prints each case's expected results with the checks proving them,
+  then all gaps (exit 0 ready, 1 not ready, 2 a syntax error). `run` parses strictly, so its
+  first error is unchanged.
+- **Import.** `tnazar cases import` (`teesri_nazar/intake.py`) reads CSV, TSV (a sheet's
+  paste: a row ends once it has all its tabs, so a cell's line breaks survive) or a Markdown
+  table; matches columns by header synonyms, or by `--columns` when there is no header;
+  keeps IDs (else `TC-01`…), section rows and an account column as comments; splits expected
+  results only on line breaks, bullets or `;`; never copies an OTP/MPIN/password column. It
+  writes a draft plan that `run` refuses until it is complete.
 - **Dashboard.** Pause holds the runner for as long as the user keeps it paused. A message
   stops the run after the current step, marks the case blocked and leaves the run open
   (exit 3); `--from <case>` continues in the same run.

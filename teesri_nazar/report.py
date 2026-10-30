@@ -6,11 +6,19 @@ import html
 from datetime import datetime
 from pathlib import Path
 
-from . import usage
+from . import coverage, usage
 from .commands import ACTION_EVENTS as ACTIONS
 from .session import Run
 
-ICON = {"pass": "✅", "fail": "❌", "blocked": "⛔", "skipped": "⏭", "running": "⏳"}
+ICON = {"pass": "✅", "fail": "❌", "blocked": "⛔", "skipped": "⏭", "running": "⏳", "not_run": "○", "pending": "◌"}
+WORD = {"not_run": "not run"}
+
+
+def label(status: str) -> str:
+    return WORD.get(status, status)
+
+
+UNDECLARED = "requested cases not declared: completeness unknown"
 SLOW_MS = 5000
 
 
@@ -29,14 +37,18 @@ def case_events(events: list[dict], case: str) -> list[dict]:
     return out
 
 
-def build_cases(events: list[dict]) -> list[dict]:
+def build_cases(events: list[dict], finished: bool = True) -> list[dict]:
+    planned = {c["id"]: c for c in coverage.requested(events)}
     cases: list[dict] = []
     current = None
     loose = {"id": "-", "title": "outside any case", "status": None, "reason": "",
              "events": [], "start": None, "end": None}
     for e in events:
         if e["type"] == "case_start":
-            current = {"id": e["case"], "title": e.get("title", ""), "status": "running",
+            title = e.get("title") or planned.get(e["case"], {}).get("title", "")
+            if planned.get(e["case"], {}).get("added"):
+                title += " (added during run)"
+            current = {"id": e["case"], "title": title, "status": "running",
                        "reason": "", "events": [], "start": e["t"], "end": None,
                        "evidence": [], "crash": None}
             # A re-run of the same case replaces the earlier attempt, in its original position.
@@ -47,10 +59,17 @@ def build_cases(events: list[dict]) -> list[dict]:
                 cases[prior] = current
         elif e["type"] == "case_end" and current:
             current.update(status=e["status"], reason=e.get("reason", ""), end=e["t"],
-                           evidence=e.get("evidence", []), crash=e.get("crash"))
+                           evidence=e.get("evidence", []), crash=e.get("crash"), expects=e.get("expects", []))
             current = None
+        elif e["type"] == "not_run":
+            if all(c["id"] != e["case"] for c in cases):
+                cases.append(_unrun(e["case"], e.get("title", ""), "not_run", e.get("reason", "")))
+        elif e["type"] == "case_plan":
+            pass  # the requested list, read above; not a step of the case in progress
         else:
             (current or loose)["events"].append(e)
+    if not finished:
+        cases += [_unrun(c["id"], c["title"], "pending", "") for c in coverage.not_started(events)]
     for c in cases + [loose]:
         c["checks"] = [e for e in c["events"] if e["type"] == "check"]
         c["notes"] = [e for e in c["events"] if e["type"] == "note"]
@@ -62,14 +81,26 @@ def build_cases(events: list[dict]) -> list[dict]:
     return cases
 
 
+def _unrun(case: str, title: str, status: str, reason: str) -> dict:
+    return {"id": case, "title": title, "status": status, "reason": reason, "events": [], "start": None,
+            "end": None, "evidence": [], "crash": None, "expects": []}
+
+
 def summarize(run: Run) -> dict:
-    cases = build_cases(run.events())
+    events = run.events()
+    cases = build_cases(events, finished=bool(run.meta().get("finished_at")))
     counts = {k: 0 for k in ICON}
     for c in cases:
         if c["id"] != "-":
             counts[c["status"]] = counts.get(c["status"], 0) + 1
     checks = [ch for c in cases for ch in c["checks"]]
+    declared = coverage.declared(events)
+    tally = coverage.tally([c["status"] for c in cases if c["id"] != "-"],
+                           sum(1 for ch in checks if not ch["ok"])) if declared else None
     return {
+        "declared": declared,
+        "tally": tally,
+        "selection": run.meta().get("selection"),
         "cases": cases,
         "counts": counts,
         "checks_total": len(checks),
@@ -98,10 +129,39 @@ def slow_reason(e: dict) -> str:
 
 def summary_line(s: dict) -> str:
     c = s["counts"]
-    parts = [f"{ICON[k]} {c[k]} {k}" for k in ("pass", "fail", "blocked", "skipped", "running") if c.get(k)]
+    parts = [f"{ICON[k]} {c[k]} {label(k)}"
+             for k in ("pass", "fail", "blocked", "skipped", "not_run", "pending", "running") if c.get(k)]
     total = sum(c.values())
     head = f"{total} case(s): " + ("  ".join(parts) if parts else "none recorded")
-    return f"{head}  | checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed"
+    line = f"{head}  | checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed"
+    if s.get("tally"):
+        line += f"  | verified {s['tally']['verified']}/{s['tally']['requested']}"
+    return line
+
+
+def result_word(s: dict) -> str:
+    t = s["tally"]
+    return "all passed" if t["green"] else "failed" if t["complete"] else "incomplete"
+
+
+def coverage_lines(s: dict) -> list[str]:
+    """Under the summary: the run's verdict and selection, or that nobody said what was requested."""
+    if not s.get("declared"):
+        return [UNDECLARED]
+    out = [f"**Result:** {result_word(s)}"]
+    sel = s.get("selection")
+    if sel and sel.get("how"):
+        out.append(f"{s['tally']['requested']} of {sel['plan_cases']} plan cases selected ({sel['how']})")
+    return out
+
+
+EXPECT_ICON = {"verified": "✅", "failed": "❌", "unverified": "○"}
+
+
+def expect_line(x: dict) -> str:
+    how = f"proven by: {'; '.join(x['by'])}" if x["state"] == "verified" else (
+        f"failed: {'; '.join(x['by'])}" if x["state"] == "failed" else "not verified")
+    return f"{EXPECT_ICON[x['state']]} {x['id']} {x['text']} — {how}"
 
 
 def _duration(a: str | None, b: str | None) -> str:
@@ -135,6 +195,8 @@ def to_markdown(run: Run, s: dict) -> str:
     if m.get("prompt"):
         out += ["**Request:** " + m["prompt"], ""]
     out += ["## Summary", "", summary_line(s), ""]
+    for line in coverage_lines(s):
+        out += [line, ""]
     cases = s["cases"]
     tokens = usage.per_case(run)
     if cases:
@@ -145,7 +207,7 @@ def to_markdown(run: Run, s: dict) -> str:
         for c in cases:
             ok = sum(1 for ch in c["checks"] if ch["ok"])
             cost = f" {usage.label(tokens.get(c['id'])) or '-'} |" if tokens else ""
-            out.append(f"| {c['id']} | {c['title']} | {ICON.get(c['status'], '')} {c['status']} | "
+            out.append(f"| {c['id']} | {c['title']} | {ICON.get(c['status'], '')} {label(c['status'])} | "
                        f"{ok}/{len(c['checks'])} |{cost} {c['reason']} |")
         out.append("")
     for c in cases:
@@ -153,7 +215,8 @@ def to_markdown(run: Run, s: dict) -> str:
         meta = f"{c['steps']} step(s)"
         if _duration(c.get("start"), c.get("end")):
             meta += f", {_duration(c['start'], c['end'])}"
-        out += [f"*{c['status'].upper()}* — {meta}" + (f" — {c['reason']}" if c["reason"] else ""), ""]
+        out += [f"*{label(c['status']).upper()}* — {meta}" + (f" — {c['reason']}" if c["reason"] else ""), ""]
+        out += [f"- {expect_line(x)}" for x in c.get("expects", [])]
         for ch in c["checks"]:
             line = "- " + _check_line(ch)
             if ch.get("shot"):
@@ -239,6 +302,10 @@ ul{margin:6px 0;padding-left:20px}code{font-size:13px}
 .tiles{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
 .tile b{display:block;font-size:22px}
 """
+# Kept apart so the Phase 0 test can show it is the only style a report without declared cases gains.
+CSS_COVERAGE = (".not_run,.pending,.exp-unverified{color:var(--muted)}.exp-verified{color:var(--pass)}"
+                ".exp-failed{color:var(--fail)}\n")
+CSS += CSS_COVERAGE
 
 
 def to_html(run: Run, s: dict) -> str:
@@ -253,11 +320,14 @@ def to_html(run: Run, s: dict) -> str:
         rows.append(f"<tr><td><a href='#c-{e(c['id'])}'>{e(c['id'])}</a></td><td>{e(c['title'])}</td>"
                     f"<td><span class='pill {c['status']}'>{c['status']}</span></td>"
                     f"<td>{ok}/{len(c['checks'])}</td>{cost}<td>{e(c['reason'])}</td></tr>")
-    tiles = "".join(f"<div class='tile {k}'><b>{s['counts'].get(k, 0)}</b>{k}</div>"
-                    for k in ("pass", "fail", "blocked", "skipped"))
+    kinds = ("pass", "fail", "blocked", "skipped") + (("not_run",) if s.get("declared") else ())
+    tiles = "".join(f"<div class='tile {k}'><b>{s['counts'].get(k, 0)}</b>{label(k)}</div>" for k in kinds)
+    verdict = "".join(f"<p class=\"muted\">{e(line.replace('**', ''))}</p>\n" for line in coverage_lines(s))
+    if s.get("tally"):
+        verdict = f"<p class=\"muted\">verified {s['tally']['verified']}/{s['tally']['requested']}</p>\n" + verdict
     cards = []
     for c in s["cases"]:
-        items = []
+        items = [f"<li class='exp-{x['state']}'>{e(expect_line(x))}</li>" for x in c.get("expects", [])]
         for ch in c["checks"]:
             items.append(f"<li class='{'pass' if ch['ok'] else 'fail'}'>{e(_check_line(ch))}</li>")
         for n in c["notes"]:
@@ -284,7 +354,7 @@ def to_html(run: Run, s: dict) -> str:
 · {e(m.get('started_at', ''))} · {_duration(m.get('started_at'), m.get('finished_at')) or 'running'}</div>
 {prompt}<div class="tiles">{tiles}</div>
 <p class="muted">checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed</p>
-<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th>{'<th>Tokens</th>' if tokens else ''}<th>Reason</th></tr>{''.join(rows)}</table>
+{verdict}<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th>{'<th>Tokens</th>' if tokens else ''}<th>Reason</th></tr>{''.join(rows)}</table>
 <h2>Details</h2>{''.join(cards)}{_nav_html(run, m)}{_slow_html(s)}
 </main></body></html>
 """

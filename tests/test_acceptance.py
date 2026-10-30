@@ -41,6 +41,14 @@ ACCEPTANCE = {
               "test_an_unknown_flow_names_the_ones_there_are"],
     "DA-13": ["test_a_goto_reads_as_one_line_and_a_broken_route_says_what_it_expected",
               "test_screen_reads_for_the_map_are_not_timeline_rows"],
+    "DA-14": ["test_not_run_cases_are_rows_with_their_reason",
+              "test_layout_gives_not_run_its_own_block",
+              "test_layout_skips_case_plan",
+              "test_cli_11_stop_writes_a_not_run_row_per_unstarted_case"],
+    "DA-15": ["test_a_run_that_starts_takes_over_the_open_page",
+              "test_a_past_run_you_pick_while_one_runs_stays_until_another_starts",
+              "test_with_nothing_running_the_page_shows_the_newest_run_and_never_an_older_one",
+              "test_the_run_list_is_newest_start_first_whatever_touched_the_folders"],
 }
 
 
