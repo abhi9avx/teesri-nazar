@@ -110,7 +110,7 @@ class ReviewFixesTest(unittest.TestCase):
                               app="a.b", name="s", source="x")
         self.assertNotIn("0000", text)
         self.assertNotIn("2580", text)
-        self.assertIn("phone 9000", text)
+        self.assertIn("phone ", text)  # one cell, one scope: a number beside an OTP is hidden too
 
     def test_m4_an_id_the_plan_cannot_hold_is_refused(self):
         for bad in ("O'Brien-1", 'A"1', "X#1"):
@@ -456,6 +456,50 @@ class BranchReviewFixesTest(unittest.TestCase):
             self.assertNotIn(value, got)
         [c] = intake.read("Title,Expected,Test data\nT,E,Pay ₹5000 then enter PIN 1234\n")
         self.assertEqual(c.fields["data"], "Pay ₹5000 then enter PIN ••••")
+
+    def test_a_pass_column_is_a_secret_but_a_pass_fail_column_is_not(self):
+        report: dict = {}
+        [c] = intake.read("Title,Expected,Pass,User Pass,Pass/Fail\nLogin,Home,hunter,welcome,Fail\n", report=report)
+        self.assertEqual(report["not_copied"], ["Pass", "User Pass"])
+        self.assertEqual(c.fields, {"Pass/Fail": "Fail"})
+
+    def test_a_password_without_digits_is_hidden_and_words_about_it_stay(self):
+        for cell, gone, kept in (("login with password welcome", "welcome", "login with password"),
+                                 ("Password is Hunter!", "Hunter", "Password is"),
+                                 ("Use password Hunter#two", "Hunter#two", "Use password"),
+                                 ("otp=abc", "abc", "otp="),
+                                 ("Credentials user/abc", "user/abc", "Credentials"),
+                                 ("Password reset link is sent", None, "Password reset link is sent"),
+                                 ("Password field is masked", None, "Password field is masked"),
+                                 ("Password is required.", None, "Password is required."),
+                                 ("Enter the password and tap Login", None, "Enter the password and tap Login"),
+                                 ("OTP: sent", None, "OTP: sent")):
+            text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
+            if gone:
+                self.assertNotIn(gone, text, cell)
+            self.assertIn(kept, text, cell)
+
+    def test_pr_review_leaks_are_hidden(self):
+        for cell, gone in (("Enter OTP sent; for UAT use 123456", "123456"),
+                           ("Enter verification code 482913", "482913"),
+                           ("Enter the code: 123456", "123456"),
+                           ("User: test1 / Pw: Hunter22", "Hunter22"),
+                           ("Password\nTest@123", "Test@123"),
+                           ("Enter password Welcome@abc", "Welcome@abc"),
+                           ("Valid PIN (1234)", "1234")):
+            text = intake.to_plan(intake.read(f'Title,Expected,Test data\nT,E,"{cell}"\n'), app="a.b", name="s", source="x")
+            self.assertNotIn(gone, text, cell)
+        report: dict = {}
+        intake.read("Title,Expected,Pw\nT,E,Hunter22\n", report=report)
+        self.assertEqual(report["not_copied"], ["Pw"])
+        with self.assertRaises(intake.IntakeError):
+            intake.read("ID,Title,Expected\nOTP123456,T,E\n")
+
+    def test_ranges_and_times_in_expected_results_stay(self):
+        expected = ["Password must be 8-16 characters", "Resend OTP enabled after 00:30", "Valid PIN (1234) unlocks"]
+        got = [c.expects[0] for c in intake.read("Title,Expected\n" + "".join(f"T{i},{e}\n" for i, e in enumerate(expected)))]
+        self.assertEqual(got[:2], expected[:2])
+        self.assertEqual(got[2], "Valid PIN (••••) unlocks")
 
     def test_an_id_holding_a_value_is_refused_without_showing_it(self):
         for row in ("OTP:482913,T,E", "OTP 482913,T,E"):
