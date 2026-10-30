@@ -398,17 +398,39 @@ class BranchReviewFixesTest(unittest.TestCase):
                                  ("otp1234", "1234", "otp"),
                                  ("Password hunter2", "hunter2", "Password"),
                                  ("pwd: abc123", "abc123", "pwd:"),
-                                 ("pass: abc123", "abc123", "pass:"),
                                  ("Credentials: user1/Pass@123", "Pass@123", "Credentials:"),
                                  ("Enter 482913 as the OTP", "482913", "as the OTP"),
                                  ("Password is required", None, "Password is required"),
                                  ("Password is required.", None, "Password is required."),
                                  ("Verify OTP-based login", None, "OTP-based login"),
-                                 ("pin code: 560001", None, "560001")):
+                                 ("pin code: 560001", None, "560001"),
+                                 ('OTP: "482913"', "482913", "OTP:"),
+                                 ("OTP (482913)", "482913", "OTP"),
+                                 ("OTP=>482913", "482913", "OTP"),
+                                 ("PIN#1234", "1234", "PIN"),
+                                 ("otp is: 1234", "1234", "otp is"),
+                                 ("PIN number 1234", "1234", "PIN number"),
+                                 ("pin no 1234", "1234", "pin no"),
+                                 ("Password -> hunter2", "hunter2", "Password"),
+                                 ("password (min 8)", None, "password (min 8)"),
+                                 ("password - min 8 chars", "min 8 chars", "password - "),
+                                 ("Pass - user sees home", None, "Pass - user sees home"),
+                                 ("Pass: Yes", None, "Pass: Yes"),
+                                 ("Tap Pass 3 times", None, "Tap Pass 3 times")):
             text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
             if gone:
                 self.assertNotIn(gone, text, cell)
             self.assertIn(kept, text, cell)
+
+    def test_an_id_that_starts_with_a_secret_word_still_imports(self):
+        cases = intake.read("ID,Title,Expected\nOTP-001,Verify OTP,ok\nPIN-02,Change PIN,ok\n")
+        self.assertEqual([c.id for c in cases], ["OTP-001", "PIN-02"])
+
+    def test_a_long_run_of_digits_and_spaces_is_masked_quickly(self):
+        import time
+        began = time.monotonic()
+        intake.read("Title,Expected,Test data\nT,E," + "1 " * 20000 + "\n")
+        self.assertLess(time.monotonic() - began, 1.0)
 
     def test_a_sheet_without_a_header_never_echoes_a_secret(self):
         with self.assertRaises(intake.IntakeError) as cm:

@@ -31,16 +31,19 @@ SECRET = {"otp", "mpin", "pin", "password", "passcode", "passwd", "pwd", "secret
 # The word ends at a non-letter, not a word boundary, so a value glued to it is still found ("otp1234").
 _WORD = r"\b(otp(?:\s+code)?|" + "|".join(sorted(SECRET - {"otp"})) + r")(?![a-z])"  # "pin code" is a postcode
 # Hide the value, keep the sentence: a number after OTP/PIN/MPIN… ("OTP 1234", "MPIN-1234",
-# "otp - 12 34", "PIN is 0852", "OTP as 0000/1111", "otp1234") or before it ("enter 482913 as the
-# OTP"); after a password-like word and `:`, `=` or ` - `, everything up to the next `;` or `,` (a
-# password may hold spaces); after one and a space, a word holding a digit or symbol ("Password
-# hunter2", not "Password is required"). Hiding a little too much beats a leak.
-_SEP = r"(\s*[:=]\s*|\s*-\s*|\s+(?:is|as)\s+|\s*)"
-_PASSWORDS = r"\b(password|passcode|passwd|pwd|pass|secret|token|credentials)\b"
-SECRET_VALUE = (re.compile(_PASSWORDS + r"(\s*[:=]\s*|\s+-\s+)([^;,\n]+)", re.I),
+# "otp - 12 34", "PIN is: 0852", "PIN number 1234", "OTP as 0000/1111", 'OTP: "1234"', "otp1234")
+# or before it ("enter 482913 as the OTP"); after a password-like word and `:`, `=`, `->` or
+# ` - `, everything up to the next `;` or `,` (a password may hold spaces); after one and a
+# space, a word holding a digit or symbol ("Password hunter2", not "Password is required" or
+# "password (min 8)"). "pass" is not one: it is a test result far more often. Hiding a little
+# too much beats a leak.
+_SEP = r"(\s*(?:\b(?:is|as|number|no)\b\.?)?\s*[:=#>\-–—]*\s*[\"'(\[]?)"
+_PASSWORDS = r"\b(password|passcode|passwd|pwd|secret|token|credentials)\b"
+SECRET_VALUE = (re.compile(_PASSWORDS + r"(\s*(?:[:=]>?|-+>)\s*|\s+-\s+)([^;,\n]+)", re.I),
                 re.compile(_WORD + _SEP + r"(\d[^\s;,]*(?:\s+\d[^\s;,]*)*)", re.I),
-                re.compile(_PASSWORDS + r"(\s+is\s+|\s+)((?=[^\s;,]*(?:\d|[^\w\s;,.!?]))[^\s;,]+)", re.I))
-SECRET_BEFORE = re.compile(r"\d[\d ]{2,}\d(?=\s+(?:is|as)\s+(?:the\s+|your\s+|an?\s+)?" + _WORD + ")", re.I)
+                re.compile(_PASSWORDS + r"(\s+is\s+|\s+)((?=[\w\"'])(?=[^\s;,]*(?:\d|[^\w\s;,.!?()]))[^\s;,(]+)", re.I))
+# The run is capped: an uncapped one is rescanned from every digit of a long cell (quadratic).
+SECRET_BEFORE = re.compile(r"\d[\d ]{2,20}\d(?=\s+(?:is|as)\s+(?:the\s+|your\s+|an?\s+)?" + _WORD + ")", re.I)
 COMMENTED = ("description", "precondition", "data", "priority", "status", "account")
 LABEL = {"data": "test data"}
 BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])(?:\s+|$)")
@@ -224,7 +227,9 @@ def read(text: str, columns: str | None = None, report: dict | None = None) -> l
     taken = {r[id_col].strip() for r in body if id_col is not None and len(r) > id_col}
     cases, section, seen, next_n = [], "", {}, 1
     for n, row in enumerate(body, 1):
-        cells = {name: _hide(c.strip()) for name, c in zip(names, row) if not _secret(name)}
+        # An ID is one word ("OTP-001"), never a value: masking it would break the import.
+        cells = {name: c.strip() if name == "id" else _hide(c.strip())
+                 for name, c in zip(names, row) if not _secret(name)}
         cells.update({f"column {i}": _hide(c.strip()) for i, c in enumerate(row[len(names):], len(names) + 1)
                       if c.strip()})
         filled = [c for c in row if c.strip()]
