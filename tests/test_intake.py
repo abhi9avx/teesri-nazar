@@ -416,7 +416,19 @@ class BranchReviewFixesTest(unittest.TestCase):
                                  ("password - min 8 chars", "min 8 chars", "password - "),
                                  ("Pass - user sees home", None, "Pass - user sees home"),
                                  ("Pass: Yes", None, "Pass: Yes"),
-                                 ("Tap Pass 3 times", None, "Tap Pass 3 times")):
+                                 ("Tap Pass 3 times", None, "Tap Pass 3 times"),
+                                 ("Pass: hunter2", "hunter2", "Pass:"),
+                                 ("User: a / Pass: Abc@123", "Abc@123", "User: a"),
+                                 ("change MPIN 1234 to 5678", "5678", "change MPIN"),
+                                 ("set PIN to 1234", "1234", "set PIN to"),
+                                 ("OTP was 482913", "482913", "OTP was"),
+                                 ("(PIN) 1234", "1234", "(PIN)"),
+                                 ("OTP → 482913", "482913", "OTP"),
+                                 ("Password-hunter2", "hunter2", "Password"),
+                                 ("Verify OTP is 6 digits", None, "Verify OTP is 6 digits"),
+                                 ("Enter 6-digit OTP", None, "Enter 6-digit OTP"),
+                                 ("Pin #2 on map", None, "Pin #2 on map"),
+                                 ("Pass: Yes", None, "Pass: Yes")):
             text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
             if gone:
                 self.assertNotIn(gone, text, cell)
@@ -426,10 +438,16 @@ class BranchReviewFixesTest(unittest.TestCase):
         cases = intake.read("ID,Title,Expected\nOTP-001,Verify OTP,ok\nPIN-02,Change PIN,ok\n")
         self.assertEqual([c.id for c in cases], ["OTP-001", "PIN-02"])
 
+    def test_an_id_holding_a_value_is_refused_without_showing_it(self):
+        for row in ("OTP:482913,T,E", "OTP 482913,T,E"):
+            with self.assertRaises(intake.IntakeError) as cm:
+                intake.read("ID,Title,Expected\n" + row + "\n")
+            self.assertNotIn("482913", str(cm.exception))
+
     def test_a_long_run_of_digits_and_spaces_is_masked_quickly(self):
         import time
         began = time.monotonic()
-        intake.read("Title,Expected,Test data\nT,E," + "1 " * 20000 + "\n")
+        intake.read("Title,Expected,Test data\nT,E,OTP " + "1 " * 20000 + "\n")
         self.assertLess(time.monotonic() - began, 1.0)
 
     def test_a_sheet_without_a_header_never_echoes_a_secret(self):

@@ -30,20 +30,26 @@ FIELDS = {
 SECRET = {"otp", "mpin", "pin", "password", "passcode", "passwd", "pwd", "secret", "token", "credentials"}
 # The word ends at a non-letter, not a word boundary, so a value glued to it is still found ("otp1234").
 _WORD = r"\b(otp(?:\s+code)?|" + "|".join(sorted(SECRET - {"otp"})) + r")(?![a-z])"  # "pin code" is a postcode
-# Hide the value, keep the sentence: a number after OTP/PIN/MPIN… ("OTP 1234", "MPIN-1234",
-# "otp - 12 34", "PIN is: 0852", "PIN number 1234", "OTP as 0000/1111", 'OTP: "1234"', "otp1234")
-# or before it ("enter 482913 as the OTP"); after a password-like word and `:`, `=`, `->` or
-# ` - `, everything up to the next `;` or `,` (a password may hold spaces); after one and a
-# space, a word holding a digit or symbol ("Password hunter2", not "Password is required" or
-# "password (min 8)"). "pass" is not one: it is a test result far more often. Hiding a little
-# too much beats a leak.
-_SEP = r"(\s*(?:\b(?:is|as|number|no)\b\.?)?\s*[:=#>\-–—]*\s*[\"'(\[]?)"
+# Hide the value, keep the sentence: a number after OTP/PIN/MPIN… ("OTP 1234", "otp - 12 34",
+# "PIN is: 0852", "PIN number 1234", "OTP as 0000/1111", 'OTP: "1234"'); after a password-like
+# word and `:`, `=`, `->` or ` - `, everything up to the next `;` or `,` (a password may hold
+# spaces). "pass" counts only before `:`/`=` and a value that is not a result ("Pass: yes").
+_SEP = r"(\s*(?:\b(?:is|as|number|no)\b\.?)?\s*[:=>\-–—→]*\s*[\"'(\[]?)"
 _PASSWORDS = r"\b(password|passcode|passwd|pwd|secret|token|credentials)\b"
-SECRET_VALUE = (re.compile(_PASSWORDS + r"(\s*(?:[:=]>?|-+>)\s*|\s+-\s+)([^;,\n]+)", re.I),
-                re.compile(_WORD + _SEP + r"(\d[^\s;,]*(?:\s+\d[^\s;,]*)*)", re.I),
-                re.compile(_PASSWORDS + r"(\s+is\s+|\s+)((?=[\w\"'])(?=[^\s;,]*(?:\d|[^\w\s;,.!?()]))[^\s;,(]+)", re.I))
-# The run is capped: an uncapped one is rescanned from every digit of a long cell (quadratic).
-SECRET_BEFORE = re.compile(r"\d[\d ]{2,20}\d(?=\s+(?:is|as)\s+(?:the\s+|your\s+|an?\s+)?" + _WORD + ")", re.I)
+_RESULT = r"(?:pass(?:ed)?|fail(?:ed)?|yes|no|y|n|ok|true|false|n/?a)\b"
+SECRET_VALUE = (re.compile(_PASSWORDS + r"(\s*(?:[:=]>?|-+>|→)\s*|\s+-\s+)([^;,\n]+)", re.I),
+                re.compile(r"\b(pass)(\s*[:=]\s*)((?!" + _RESULT + r")[^\s;,\n/][^;,\n/]*)", re.I),
+                re.compile(_WORD + _SEP + r"(\d[^\s;,]*(?:\s+\d[^\s;,]*)*)", re.I))
+# Then, in a clause (up to `;` or `,`) that names a secret at all, every token that looks like a
+# value is hidden too, however the sentence is phrased ("set PIN to 1234", "change MPIN 1234 to
+# 5678", "Password hunter2"): three digits or more, or letters with a digit. Counts ("6-digit
+# OTP") and case IDs ("TC-05") stay.
+_TOKEN = re.compile(r"[^\s;,]+")
+_COUNT = re.compile(r"^[(#]?\d{1,2}(?:[-+]?(?:digits?|chars?|characters?|times?|attempts?|s|mins?|secs?))?[)+.]?$",
+                    re.I)
+_LEAD = re.compile(r"^[\"'(\[]*(?:" + "|".join(sorted(SECRET, key=len, reverse=True)) + r")?[^\w•]*", re.I)
+_POSTCODE = re.compile(r"\bpin[\s-]?code\b", re.I)
+_CASE_ID = re.compile(r"^([A-Za-z]{1,6})[-_]\d{1,4}$")
 COMMENTED = ("description", "precondition", "data", "priority", "status", "account")
 LABEL = {"data": "test data"}
 BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])(?:\s+|$)")
@@ -86,8 +92,31 @@ def _secret(header: str) -> bool:
 
 def _hide(value: str) -> str:
     for pattern in SECRET_VALUE:
-        value = pattern.sub(lambda m: m.group(1) + m.group(2) + "••••", value)
-    return SECRET_BEFORE.sub("••••", value)
+        value = pattern.sub(_mask_value, value)
+    return re.sub(r"[^;,\n]+", _mask_clause, value)
+
+
+def _mask_value(m: re.Match) -> str:
+    if m.re is SECRET_VALUE[2] and sum(ch.isdigit() for ch in m.group(3)) < 3:
+        return m.group(0)  # a count, not a code: "OTP is 6 digits", "PIN 3 times"
+    return m.group(1) + m.group(2) + "••••"
+
+
+def _mask_clause(m: re.Match) -> str:
+    clause = m.group(0)
+    return _TOKEN.sub(_mask_token, clause) if re.search(_WORD, _POSTCODE.sub("", clause), re.I) else clause
+
+
+def _mask_token(m: re.Match) -> str:
+    t = m.group(0)
+    digits = sum(ch.isdigit() for ch in t)
+    if not digits or "•" in t or _COUNT.match(t):
+        return t
+    if (case_id := _CASE_ID.match(t)) and case_id.group(1).casefold() not in SECRET:
+        return t
+    if digits < 3 and not (re.search(r"[A-Za-z]", t) and len(t) >= 4):
+        return t
+    return _LEAD.match(t).group(0) + "••••"
 
 
 def _rows(text: str) -> tuple[list[list[str]], set[int]]:
@@ -248,8 +277,10 @@ def read(text: str, columns: str | None = None, report: dict | None = None) -> l
                 next_n += 1
             cid = f"TC-{next_n:02d}"
             taken.add(cid)
+        if _hide(cid) != cid and re.search(_WORD + r"\s*[:=\s]\s*\d", cid, re.I):
+            raise IntakeError(f"row {n}: case ID {_hide(cid)!r} holds a secret value: give the case another ID")
         if not SAFE_ID.match(cid):
-            raise IntakeError(f"row {n}: case ID {cid!r} must be one word of letters, digits, '.', '_', ':', '/' or '-'")
+            raise IntakeError(f"row {n}: case ID {_hide(cid)!r} must be one word of letters, digits, '.', '_', ':', '/' or '-'")
         if cid in seen:
             raise IntakeError(f"case ID {cid} is used twice: rows {seen[cid]} and {n}")
         seen[cid] = n
