@@ -443,12 +443,16 @@ class BranchReviewFixesTest(unittest.TestCase):
             text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
             self.assertNotIn("@123", text, cell)
 
-    def test_expected_results_keep_amounts_versions_and_codes(self):
-        expected = ["Balance ₹1000 shown after PIN entry", "OTP valid for 120 seconds", "Error 401 after wrong PIN",
-                    "OTP screen on iOS 17.2", "Txn ID TXN123456 shown after PIN"]
-        rows = "".join(f"T{i},{e}\n" for i, e in enumerate(expected))
-        cases = intake.read("Title,Expected\n" + rows)
-        self.assertEqual([c.expects for c in cases], [[e] for e in expected])
+    def test_expected_results_hide_secrets_but_keep_amounts_versions_and_durations(self):
+        kept = ["Balance ₹1000 shown after PIN entry", "OTP valid for 120 seconds", "OTP screen on iOS 17.2",
+                "Locked after 3 attempts with a wrong PIN"]
+        hidden = {"Use password hunter2 → dashboard": "hunter2", "set PIN to 1234 then Home": "1234",
+                  "change MPIN 1234 to 5678 succeeds": "5678", "Enter the OTP received (482913) and see Home": "482913"}
+        rows = "".join(f"T{i},{e}\n" for i, e in enumerate(kept + list(hidden)))
+        expects = [c.expects[0] for c in intake.read("Title,Expected\n" + rows)]
+        self.assertEqual(expects[:len(kept)], kept)
+        for got, value in zip(expects[len(kept):], hidden.values()):
+            self.assertNotIn(value, got)
         [c] = intake.read("Title,Expected,Test data\nT,E,Pay ₹5000 then enter PIN 1234\n")
         self.assertEqual(c.fields["data"], "Pay ₹5000 then enter PIN ••••")
 

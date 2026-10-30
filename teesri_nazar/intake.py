@@ -43,13 +43,15 @@ SECRET_VALUE = (re.compile(_PASSWORDS + r"(\s*(?:[:=]>?|-+>|→)\s*|\s+-\s+)([^;
 # Then, in a clause (up to `;` or `,`) that names a secret at all, every token that looks like a
 # value is hidden too, however the sentence is phrased ("set PIN to 1234", "change MPIN 1234 to
 # 5678", "Password hunter2"): three digits or more, or letters with a digit. Counts ("6-digit
-# OTP"), case IDs ("TC-05"), amounts ("₹5000") and versions ("17.2") stay. Expected results
-# skip this step: an `expect` must match the screen word for word ("Error 401 after wrong PIN").
+# OTP", "120 seconds"), case IDs ("TC-05"), amounts ("₹5000") and versions ("17.2") stay. A code
+# on the screen ("Error 401") is hidden too: the tester restores it in the draft.
 _TOKEN = re.compile(r"[^\s;,]+")
 _COUNT = re.compile(r"^[(#]?\d{1,2}(?:[-+]?(?:digits?|chars?|characters?|times?|attempts?|s|mins?|secs?))?[)+.]?$",
                     re.I)
 _LEAD = re.compile(r"^[\"'(\[]*(?:" + "|".join(sorted(SECRET, key=len, reverse=True)) + r")?[^\w•]*", re.I)
 _POSTCODE = re.compile(r"\bpin[\s-]?code\b", re.I)
+_UNIT = re.compile(r"\s+(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|attempts?|tries|times?|digits?"
+                   r"|characters?|chars?)\b", re.I)
 _CASE_ID = re.compile(r"^([A-Za-z]{1,6})[-_]\d{1,4}$")
 _NOT_A_CODE = re.compile(r"^(?:[₹$€£¥]|rs\.?|inr)[\d,.]+$|^v?\d+(?:\.\d+)+$", re.I)  # amounts, versions
 COMMENTED = ("description", "precondition", "data", "priority", "status", "account")
@@ -92,10 +94,10 @@ def _secret(header: str) -> bool:
     return bool({w.casefold() for w in words} & SECRET)
 
 
-def _hide(value: str, describes_screen: bool = False) -> str:
+def _hide(value: str) -> str:
     for pattern in SECRET_VALUE:
         value = pattern.sub(_mask_value, value)
-    return value if describes_screen else re.sub(r"[^;,\n]+", _mask_clause, value)
+    return re.sub(r"[^;,\n]+", _mask_clause, value)
 
 
 def _mask_value(m: re.Match) -> str:
@@ -106,7 +108,9 @@ def _mask_value(m: re.Match) -> str:
 
 def _mask_clause(m: re.Match) -> str:
     clause = m.group(0)
-    return _TOKEN.sub(_mask_token, clause) if re.search(_WORD, _POSTCODE.sub("", clause), re.I) else clause
+    if not re.search(_WORD, _POSTCODE.sub("", clause), re.I):
+        return clause
+    return _TOKEN.sub(lambda t: t.group(0) if _UNIT.match(clause, t.end()) else _mask_token(t), clause)
 
 
 def _mask_token(m: re.Match) -> str:
@@ -118,7 +122,7 @@ def _mask_token(m: re.Match) -> str:
         return t
     if digits < 3 and not (re.search(r"[A-Za-z]", t) and len(t) >= 4):
         return t
-    return _LEAD.match(t).group(0) + "••••"
+    return _LEAD.match(t).group(0) + "••••" + re.search(r"[)\]\"'.!?]*$", t).group(0)
 
 
 def _rows(text: str) -> tuple[list[list[str]], set[int]]:
@@ -259,7 +263,7 @@ def read(text: str, columns: str | None = None, report: dict | None = None) -> l
     cases, section, seen, next_n = [], "", {}, 1
     for n, row in enumerate(body, 1):
         # An ID is one word ("OTP-001"), never a value: masking it would break the import.
-        cells = {name: c.strip() if name == "id" else _hide(c.strip(), name == "expected")
+        cells = {name: c.strip() if name == "id" else _hide(c.strip())
                  for name, c in zip(names, row) if not _secret(name)}
         cells.update({f"column {i}": _hide(c.strip()) for i, c in enumerate(row[len(names):], len(names) + 1)
                       if c.strip()})
