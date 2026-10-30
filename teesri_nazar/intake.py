@@ -27,16 +27,20 @@ FIELDS = {
 }
 # A column whose header has one of these words is never copied into a plan, and a value
 # following one of them inside any cell is masked. Plans hold only `--env` names for secrets.
-SECRET = {"otp", "mpin", "pin", "password", "passcode", "passwd", "secret", "token"}
-_WORD = r"\b(otp(?:\s+code)?|" + "|".join(sorted(SECRET - {"otp"})) + r")\b"  # "pin code" is a postcode
-# Hide the value, keep the sentence: a number after OTP/PIN/MPIN… ("OTP 1234", "otp - 12 34",
-# "PIN is 0852", "OTP 0000/1111"); after a password-like word and `:`, `=` or ` - `, everything up
-# to the next `;` or `,` (a password may hold spaces). Hiding a little too much beats a leak.
-_SEP = r"(\s*[:=]\s*|\s+-\s+|\s+is\s+|\s+)"
-_PASSWORDS = r"\b(password|passcode|passwd|secret|token)\b"
+SECRET = {"otp", "mpin", "pin", "password", "passcode", "passwd", "pwd", "secret", "token", "credentials"}
+# The word ends at a non-letter, not a word boundary, so a value glued to it is still found ("otp1234").
+_WORD = r"\b(otp(?:\s+code)?|" + "|".join(sorted(SECRET - {"otp"})) + r")(?![a-z])"  # "pin code" is a postcode
+# Hide the value, keep the sentence: a number after OTP/PIN/MPIN… ("OTP 1234", "MPIN-1234",
+# "otp - 12 34", "PIN is 0852", "OTP as 0000/1111", "otp1234") or before it ("enter 482913 as the
+# OTP"); after a password-like word and `:`, `=` or ` - `, everything up to the next `;` or `,` (a
+# password may hold spaces); after one and a space, a word holding a digit or symbol ("Password
+# hunter2", not "Password is required"). Hiding a little too much beats a leak.
+_SEP = r"(\s*[:=]\s*|\s*-\s*|\s+(?:is|as)\s+|\s*)"
+_PASSWORDS = r"\b(password|passcode|passwd|pwd|pass|secret|token|credentials)\b"
 SECRET_VALUE = (re.compile(_PASSWORDS + r"(\s*[:=]\s*|\s+-\s+)([^;,\n]+)", re.I),
                 re.compile(_WORD + _SEP + r"(\d[^\s;,]*(?:\s+\d[^\s;,]*)*)", re.I),
-                re.compile(_PASSWORDS + r"(\s+is\s+)((?=[^\s;,]*[\d\W])[^\s;,]+)", re.I))
+                re.compile(_PASSWORDS + r"(\s+is\s+|\s+)((?=[^\s;,]*(?:\d|[^\w\s;,.!?]))[^\s;,]+)", re.I))
+SECRET_BEFORE = re.compile(r"\d[\d ]{2,}\d(?=\s+(?:is|as)\s+(?:the\s+|your\s+|an?\s+)?" + _WORD + ")", re.I)
 COMMENTED = ("description", "precondition", "data", "priority", "status", "account")
 LABEL = {"data": "test data"}
 BULLET = re.compile(r"^\s*(?:[-•*]|\d+[.)])(?:\s+|$)")
@@ -80,7 +84,7 @@ def _secret(header: str) -> bool:
 def _hide(value: str) -> str:
     for pattern in SECRET_VALUE:
         value = pattern.sub(lambda m: m.group(1) + m.group(2) + "••••", value)
-    return value
+    return SECRET_BEFORE.sub("••••", value)
 
 
 def _rows(text: str) -> tuple[list[list[str]], set[int]]:
@@ -202,7 +206,8 @@ def read(text: str, columns: str | None = None, report: dict | None = None) -> l
         headers, body, offset = rows[0], rows[1:], 1
         if not _is_header(headers):
             sample = next((r for r in rows if sum(1 for c in r if c.strip()) > 1), rows[0])
-            preview = " | ".join(c for c in sample if c.strip())[:120]
+            # Without a header no column is known to hold a secret: hide every digit too.
+            preview = re.sub(r"\d", "•", _hide(" | ".join(c for c in sample if c.strip())))[:120]
             raise IntakeError(f"no header row found (first case row: {preview}). Name the columns in order, e.g. "
                               f"--columns title,description,precondition,steps,data,expected,priority,status,account")
     names = [_field_of(h) or h.strip() for h in headers]

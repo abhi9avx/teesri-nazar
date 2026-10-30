@@ -19,6 +19,14 @@ def evidence_shot(ctx, label: str) -> str | None:
         return None
 
 
+def blocked_end(events: list[dict], case: str, reason: str, checks: list[dict]) -> dict:
+    """The case_end of a case that could not finish, with what its checks so far proved."""
+    end = {"type": "case_end", "case": case, "status": "blocked", "reason": reason}
+    if expects := coverage.expects_of(events, case):
+        end["expects"] = coverage.expectation_states(expects, checks)
+    return end
+
+
 def close_run(run, open_reason: str, not_run_reason: str) -> None:
     """End the case still open and give every requested case that never started its row.
 
@@ -26,11 +34,8 @@ def close_run(run, open_reason: str, not_run_reason: str) -> None:
     """
     events = run.events()
     if case := run.current_case():
-        end = {"type": "case_end", "case": case, "status": "blocked", "reason": open_reason}
-        if expects := coverage.expects_of(events, case):
-            checks = [e for e in rpt.case_events(events, case) if e["type"] == "check"]
-            end["expects"] = coverage.expectation_states(expects, checks)
-        run.log(end)
+        checks = [e for e in rpt.case_events(events, case) if e["type"] == "check"]
+        run.log(blocked_end(events, case, open_reason, checks))
     for c in coverage.not_started(events):
         run.log({"type": "not_run", "case": c["id"], "title": c["title"], "reason": not_run_reason})
 

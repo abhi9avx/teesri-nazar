@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Built v0.3** on `feature/coverage` (2026-10-21); see the TRD for the code review outcome. Design grilled and agreed 2026-10-21 (Q1–Q13, all accepted); independent review 2026-10-21 (3 HIGH, 9 MED, 9 LOW) folded in as R1–R7 (§10). Not built. |
+| Status | **Built v0.3** on `feature/coverage` (2026-10-21); see the TRD for the code review outcome. Design grilled and agreed 2026-10-21 (Q1–Q13, all accepted); independent review 2026-10-21 (3 HIGH, 9 MED, 9 LOW) folded in as R1–R7 (§10); step 1 (§11, import and plan review) built after it. |
 | Branch | `feature/coverage`, stacked on `feature/site-trust` |
 | Date | 2026-10-21 |
 | Technical design | [trd-coverage.md](trd-coverage.md) |
@@ -82,7 +82,7 @@ does, and the agent (CLAUDE.md, `test-feature`) always opts in.
 
 **Non-goals (this batch)**
 
-- Importing test cases from CSV/Markdown files (Q1: `bets.md` Next, interview-gated).
+- Importing test cases from CSV/Markdown files (Q1: `bets.md` Next, interview-gated). Reversed in §11 S1 after real runs.
 - Preconditions and test-data checks (separate bet: pre-run state check).
 - Build-to-build comparison (separate bet: regression suites).
 - Any LLM judgement of coverage: every rule here is deterministic.
@@ -199,7 +199,7 @@ ends, not-run ones as grey rows with their reason*.
 | An `if` branch makes a linked check optional, so cases end blocked unexpectedly | That is the intended honest answer (Q9); the reason names the E so the plan can be fixed |
 | A case re-run replaces the earlier attempt; its expectation state must follow the latest attempt | Computed from the latest attempt's events only (existing `case_events`) |
 | Rabbit hole: matching free-text expectations to checks automatically | Out: linking is explicit with `--for` |
-| Rabbit hole: CSV import | Out (Q1) |
+| Rabbit hole: CSV import | Out (Q1); in after §11 S1 |
 
 ## 8. Done when
 
@@ -256,7 +256,7 @@ ends, not-run ones as grey rows with their reason*.
 
 ## 11. Step 1 completion (v0.4, decided 2026-10-21)
 
-After real runs on a banking app (an 11-case FAQ regression and a 5-case chatbot table), the
+After real runs on an app under test (an 11-case regression and a 5-case table), the
 owner chose to finish all of step 1 before merging. Decisions (round 2 of grilling, all
 accepted):
 
@@ -271,6 +271,6 @@ accepted):
 | S7 | A `flow` that fails gets one more try in the next case that runs it; if that fails too, every later case running it ends at once as `blocked: precondition failed: flow <name> …`, without touching the device. |
 | S8 | No general failure classification (step 4). |
 | S9 | `observe --full` prints complete text, multi-line, secrets redacted. Checks already match full text. |
-| S10 | Proof: example plan with `expect`; the FAQ plan rewritten with expected results on a real device; the chatbot table imported and reviewed; the login-failure scenario re-run; edge cases (Ctrl-C, replay of a replay, `--from` on a fresh run, unicode and long expected results, 200 cases, old runs in the dashboard). |
+| S10 | Proof: example plan with `expect`; a real regression plan rewritten with expected results on a real device; a real test-case table imported and reviewed; the login-failure scenario re-run; edge cases (Ctrl-C, replay of a replay, `--from` on a fresh run, unicode and long expected results, 200 cases, old runs in the dashboard). |
 | S11 | One PR from `feature/coverage` once all is green, after the owner's review. |
 

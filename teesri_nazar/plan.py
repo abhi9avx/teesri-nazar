@@ -350,7 +350,7 @@ def _has_check(body: list, flows: dict[str, Flow], seen: frozenset = frozenset()
 
 
 def _checks(body: list):
-    """The `check` steps written in this body, inside `if`/`else` too (a `retry` holds none)."""
+    """The `check` steps written in this body, inside `if`/`else` and `retry` too."""
     for item in body:
         if isinstance(item, Step) and item.argv[0] == "check":
             yield item

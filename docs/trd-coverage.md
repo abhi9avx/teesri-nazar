@@ -164,12 +164,12 @@ Cases with no expects take exactly today's path (characterisation test PH0-3).
 
 ### 4.5 `report.py`
 
-- `ICON` gains `"not_run": "○"` and `"pending": "…"`; `build_cases` turns `not_run` events into
+- `ICON` gains `"not_run": "○"` and `"pending": "◌"`; `build_cases` turns `not_run` events into
   rows (`status "not_run"`, reason, no events) in requested order; a real attempt wins.
-- `summarize` adds `requested`, `verified`, `declared`, `complete`, `green`, `selection` from
-  `coverage.ledger`.
+- `summarize` adds `declared`, `selection` and `tally` (`requested`, `verified`, `complete`,
+  `green`, from `coverage.tally`; `None` when no cases were declared).
 - `summary_line` (R1, H1–H2): **if not declared → today's exact string**. If declared, today's
-  string with additions only: N = requested cases; `○ k not run` and, live, `⏳ k pending` among
+  string with additions only: N = requested cases; `○ k not run` and, live, `◌ k pending` among
   the counts (zero counts omitted, as today); `  | verified V/N` appended:
   `20 case(s): ✅ 16 pass  ❌ 2 fail  ⛔ 1 blocked  ○ 1 not run  | checks 40/43 passed  | verified 18/20`.
   It still contains `case(s)`, so `runner._stop()`'s filter (`runner.py:119`) keeps printing it;

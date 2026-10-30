@@ -16,6 +16,8 @@ WORD = {"not_run": "not run"}
 
 def label(status: str) -> str:
     return WORD.get(status, status)
+
+
 UNDECLARED = "requested cases not declared: completeness unknown"
 SLOW_MS = 5000
 

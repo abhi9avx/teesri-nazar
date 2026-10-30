@@ -391,5 +391,33 @@ class ImportCliTest(CliTestCase):
         self.assertIn("has no steps", err)
 
 
+class BranchReviewFixesTest(unittest.TestCase):
+    def test_secrets_glued_spelled_out_or_after_the_number_are_hidden(self):
+        for cell, gone, kept in (("MPIN-1234", "1234", "MPIN-"),
+                                 ("OTP as 123456", "123456", "OTP as"),
+                                 ("otp1234", "1234", "otp"),
+                                 ("Password hunter2", "hunter2", "Password"),
+                                 ("pwd: abc123", "abc123", "pwd:"),
+                                 ("pass: abc123", "abc123", "pass:"),
+                                 ("Credentials: user1/Pass@123", "Pass@123", "Credentials:"),
+                                 ("Enter 482913 as the OTP", "482913", "as the OTP"),
+                                 ("Password is required", None, "Password is required"),
+                                 ("Password is required.", None, "Password is required."),
+                                 ("Verify OTP-based login", None, "OTP-based login"),
+                                 ("pin code: 560001", None, "560001")):
+            text = intake.to_plan(intake.read(f"Title,Expected,Test data\nT,E,{cell}\n"), app="a.b", name="s", source="x")
+            if gone:
+                self.assertNotIn(gone, text, cell)
+            self.assertIn(kept, text, cell)
+
+    def test_a_sheet_without_a_header_never_echoes_a_secret(self):
+        with self.assertRaises(intake.IntakeError) as cm:
+            intake.read("TC-1,Login,OTP 1234,secret Pass@1,9876543210\n")
+        msg = str(cm.exception)
+        for value in ("1234", "Pass@1", "9876543210"):
+            self.assertNotIn(value, msg)
+        self.assertIn("Login", msg)
+
+
 if __name__ == "__main__":
     unittest.main()

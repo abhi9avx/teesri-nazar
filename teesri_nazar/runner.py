@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 
 from . import cli, coverage, live
 from . import device as dev
+from .judge import blocked_end
 from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
 from .session import Run, claim_active, get_active
 from .targets import selector_of
@@ -262,10 +263,7 @@ def _block(the_run: Run, case: Case, reason: str) -> None:
     """End a case unrun: no device call, so a dead precondition costs nothing per case."""
     events = the_run.events()
     the_run.log({"type": "case_start", "case": case.id, "title": case.title})
-    end = {"type": "case_end", "case": case.id, "status": "blocked", "reason": reason}
-    if expects := coverage.expects_of(events, case.id):
-        end["expects"] = coverage.expectation_states(expects, [])
-    the_run.log(end)
+    the_run.log(blocked_end(events, case.id, reason, []))
 
 
 def _select(cases: list[Case], only: str | None, start: str | None) -> list[Case]:
