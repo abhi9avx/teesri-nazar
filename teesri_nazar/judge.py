@@ -52,12 +52,14 @@ def close_run(run, open_reason: str, not_run_reason: str, crash: bool = False) -
 
 def open_case_crashed(run, adb) -> bool:
     """Did the app crash in the case still open? Its log was cleared at `case start`. A device
-    that is gone cannot say, and closing the run must not wait on it."""
+    that is gone cannot say, and closing the run must not wait on it: `logcat` would wait for
+    the device until adb's timeout, `get-state` fails at once."""
     if not run.current_case():
         return False
     try:
+        adb.run(["get-state"], timeout=5)
         return bool(dev.crashes(adb, run.meta().get("package") or None))
-    except AdbError:
+    except (AdbError, OSError):
         return False
 
 

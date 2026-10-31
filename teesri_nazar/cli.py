@@ -243,6 +243,13 @@ def refuse_if_owned(run: Run) -> None:
         raise UserError(f"a run is in progress on this device: {run.name} (pid {pid}); stop it or wait")
 
 
+def _open_case_crashed(run: Run, serial: str) -> bool:
+    try:
+        return open_case_crashed(run, Adb(serial))
+    except (AdbError, OSError):  # adb itself missing: stopping the run must still work
+        return False
+
+
 def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     active = get_active()
     if not active:
@@ -251,7 +258,7 @@ def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     meta = run.meta()
     close_run(run, "run stopped before the case finished",
               reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started",
-              crash=open_case_crashed(run, Adb(serial)))
+              crash=_open_case_crashed(run, serial))
     try:
         adb = Adb(serial)
         dev.release_device(adb, device_owner_of(run))

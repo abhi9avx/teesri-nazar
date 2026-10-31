@@ -102,7 +102,12 @@ console.log(JSON.stringify(out));""")
         if code:
             print(f"could not start a run:\n{out}")
             return 2
-        self.tn("launch", "--restart")
+        # Another app on the device can put its own screen over Settings right after the launch
+        # (an app-lock or PIN screen when it resumes): wait for Settings, relaunch if it lost.
+        for _ in range(3):
+            self.tn("launch", "--restart")
+            if self.tn("wait", "~Search", "--timeout", "8")[0] == 0:
+                break
         self.spawn("ui", "--no-open", "--port", "0")
         ui_json = Path(self.home) / ".tnazar" / "ui.json"
         for _ in range(50):

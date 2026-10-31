@@ -219,22 +219,42 @@ class PrReviewTest(PlanRunBase):
         self.assertEqual((end["status"], end.get("cause")), ("fail", "app"))
         self.assertIn("app crashed", end["reason"])
 
-    def test_replay_fails_the_case_on_the_error_screen_the_plan_named(self):
-        from teesri_nazar.session import Run
-        self.start()
-        for argv in (("case", "start", "TC-01", "a"), ("wait", "Login", "--or", "Pay now", "--timeout", "1"),
-                     ("check", "Login"), ("case", "end"), ("stop",)):
-            tnazar(*argv)
-        name = sorted(p.name for p in Run.load("demo").path.parent.iterdir())[0]
-        self.adb.current = "home"  # the screen the plan named as failure
-        tnazar("replay", name)
-        newest = sorted(p for p in Run.load(name).path.parent.iterdir() if p.name != name)[-1]
-        end = next(e for e in Run(newest).events() if e["type"] == "case_end")
-        self.assertEqual((end["status"], end.get("cause")), ("fail", "app"))
-
     def test_require_takes_no_setup_flag_of_its_own(self):
         path = self.home + "/bad.plan"
         with open(path, "w") as f:
             f.write('app com.example.app\nname bad\n\ncase TC-01 "a"\n  require Login --setup\n  check Login\n')
         code, out, err = tnazar("run", path)
         self.assertEqual(code, 2, out + err)
+
+
+class StopDeviceGoneTest(PlanRunBase):
+    def test_stop_with_the_device_gone_does_not_wait_on_the_crash_log(self):
+        from unittest import mock
+        from teesri_nazar.adb import AdbError
+        self.start()
+        tnazar("case", "start", "TC-01", "a")
+        real_run = self.adb.run
+
+        def gone(args, *a, **k):
+            if args[:1] in (["get-state"], ["logcat"]):
+                if args[:1] == ["logcat"]:
+                    self.fail("read the crash log of a device that is gone (adb waits for it)")
+                raise AdbError("adb: device 'emulator-5554' not found")
+            return real_run(args, *a, **k)
+        with mock.patch.object(self.adb, "run", gone):
+            code, out, err = tnazar("stop")
+        self.assertEqual(code, 0, out + err)
+
+    def test_replay_names_the_error_screen_but_does_not_fail_the_app_it_could_not_retry(self):
+        from teesri_nazar.session import Run
+        self.start()
+        for argv in (("case", "start", "TC-01", "a"), ("wait", "Login", "--or", "Pay now", "--timeout", "1"),
+                     ("check", "Login"), ("case", "end"), ("stop",)):
+            tnazar(*argv)
+        name = sorted(p.name for p in Run.load("demo").path.parent.iterdir())[0]
+        self.adb.current = "home"
+        tnazar("replay", name)
+        newest = sorted(p for p in Run.load(name).path.parent.iterdir() if p.name != name)[-1]
+        end = next(e for e in Run(newest).events() if e["type"] == "case_end")
+        self.assertEqual((end["status"], end.get("cause")), ("blocked", "step"))
+        self.assertIn('"Pay now" showed instead', end["reason"])

@@ -18,7 +18,7 @@ from . import report as rpt
 from . import screen as scr
 from . import visual
 from .adb import Adb, AdbError, adb_binary, pick_serial
-from .cli import (EXIT_ERROR, EXIT_FAIL, EXIT_INSTEAD, Ctx, _end_case, check_device_owner, close_run,
+from .cli import (EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, check_device_owner, close_run,
                   device_owner_of, evidence_shot, open_case_crashed)
 from .errors import UserError
 from .session import Run, get_active, now_iso, stamp
@@ -30,8 +30,6 @@ class StepFailed(Exception):
     pass
 
 
-class StepInstead(StepFailed):
-    """A wait met the screen its plan named as failure (`--or`): evidence about the app."""
 
 
 def _scale(xy: list[int], recorded: list[int] | None, now: tuple[int, int]) -> tuple[int, int]:
@@ -118,7 +116,9 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
         ok, _, _ = dev.wait_for(adb, sel, max(e.get("timeout", 15), timeout), gone=e.get("gone", False),
                                 stats=stats, alternatives=alts)
         if "alternative" in stats:
-            raise StepInstead(f"wait: {alts[stats['alternative']]} showed instead of {sel}")
+            # Named in the reason, but the case is not failed: the plan may have met it inside a
+            # `retry` and passed on a later attempt, and a replay cannot retry.
+            raise StepFailed(f"wait: {alts[stats['alternative']]} showed instead of {sel}")
         if not ok and e.get("ok", True):
             raise StepFailed(f"wait: {sel} never became {'gone' if e.get('gone') else 'visible'}")
     elif t == "wait_online":
@@ -242,9 +242,8 @@ def run(args) -> int:
                 time.sleep(SETTLE)
             except StepFailed as exc:
                 print(f"  step {step} failed: {exc}")
-                code = EXIT_INSTEAD if isinstance(exc, StepInstead) else EXIT_FAIL
                 ctx.log({"type": "check", "kind": "ui", "ok": False, "what": f"step {step}: {exc}",
-                         "step": {"cmd": e["type"], "code": code, "error": str(exc)}})
+                         "step": {"cmd": e["type"], "code": EXIT_FAIL, "error": str(exc)}})
                 if target.current_case():
                     skipping = "a step failed"
         if target.current_case():

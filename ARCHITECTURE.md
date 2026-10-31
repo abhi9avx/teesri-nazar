@@ -561,16 +561,18 @@ failed check on a read with nothing beyond the window's root blocks it too. A sc
 elements but no text (a white screen, a spinner, labels only) is the app's to answer for. A
 failed check, an error screen a plan named with `wait A --or B` (a `retry` that never passed
 keeps the attempt that hit it), or a crash fails it: `fail · app`. `stop` reads the open
-case's crash log first, and replay waits for a recorded `--or` screen too, so neither hides
-one. A case with no checks, or an expected result nothing proved, is `blocked · not
-verified`. A plan's `require` (a `check --setup`) that does not hold stops its case as
-`blocked · precondition not met`: the setup never reached the state the case tests (a chat
-that reopened instead of starting fresh), so the app was not tested. A `require` is never an
-expected result and never passes a case alone. A screen left over from an earlier case (a
-chat reopened with its history) is the setup's to rule out: make the case's starting state a
-`require`. Telling an old chat message from a new one by the screen dump alone was tried and
-rejected: in chats, tappable options and newer bubbles look alike, so it passed stale
-messages. The cause is stored on `case_end` and shown in the report and dashboard.
+case's crash log first (when the device answers), so it cannot hide one. Replay waits for a
+recorded `--or` screen too and names it in the reason, but blocks rather than fails: a
+replay cannot retry, and the plan may have met it inside a `retry` that passed. A case with
+no checks, or an expected result nothing proved, is `blocked · not verified`. A plan's
+`require` (a `check --setup`) that does not hold stops its case as `blocked · precondition
+not met`: the setup never reached the state the case tests (a chat that reopened instead of
+starting fresh), so the app was not tested. A `require` is never an expected result and
+never passes a case alone. A screen left over from an earlier case (a chat reopened with its
+history) is the setup's to rule out: make the case's starting state a `require`. Telling an
+old chat message from a new one by the screen dump alone was tried and rejected: in chats,
+tappable options and newer bubbles look alike, so it passed stale messages. The cause is
+stored on `case_end` and shown in the report and dashboard.
 `tests/fixtures/judgment/cases.json` holds labelled cases (a senior tester's verdict, both
 false fails and planted bugs); `tests/test_judgment.py` fails if any case judged right in
 `baseline.json` is judged wrong, so the judgment only improves.
