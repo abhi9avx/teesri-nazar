@@ -13,6 +13,7 @@ A plan is the tnazar commands a tester would type, without the `./tnazar` prefix
       expect "Internet settings show" # optional: expected results E1, E2… before the steps
       launch --restart
       run open_network
+      require "Search Settings"       # setup: if it does not hold, the case is blocked, never failed
       check "Internet" --for E1       # proves E1; every `expect` needs a `check --for` in its case
       retry 2                         # repeat until every step in it passes
         ...
@@ -29,6 +30,11 @@ branch not taken) ends its case blocked, naming it; flows cannot link expected r
 `tnazar run` records the selected cases first, so a case that never starts (an error,
 `--stop-on-fail`) is still in the report, as not run.
 The whole file is checked before anything runs, so a typo never reaches the device.
+
+`require <target>` takes `check`'s options: it is the state the setup must reach (a fresh
+chat, an empty cart, a logged-in home). When it does not hold, the case stops there as
+`blocked · precondition not met`: the app was never tested, so it never fails. It is never
+an expected result (no `--for`) and a case needs a real `check` besides it.
 
 `wait A --or B` is a step like any other: when B shows up instead of A it fails (exit 4),
 which fails the case. To branch on whichever screen shows first, use
@@ -230,11 +236,22 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
             if len(args) != 1:
                 fail(n, "use `run <flow>`")
             stack[-1].append(RunFlow(n, args[0]))
+        elif head == "require":
+            if any(isinstance(b, Retry) for _, b in opened):
+                fail(n, "`require` inside `retry` would record the failed attempts: "
+                        "use `wait` in the block and put the `require` after its `end`")
+            opts = _check_args(["check", *args], lambda msg: fail(n, msg))
+            if opts.setup or opts.for_ or opts.result:
+                fail(n, "`require` is a setup condition on the screen, not an expected result or a manual "
+                        "result: prove expected results with `check ... --for`")
+            stack[-1].append(Step(n, ["check", *args, "--setup"]))
         elif head in NOT_IN_PLANS:
             fail(n, f"`{head}` is not allowed in a plan: `tnazar run` manages the run and its cases")
         elif head not in STEPS:
             fail(n, f"unknown command `{head}`")
         else:
+            if head == "check" and "--setup" in words:
+                fail(n, "write a setup condition as `require <target>`, not `check --setup`")
             if head == "check" and any(isinstance(b, Retry) for _, b in opened):
                 fail(n, "`check` inside `retry` would record the failed attempts: "
                         "use `wait` in the block and put the `check` after its `end`")
@@ -337,14 +354,21 @@ def _if_options(args: list[str]):
     return None if rest else opts
 
 
-def _has_check(body: list, flows: dict[str, Flow], seen: frozenset = frozenset()) -> bool:
+def is_check(step: Step) -> bool:
+    """A `check` the plan wrote, not a `require` (a setup condition, never an expected result)."""
+    return step.argv[0] == "check" and "--setup" not in step.argv
+
+
+def _has_check(body: list, flows: dict[str, Flow], seen: frozenset = frozenset(), setup: bool = False) -> bool:
+    """`setup`: a `require` counts too (anything that records a check, as inside a `retry`)."""
     for item in body:
-        if isinstance(item, Step) and item.argv[0] == "check":
+        if isinstance(item, Step) and (is_check(item) or setup and item.argv[0] == "check"):
             return True
         if isinstance(item, RunFlow) and item.flow in flows and item.flow not in seen:
-            if _has_check(flows[item.flow].body, flows, seen | {item.flow}):
+            if _has_check(flows[item.flow].body, flows, seen | {item.flow}, setup):
                 return True
-        if isinstance(item, If) and (_has_check(item.then, flows, seen) or _has_check(item.other, flows, seen)):
+        if isinstance(item, If) and (_has_check(item.then, flows, seen, setup)
+                                     or _has_check(item.other, flows, seen, setup)):
             return True
     return False
 
@@ -352,7 +376,7 @@ def _has_check(body: list, flows: dict[str, Flow], seen: frozenset = frozenset()
 def _checks(body: list):
     """The `check` steps written in this body, inside `if`/`else` and `retry` too."""
     for item in body:
-        if isinstance(item, Step) and item.argv[0] == "check":
+        if isinstance(item, Step) and is_check(item):
             yield item
         elif isinstance(item, If):
             yield from _checks(item.then)
@@ -367,13 +391,13 @@ def _for_ids(argv: list[str]) -> list[str]:
     return build_parser().parse_args(argv).for_ or []
 
 
-def _check_args(words: list[str], fail) -> None:
+def _check_args(words: list[str], fail) -> argparse.Namespace | None:
     """Let the CLI's own parser reject bad flags now, not halfway through a run."""
     from .cli import build_parser
     err = io.StringIO()
     try:
         with contextlib.redirect_stderr(err):
-            build_parser().parse_args(words)
+            return build_parser().parse_args(words)
     except SystemExit:
         fail(err.getvalue().strip().splitlines()[-1].replace("tnazar: error: ", ""))
     except argparse.ArgumentError as exc:
@@ -388,8 +412,8 @@ def _check_flows(body: list, flows: dict[str, Flow], path: list, source: str, in
             if item.flow in path:
                 raise PlanError(f"{source} line {item.line}: flows call each other in a loop "
                                 f"({' -> '.join(p for p in path if p)} -> {item.flow})")
-            if in_retry and _has_check(flows[item.flow].body, flows):
-                raise PlanError(f"{source} line {item.line}: flow `{item.flow}` has a `check`, so it cannot run "
+            if in_retry and _has_check(flows[item.flow].body, flows, setup=True):
+                raise PlanError(f"{source} line {item.line}: flow `{item.flow}` has a `check` or `require`, so it cannot run "
                                 f"inside `retry` (failed attempts would be recorded): use `wait` in the flow")
             _check_flows(flows[item.flow].body, flows, path + [item.flow], source, in_retry)
         elif isinstance(item, Retry):

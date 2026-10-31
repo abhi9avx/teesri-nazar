@@ -26,7 +26,7 @@ class AdbExitCodeTest(PlanRunBase):
         event = [e for e in get_active()[0].events() if e["type"] == "adb"][-1]
         self.assertEqual(event["exit"], 5)  # adb's own code is still recorded
 
-    def test_an_adb_step_exiting_5_in_a_plan_fails_its_case_once(self):
+    def test_an_adb_step_exiting_5_in_a_plan_blocks_its_case_once(self):
         with adb_exit(5) as run:
             _, result = self.run_plan('''
 case TC-01 "adb fails"
@@ -34,7 +34,7 @@ case TC-01 "adb fails"
   check Login
 ''', expect=1)
         self.assertEqual(run.call_count, 1)  # no endless retry
-        self.assertEqual(self.cases(result), {"TC-01": "fail"})
+        self.assertEqual(self.cases(result), {"TC-01": "blocked"})  # a step that could not run
 
 
 class ReplayOddChecksTest(CliTestCase):

@@ -37,7 +37,11 @@ one before each group of cases. Never write an OTP or MPIN into a plan.
    (login, go to a screen) are `flow`s; flaky app steps go in `retry N … end` with `wait`
    inside and the `check` after; `if "<target>" … else … end` for screens that vary
    (`if "A" --or "B" --wait 10` to wait for whichever shows). In a plan, `wait A --or B`
-   fails the case when B shows (exit 4): use it only when B means failure.
+   fails the case when B shows (exit 4): use it only when B means failure. The state a
+   case needs before its checks (a fresh chat, a logged-in home, an empty cart) is a
+   `require`, at the end of the setup flow: when it does not hold the case is blocked as
+   *precondition not met*, never failed. In chats, old messages stay on screen: a `require` that
+   the chat is fresh keeps an earlier case's history from passing or failing a check.
    Fixed values only: write the labels you observed. Secrets only as `--env NAME`.
    Each expected result is an `expect "<text>"` line at the top of its case, and each is
    proven by a `check ... --for E<n>` in that case (the plan is refused otherwise). No
@@ -189,8 +193,11 @@ The user can run `./tnazar ui` to watch the run and steer it. Always:
   colour/spacing issues. Ignore device chrome and dynamic data.
 - **Crashes/ANRs** are detected automatically at `case end` and fail the case.
 
-`case end` derives the result from the checks. Pass `blocked --reason "..."` when the
-case could not be executed (environment down, missing data), `skipped` when out of scope.
+`case end` derives the result from the checks. Pass `blocked --reason "..."` when the case
+could not be executed (environment down, missing data), `skipped` when out of scope. A
+failed check or a crash cannot be marked `blocked` or `skipped` away: if the check itself
+was wrong (wrong account, too early), start the case again with `case start` and check
+again.
 
 ## Rules
 

@@ -18,7 +18,8 @@ from . import report as rpt
 from . import screen as scr
 from . import visual
 from .adb import Adb, AdbError, adb_binary, pick_serial
-from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, close_run, check_device_owner, device_owner_of, evidence_shot
+from .cli import (EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, check_device_owner, close_run,
+                  device_owner_of, evidence_shot, open_case_crashed)
 from .errors import UserError
 from .session import Run, get_active, now_iso, stamp
 
@@ -27,6 +28,8 @@ SETTLE = 0.3
 
 class StepFailed(Exception):
     pass
+
+
 
 
 def _scale(xy: list[int], recorded: list[int] | None, now: tuple[int, int]) -> tuple[int, int]:
@@ -108,7 +111,14 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
                 dev.swipe(adb, *vec)
     elif t == "wait":
         sel = scr.Selector.from_dict(e["selector"])
-        ok, _, _ = dev.wait_for(adb, sel, max(e.get("timeout", 15), timeout), gone=e.get("gone", False))
+        alts = [scr.Selector.from_dict(a) for a in e.get("alternatives", [])]
+        stats: dict = {}
+        ok, _, _ = dev.wait_for(adb, sel, max(e.get("timeout", 15), timeout), gone=e.get("gone", False),
+                                stats=stats, alternatives=alts)
+        if "alternative" in stats:
+            # Named in the reason, but the case is not failed: the plan may have met it inside a
+            # `retry` and passed on a later attempt, and a replay cannot retry.
+            raise StepFailed(f"wait: {alts[stats['alternative']]} showed instead of {sel}")
         if not ok and e.get("ok", True):
             raise StepFailed(f"wait: {sel} never became {'gone' if e.get('gone') else 'visible'}")
     elif t == "wait_online":
@@ -126,13 +136,16 @@ def _recheck(ctx: Ctx, e: dict, timeout: float) -> None:
                  "text": f"[{kind}] not re-verified on replay: {e['what']}"})
         return
     sel = scr.Selector.from_dict(e["selector"])
-    ok, _, el = dev.wait_for(ctx.adb, sel, max(timeout, 5), gone=e.get("gone", False), exact=True)
+    ok, screen, el = dev.wait_for(ctx.adb, sel, max(timeout, 5), gone=e.get("gone", False), exact=True)
     if ok and el is not None:
         for flag, actual in (("checked", el.checked), ("enabled", el.enabled)):
             if e.get(flag) is not None and e[flag] != actual:
                 ok = False
     event = {"type": "check", "kind": "ui", "ok": ok, "what": e["what"], "selector": e["selector"],
-             "gone": e.get("gone", False), "recorded_ok": e["ok"], **({"for": e["for"]} if e.get("for") else {})}
+             "gone": e.get("gone", False), "recorded_ok": e["ok"], **({"for": e["for"]} if e.get("for") else {}),
+             **({"setup": True} if e.get("setup") else {})}
+    if not ok and not e.get("gone") and el is None and (screen is None or len(screen.elements) <= 1):
+        event["blank_screen"] = True  # as on a live run: nothing was read beyond the window root
     if shot := evidence_shot(ctx, f"check-{'pass' if ok else 'fail'}"):
         event["shot"] = shot
     ctx.log(event)
@@ -168,7 +181,7 @@ def run(args) -> int:
         print(f"warning: could not mark the device as in use: {exc}", file=sys.stderr)
     ctx = Ctx(adb, target)
     print(f"replaying {source.name} on {adb.serial} -> {target.name}")
-    skipping = False
+    skipping = ""
     pairs: list[tuple[str, str]] = []
     step = 0
     try:
@@ -187,17 +200,18 @@ def run(args) -> int:
             if t == "case_start":
                 if target.current_case():
                     _end_case(ctx, None, None)
-                skipping = False
+                skipping = ""
                 dev.logcat_clear(adb)
                 ctx.log({"type": "case_start", "case": e["case"], "title": e.get("title", "")})
                 print(f"case {e['case']} {e.get('title', '')}".rstrip())
                 continue
             if t == "case_end":
                 if target.current_case():
-                    status = _end_case(ctx, "blocked" if skipping else None,
-                                       "a step failed; rest of the case skipped" if skipping else None)
+                    # The judgment decides: a step that failed blocks the case, unless the app crashed or a
+                    # check failed first, which fails it.
+                    status = _end_case(ctx, None, f"{skipping}; rest of the case skipped" if skipping else None)
                     print(f"  -> {status.upper()}")
-                skipping = False
+                skipping = ""
                 continue
             if skipping or t in commands.NARRATION_EVENTS:
                 continue
@@ -206,6 +220,8 @@ def run(args) -> int:
                 last = target.events()[-1]
                 if last["type"] == "check":
                     print(f"  {'PASS' if last['ok'] else 'FAIL'} {last['what']}")
+                    if last.get("setup") and not last["ok"] and target.current_case():
+                        skipping = "the setup did not hold"  # the case stops here
                     if args.visual and e.get("shot") and last.get("shot"):
                         pairs.append((str(source.path / e["shot"]), str(target.path / last["shot"])))
                 continue
@@ -226,8 +242,10 @@ def run(args) -> int:
                 time.sleep(SETTLE)
             except StepFailed as exc:
                 print(f"  step {step} failed: {exc}")
-                ctx.log({"type": "check", "kind": "ui", "ok": False, "what": f"step {step}: {exc}"})
-                skipping = bool(target.current_case())
+                ctx.log({"type": "check", "kind": "ui", "ok": False, "what": f"step {step}: {exc}",
+                         "step": {"cmd": e["type"], "code": EXIT_FAIL, "error": str(exc)}})
+                if target.current_case():
+                    skipping = "a step failed"
         if target.current_case():
             _end_case(ctx, None, None)
         if pairs:
@@ -237,7 +255,8 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
-        close_run(target, "replay stopped before the case finished", "not run in the recorded run")
+        close_run(target, "replay stopped before the case finished", "not run in the recorded run",
+                  crash=open_case_crashed(target, adb))
         try:
             dev.release_device(adb, owner)
         except AdbError as exc:  # never at the cost of restoring the device or writing the report

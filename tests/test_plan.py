@@ -212,7 +212,7 @@ case TC-02 "Login"
   run login
   check "Pay now"
 ''', expect=1)
-        self.assertEqual(self.cases(run), {"TC-01": "fail", "TC-02": "pass"})
+        self.assertEqual(self.cases(run), {"TC-01": "blocked", "TC-02": "pass"})  # the step, not the app
         self.assertIn("tap Nowhere", out)  # the failing step and what the screen showed
         self.assertIn('not found: "Nowhere"', out)
         failed = [e for e in run.events() if e["type"] == "check" and not e["ok"]]
@@ -230,7 +230,7 @@ case TC-01 "Login"
 ''')
         self.assertEqual(self.cases(run), {"TC-01": "pass"})
 
-    def test_retry_that_never_passes_fails_the_case(self):
+    def test_retry_that_never_passes_blocks_the_case(self):
         out, run = self.run_plan('''
 case TC-01 "Login"
   retry 2
@@ -238,7 +238,7 @@ case TC-01 "Login"
   end
   check "Nowhere"
 ''', expect=1)
-        self.assertEqual(self.cases(run), {"TC-01": "fail"})
+        self.assertEqual(self.cases(run), {"TC-01": "blocked"})
         self.assertIn("2 attempts", out)
 
     def test_if_takes_the_branch_that_matches_the_screen(self):

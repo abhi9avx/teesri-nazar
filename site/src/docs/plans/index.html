@@ -48,6 +48,7 @@ case TC-02 "Search finds Wi-Fi settings"
         <tr><td><code>if "Text"</code> … <code>else</code> … <code>end</code></td><td>Branch on what is on screen. Never fails the case.</td></tr>
         <tr><td><code>expect "Text"</code></td><td>Optional, at the top of a case: an expected result, E1, E2… in order. Each one needs a <code>check … --for E1</code> in that case, or the plan is refused.</td></tr>
         <tr><td><code>check "Text"</code></td><td>A verification. <code>--for E1</code> links it to an expected result; a linked check that never ran leaves its case blocked, by name.</td></tr>
+        <tr><td><code>require "Text"</code></td><td>The state the setup must reach (a fresh chat, a logged-in home). If it does not hold, the case stops as <em>blocked · precondition not met</em>: the app was never tested, so it never fails.</td></tr>
         <tr><td><code># comment</code></td><td>Ignored, on a line of its own. Indentation is for people.</td></tr>
       </tbody>
     </table>

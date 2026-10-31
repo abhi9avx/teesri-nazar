@@ -619,7 +619,7 @@ class ReportTest(CliTestCase):
         self.assertIn("2 case(s): ✅ 1 pass  ❌ 1 fail  | checks 1/2 passed", out)
         md = (run.path / "report.md").read_text()
         self.assertIn("| TC-01 | Login lands on home | ✅ pass |", md)
-        self.assertIn("| TC-02 | Pay is offered | ❌ fail |", md)
+        self.assertIn("| TC-02 | Pay is offered | ❌ fail · app |", md)
         self.assertIn("Pay later CTA missing", md)
         runs = self.ok("runs")
         self.assertIn("demo", runs)

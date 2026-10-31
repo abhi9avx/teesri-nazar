@@ -42,7 +42,8 @@ description: Every tnazar command, grouped by task: runs, reading the screen, ac
   <div class="table-wrap"><table>
     <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>check "Payment successful"</code></td><td>Verify it is on screen. Exact match; <code>'~text'</code> for partial. <code>--for E1</code> says which expected result it proves</td></tr>
+      <tr><td><code>check "Payment successful"</code></td><td>Verify it is on screen. Exact match; <code>'~text'</code> for partial. <code>--for E1</code> says which expected result it proves.</td></tr>
+      <tr><td><code>check "Home" --setup</code></td><td>A setup condition, as a plan's <code>require</code> writes it: if it does not hold, the case is <em>blocked · precondition not met</em>, never failed</td></tr>
       <tr><td><code>wait "Home" --or "Error"</code></td><td>Wait for a screen; stop early if the error shows instead</td></tr>
       <tr><td><code>shot</code> / <code>note</code></td><td>Save a screenshot, or record an observation or bug</td></tr>
     </tbody>

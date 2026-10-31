@@ -26,7 +26,7 @@ from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, adb_version, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
-from .judge import _end_case, close_run, evidence_shot
+from .judge import _end_case, close_run, evidence_shot, open_case_crashed
 from .session import (NAME_RE, Run, active_owner, clear_active, get_active, home, now_iso, runs_dir, set_active,
                       state_dir)
 from .targets import _not_found_msg, parse_target, resolve, selector_of
@@ -243,6 +243,13 @@ def refuse_if_owned(run: Run) -> None:
         raise UserError(f"a run is in progress on this device: {run.name} (pid {pid}); stop it or wait")
 
 
+def _open_case_crashed(run: Run, serial: str) -> bool:
+    try:
+        return open_case_crashed(run, Adb(serial))
+    except (AdbError, OSError):  # adb itself missing: stopping the run must still work
+        return False
+
+
 def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     active = get_active()
     if not active:
@@ -250,7 +257,8 @@ def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     run, serial = active
     meta = run.meta()
     close_run(run, "run stopped before the case finished",
-              reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started")
+              reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started",
+              crash=_open_case_crashed(run, serial))
     try:
         adb = Adb(serial)
         dev.release_device(adb, device_owner_of(run))
@@ -500,7 +508,8 @@ def cmd_wait(args) -> int:
     ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, alternatives=alts)
     instead = alts[stats["alternative"]] if "alternative" in stats else None
     event = {"type": "wait", "selector": sel.to_dict(), "gone": args.gone, "timeout": args.timeout, "ok": ok,
-             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None}
+             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None,
+             **({"alternatives": [a.to_dict() for a in alts]} if alts else {})}
     if ok and (sid := ctx.stamp(screen)):
         event["sid"] = sid
     ctx.log(event)
@@ -542,6 +551,9 @@ def _for_fields(ctx: Ctx, ids: list[str] | None) -> dict:
 
 def cmd_check(args) -> int:
     ctx = Ctx.from_args(args.device)
+    if args.setup and (args.result or args.for_):
+        raise UserError("--setup is a condition on the screen that the setup must reach: it takes no --result "
+                        "and proves no expected result (--for)")
     linked = _for_fields(ctx, args.for_)
     if args.result:
         if not args.what:
@@ -568,7 +580,7 @@ def cmd_check(args) -> int:
     label = "pass" if ok else "fail"
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
              "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls"),
-             **linked}
+             **linked, **({"setup": True} if args.setup else {})}
     if screen is not None:
         # Same screen, same fingerprint: the report shows one screenshot for all its checks.
         event["screen_sig"] = hashlib.sha1(screen.signature().encode()).hexdigest()[:12]
@@ -576,6 +588,10 @@ def cmd_check(args) -> int:
             event["sid"] = sid
     if shot := evidence_shot(ctx, f"check-{label}"):
         event["shot"] = shot
+    if not ok and not args.gone and el is None and (screen is None or len(screen.elements) <= 1):
+        # Nothing was read beyond the window's root. A screen with elements but no text (a white
+        # screen, a spinner, labels only) is the app's to answer for.
+        event["blank_screen"] = True
     if ctx.run and not ok:
         dump = ctx.artifact("dumps", "check-fail", "xml")
         save_xml(dump, screen.xml)
@@ -934,6 +950,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("check", cmd_check, "record a verification (UI by selector, or a manual DB/Figma/API result)")
     _add_selector_flags(p, TARGET_HELP)
     p.add_argument("--gone", action="store_true", help="expect the element to be absent")
+    p.add_argument("--setup", action="store_true",
+                   help="a setup condition (a plan's `require`): if it does not hold the case is blocked, not failed")
     p.add_argument("--checked", type=_bool, default=None, metavar="true|false")
     p.add_argument("--enabled", type=_bool, default=None, metavar="true|false")
     p.add_argument("--timeout", type=float, default=5)

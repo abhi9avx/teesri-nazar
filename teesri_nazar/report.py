@@ -18,6 +18,16 @@ def label(status: str) -> str:
     return WORD.get(status, status)
 
 
+CAUSE = {"app": "app", "step": "step could not run", "device": "device", "unverified": "not verified",
+         "precondition": "precondition not met"}
+
+
+def result_label(status: str, cause: str | None = None) -> str:
+    """A case's result with what it points at: "fail · app" is the app's; "blocked · step could not
+    run" says the case could not be judged, without blaming the app or the test."""
+    return f"{label(status)} · {CAUSE[cause]}" if cause in CAUSE and status != "pass" else label(status)
+
+
 UNDECLARED = "requested cases not declared: completeness unknown"
 SLOW_MS = 5000
 
@@ -58,7 +68,7 @@ def build_cases(events: list[dict], finished: bool = True) -> list[dict]:
             else:
                 cases[prior] = current
         elif e["type"] == "case_end" and current:
-            current.update(status=e["status"], reason=e.get("reason", ""), end=e["t"],
+            current.update(status=e["status"], cause=e.get("cause"), reason=e.get("reason", ""), end=e["t"],
                            evidence=e.get("evidence", []), crash=e.get("crash"), expects=e.get("expects", []))
             current = None
         elif e["type"] == "not_run":
@@ -207,7 +217,7 @@ def to_markdown(run: Run, s: dict) -> str:
         for c in cases:
             ok = sum(1 for ch in c["checks"] if ch["ok"])
             cost = f" {usage.label(tokens.get(c['id'])) or '-'} |" if tokens else ""
-            out.append(f"| {c['id']} | {c['title']} | {ICON.get(c['status'], '')} {label(c['status'])} | "
+            out.append(f"| {c['id']} | {c['title']} | {ICON.get(c['status'], '')} {result_label(c['status'], c.get('cause'))} | "
                        f"{ok}/{len(c['checks'])} |{cost} {c['reason']} |")
         out.append("")
     for c in cases:
@@ -215,7 +225,7 @@ def to_markdown(run: Run, s: dict) -> str:
         meta = f"{c['steps']} step(s)"
         if _duration(c.get("start"), c.get("end")):
             meta += f", {_duration(c['start'], c['end'])}"
-        out += [f"*{label(c['status']).upper()}* — {meta}" + (f" — {c['reason']}" if c["reason"] else ""), ""]
+        out += [f"*{result_label(c['status'], c.get('cause')).upper()}* — {meta}" + (f" — {c['reason']}" if c["reason"] else ""), ""]
         out += [f"- {expect_line(x)}" for x in c.get("expects", [])]
         for ch in c["checks"]:
             line = "- " + _check_line(ch)
@@ -318,7 +328,7 @@ def to_html(run: Run, s: dict) -> str:
         ok = sum(1 for ch in c["checks"] if ch["ok"])
         cost = f"<td>{e(usage.label(tokens.get(c['id'])) or '-')}</td>" if tokens else ""
         rows.append(f"<tr><td><a href='#c-{e(c['id'])}'>{e(c['id'])}</a></td><td>{e(c['title'])}</td>"
-                    f"<td><span class='pill {c['status']}'>{c['status']}</span></td>"
+                    f"<td><span class='pill {c['status']}'>{e(result_label(c['status'], c.get('cause')))}</span></td>"
                     f"<td>{ok}/{len(c['checks'])}</td>{cost}<td>{e(c['reason'])}</td></tr>")
     kinds = ("pass", "fail", "blocked", "skipped") + (("not_run",) if s.get("declared") else ())
     tiles = "".join(f"<div class='tile {k}'><b>{s['counts'].get(k, 0)}</b>{label(k)}</div>" for k in kinds)
@@ -339,7 +349,7 @@ def to_html(run: Run, s: dict) -> str:
                 items.append(f"<li>evidence: <a href='{e(ev)}'>{e(ev)}</a></li>")
         shots = "".join(_figure(*f) for f in _screenshots(c))
         cards.append(
-            f"<div class='card' id='c-{e(c['id'])}'><div><span class='pill {c['status']}'>{c['status']}</span> "
+            f"<div class='card' id='c-{e(c['id'])}'><div><span class='pill {c['status']}'>{e(result_label(c['status'], c.get('cause')))}</span> "
             f"<b>{e(c['id'])}</b> {e(c['title'])} <span class='muted'>· {c['steps']} steps "
             f"{_duration(c.get('start'), c.get('end'))}</span></div>"
             + (f"<div class='muted'>{e(c['reason'])}</div>" if c["reason"] else "")

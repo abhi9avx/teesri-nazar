@@ -36,7 +36,8 @@ def expectation_states(expects: list[str], checks: list[dict]) -> list[dict]:
     out = []
     for n, text in enumerate(expects, 1):
         eid = f"E{n}"
-        linked = [c for c in checks if eid in c.get("for", [])]
+        # A require proves nothing, and a check on a screen read empty saw nothing either way.
+        linked = [c for c in checks if eid in c.get("for", []) and not c.get("setup") and not c.get("blank_screen")]
         state = ("failed" if any(not c["ok"] for c in linked)
                  else "verified" if linked else "unverified")
         out.append({"id": eid, "text": text, "state": state, "by": [c["what"] for c in linked]})
