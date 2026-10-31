@@ -198,7 +198,8 @@ console.log(JSON.stringify(out));""")
         latest = self.page(f"console.log(JSON.stringify(nextView({json.dumps(cur)}, null, {json.dumps(runs)})));")
         self.check("DA-15", latest == "smoke-next", f"with nothing running it shows the newest run (-> {latest})")
 
-        # DA-16: a plan step that cannot run blocks its case as the test's, with the step's own error
+        # DA-16: a plan step that cannot run blocks its case without blaming the app or the test,
+        # with the step's own error
         plan = Path(self.home) / "smoke-judge.plan"
         plan.write_text(f'app {APP}\nname smoke-judge\n\ncase SJ-1 "A missing button"\n'
                         f'  tap "Smoke no such button" --wait 2\n  check "~Network"\n')

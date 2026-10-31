@@ -241,7 +241,7 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
                 fail(n, "`require` inside `retry` would record the failed attempts: "
                         "use `wait` in the block and put the `require` after its `end`")
             opts = _check_args(["check", *args], lambda msg: fail(n, msg))
-            if opts.for_ or opts.result:
+            if opts.setup or opts.for_ or opts.result:
                 fail(n, "`require` is a setup condition on the screen, not an expected result or a manual "
                         "result: prove expected results with `check ... --for`")
             stack[-1].append(Step(n, ["check", *args, "--setup"]))

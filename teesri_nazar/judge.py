@@ -23,11 +23,12 @@ def evidence_shot(ctx, label: str) -> str | None:
         return None
 
 
-def blocked_end(events: list[dict], case: str, reason: str, checks: list[dict], cause: str | None = None) -> dict:
+def blocked_end(events: list[dict], case: str, reason: str, checks: list[dict], cause: str | None = None,
+                crash: bool = False) -> dict:
     """The case_end of a case that could not finish, with what its checks so far proved. A check
     that already failed on the app still fails it: closing a case early never hides one."""
     states = coverage.expectation_states(coverage.expects_of(events, case), checks)
-    status, reason, judged = verdict(checks, states, False, "blocked", reason)
+    status, reason, judged = verdict(checks, states, crash, "blocked", reason)
     cause = judged or cause
     end = {"type": "case_end", "case": case, "status": status, "reason": reason, **({"cause": cause} if cause else {})}
     if states:
@@ -35,17 +36,29 @@ def blocked_end(events: list[dict], case: str, reason: str, checks: list[dict], 
     return end
 
 
-def close_run(run, open_reason: str, not_run_reason: str) -> None:
+def close_run(run, open_reason: str, not_run_reason: str, crash: bool = False) -> None:
     """End the case still open and give every requested case that never started its row.
+    `crash`: the app crashed in that case (the caller read the crash log, see `open_case_crashed`).
 
     Touches no device, so callers run it before any device cleanup that might fail.
     """
     events = run.events()
     if case := run.current_case():
         checks = [e for e in rpt.case_events(events, case) if e["type"] == "check"]
-        run.log(blocked_end(events, case, open_reason, checks))
+        run.log(blocked_end(events, case, open_reason, checks, crash=crash))
     for c in coverage.not_started(events):
         run.log({"type": "not_run", "case": c["id"], "title": c["title"], "reason": not_run_reason})
+
+
+def open_case_crashed(run, adb) -> bool:
+    """Did the app crash in the case still open? Its log was cleared at `case start`. A device
+    that is gone cannot say, and closing the run must not wait on it."""
+    if not run.current_case():
+        return False
+    try:
+        return bool(dev.crashes(adb, run.meta().get("package") or None))
+    except AdbError:
+        return False
 
 
 def _end_case(ctx, status: str | None, reason: str | None) -> str:
@@ -79,7 +92,7 @@ def _end_case(ctx, status: str | None, reason: str | None) -> str:
 # precondition: a plan's `require` did not hold, so the case never reached the state it tests.
 # Only a lost device: a frozen app also makes adb time out, and that is evidence about the app's side.
 DEVICE_ERROR = re.compile(r"\bdevice\b[^:]*\b(?:not found|offline|unauthori[sz]ed)\b|\bdevice offline\b"
-                          r"|\bno devices?\b|\bunauthori[sz]ed\b", re.I)
+                          r"|\bno devices?\b|\bno ready device\b|\bis offline\b|\bunauthori[sz]ed\b", re.I)
 # Runs from before steps were recorded: a plan step that failed was logged as "line N: …", a
 # replayed one as "step N: …".
 STEP_LINE = re.compile(r"^(?:line|step) \d+: ")
@@ -105,7 +118,15 @@ def verdict(checks: list[dict], states: list[dict], crash: bool, status: str | N
                              "app crashed or ANR" if crash else "",
                              f"marked {status}" + (f": {reason}" if reason else "")), "app"
     if status is not None and status != "pass":
-        return status, reason or "", "app" if status == "fail" else None
+        if status == "fail":
+            return status, reason or "", "app"
+        setup = [c for c in unrun if c.get("setup")]
+        if setup:
+            return status, _join(reason or "", *(f"precondition not met: {c['what']}" for c in setup)), "precondition"
+        if unrun:
+            return status, _join(reason or "", *(_step_error(c) for c in unrun)), \
+                "device" if any(_device_lost(c) for c in unrun) else "step"
+        return status, reason or "", None
     told = f"marked pass by the tester{f': {reason}' if reason else ''}" if status == "pass" else ""
     given = "" if told else reason or ""
     if app or crash:

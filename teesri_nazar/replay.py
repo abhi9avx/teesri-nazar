@@ -18,7 +18,8 @@ from . import report as rpt
 from . import screen as scr
 from . import visual
 from .adb import Adb, AdbError, adb_binary, pick_serial
-from .cli import EXIT_ERROR, EXIT_FAIL, Ctx, _end_case, close_run, check_device_owner, device_owner_of, evidence_shot
+from .cli import (EXIT_ERROR, EXIT_FAIL, EXIT_INSTEAD, Ctx, _end_case, check_device_owner, close_run,
+                  device_owner_of, evidence_shot, open_case_crashed)
 from .errors import UserError
 from .session import Run, get_active, now_iso, stamp
 
@@ -27,6 +28,10 @@ SETTLE = 0.3
 
 class StepFailed(Exception):
     pass
+
+
+class StepInstead(StepFailed):
+    """A wait met the screen its plan named as failure (`--or`): evidence about the app."""
 
 
 def _scale(xy: list[int], recorded: list[int] | None, now: tuple[int, int]) -> tuple[int, int]:
@@ -108,7 +113,12 @@ def _do(ctx: Ctx, e: dict, size: tuple[int, int], timeout: float) -> None:
                 dev.swipe(adb, *vec)
     elif t == "wait":
         sel = scr.Selector.from_dict(e["selector"])
-        ok, _, _ = dev.wait_for(adb, sel, max(e.get("timeout", 15), timeout), gone=e.get("gone", False))
+        alts = [scr.Selector.from_dict(a) for a in e.get("alternatives", [])]
+        stats: dict = {}
+        ok, _, _ = dev.wait_for(adb, sel, max(e.get("timeout", 15), timeout), gone=e.get("gone", False),
+                                stats=stats, alternatives=alts)
+        if "alternative" in stats:
+            raise StepInstead(f"wait: {alts[stats['alternative']]} showed instead of {sel}")
         if not ok and e.get("ok", True):
             raise StepFailed(f"wait: {sel} never became {'gone' if e.get('gone') else 'visible'}")
     elif t == "wait_online":
@@ -232,7 +242,9 @@ def run(args) -> int:
                 time.sleep(SETTLE)
             except StepFailed as exc:
                 print(f"  step {step} failed: {exc}")
-                ctx.log({"type": "check", "kind": "ui", "ok": False, "what": f"step {step}: {exc}"})
+                code = EXIT_INSTEAD if isinstance(exc, StepInstead) else EXIT_FAIL
+                ctx.log({"type": "check", "kind": "ui", "ok": False, "what": f"step {step}: {exc}",
+                         "step": {"cmd": e["type"], "code": code, "error": str(exc)}})
                 if target.current_case():
                     skipping = "a step failed"
         if target.current_case():
@@ -244,7 +256,8 @@ def run(args) -> int:
                          "what": f"visual match: {os.path.basename(res['golden'])}",
                          "detail": res["reasoning"], "case": None})
     finally:
-        close_run(target, "replay stopped before the case finished", "not run in the recorded run")
+        close_run(target, "replay stopped before the case finished", "not run in the recorded run",
+                  crash=open_case_crashed(target, adb))
         try:
             dev.release_device(adb, owner)
         except AdbError as exc:  # never at the cost of restoring the device or writing the report

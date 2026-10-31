@@ -53,7 +53,7 @@
 
   {"id": "J27", "story": "A crash cannot be hidden behind a status someone handed in (replay closing a case as blocked)", "given": {"status": "blocked", "reason": "a step failed; rest of the case skipped"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "step 4: not found: \"Pay\""}], "states": [], "crash": true, "label": {"status": "fail", "cause": "app"}},
 
-  {"id": "J28", "story": "Real run: a chat reopened with its history instead of starting fresh; the flow's require caught it before any expected result was checked", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Type a message\" is visible", "selector": {"text": "Type a message"}, "setup": true}], "states": [{"id": "E1", "text": "A new chat greets the user with the main menu", "state": "unverified"}], "crash": false, "label": {"status": "blocked", "cause": "precondition", "reason_has": "precondition not met"}},
+  {"id": "J28", "story": "A chat reopened with its history instead of starting fresh; the flow's require caught it before any expected result was checked", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Type a message\" is visible", "selector": {"text": "Type a message"}, "setup": true}], "states": [{"id": "E1", "text": "A new chat greets the user with the main menu", "state": "unverified"}], "crash": false, "label": {"status": "blocked", "cause": "precondition", "reason_has": "precondition not met"}},
 
   {"id": "J29", "story": "A planted bug before the setup step: the app's failure decides", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"₹500\" is visible", "selector": {"text": "₹500"}}, {"type": "check", "kind": "ui", "ok": false, "what": "\"Cart\" is visible", "selector": {"text": "Cart"}, "setup": true}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
 
@@ -69,5 +69,11 @@
 
   {"id": "J35", "story": "A planted bug, then the case was marked skipped: the failed check is not hidden", "given": {"status": "skipped", "reason": "out of scope"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Saved\" is visible", "selector": {"text": "Saved"}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
 
-  {"id": "J36", "story": "Closed as blocked with only a step that could not run: blocked stays", "given": {"status": "blocked", "reason": "backend down"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 4: tap \"Pay\": not found: \"Pay\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Pay\""}}], "states": [], "crash": false, "label": {"status": "blocked"}}
+  {"id": "J36", "story": "Closed as blocked with only a step that could not run: blocked stays", "given": {"status": "blocked", "reason": "backend down"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 4: tap \"Pay\": not found: \"Pay\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Pay\""}}], "states": [], "crash": false, "label": {"status": "blocked"}},
+
+  {"id": "J37", "story": "Closed as blocked with a step that could not run: the cause and the step's own error are kept", "given": {"status": "blocked", "reason": "run stopped"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 4: tap \"Pay\": not found: \"Pay\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Pay\""}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step", "reason_has": "not found: \"Pay\""}},
+
+  {"id": "J38", "story": "Closed as blocked after a require did not hold: still a precondition", "given": {"status": "blocked", "reason": "run stopped"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Cart\" is visible", "selector": {"text": "Cart"}, "setup": true}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "precondition"}},
+
+  {"id": "J39", "story": "adb said the device is offline in its own words: a lost device", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 3: tap \"Pay\": no ready device", "step": {"cmd": "tap", "code": 2, "error": "no ready device: emulator-5554 is offline"}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "device"}}
 ]

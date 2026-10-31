@@ -204,3 +204,37 @@ class ClosedCaseTest(PlanRunBase):
         from teesri_nazar.session import Run
         end = next(e for e in Run.load("demo").events() if e["type"] == "case_end")
         self.assertEqual((end["status"], end.get("cause")), ("fail", "app"))
+
+
+class PrReviewTest(PlanRunBase):
+    def test_stop_never_hides_a_crash_in_the_open_case(self):
+        from test_cli import CRASH
+        from teesri_nazar.session import Run
+        self.start()
+        tnazar("case", "start", "TC-01", "a")
+        tnazar("check", "Login")
+        self.adb.crash_log = CRASH
+        tnazar("stop")
+        end = next(e for e in Run.load("demo").events() if e["type"] == "case_end")
+        self.assertEqual((end["status"], end.get("cause")), ("fail", "app"))
+        self.assertIn("app crashed", end["reason"])
+
+    def test_replay_fails_the_case_on_the_error_screen_the_plan_named(self):
+        from teesri_nazar.session import Run
+        self.start()
+        for argv in (("case", "start", "TC-01", "a"), ("wait", "Login", "--or", "Pay now", "--timeout", "1"),
+                     ("check", "Login"), ("case", "end"), ("stop",)):
+            tnazar(*argv)
+        name = sorted(p.name for p in Run.load("demo").path.parent.iterdir())[0]
+        self.adb.current = "home"  # the screen the plan named as failure
+        tnazar("replay", name)
+        newest = sorted(p for p in Run.load(name).path.parent.iterdir() if p.name != name)[-1]
+        end = next(e for e in Run(newest).events() if e["type"] == "case_end")
+        self.assertEqual((end["status"], end.get("cause")), ("fail", "app"))
+
+    def test_require_takes_no_setup_flag_of_its_own(self):
+        path = self.home + "/bad.plan"
+        with open(path, "w") as f:
+            f.write('app com.example.app\nname bad\n\ncase TC-01 "a"\n  require Login --setup\n  check Login\n')
+        code, out, err = tnazar("run", path)
+        self.assertEqual(code, 2, out + err)

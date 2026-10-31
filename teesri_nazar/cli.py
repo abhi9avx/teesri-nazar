@@ -26,7 +26,7 @@ from . import screen as scr
 from .adb import Adb, AdbError, adb_binary, adb_version, list_devices, pick_serial
 from .env import describe, load_dotenv, mask_xml, redact, secret_values
 from .errors import NotFound, UserError
-from .judge import _end_case, close_run, evidence_shot
+from .judge import _end_case, close_run, evidence_shot, open_case_crashed
 from .session import (NAME_RE, Run, active_owner, clear_active, get_active, home, now_iso, runs_dir, set_active,
                       state_dir)
 from .targets import _not_found_msg, parse_target, resolve, selector_of
@@ -250,7 +250,8 @@ def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     run, serial = active
     meta = run.meta()
     close_run(run, "run stopped before the case finished",
-              reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started")
+              reason or meta.get("stop_reason") or "run stopped with tnazar stop before this case started",
+              crash=open_case_crashed(run, Adb(serial)))
     try:
         adb = Adb(serial)
         dev.release_device(adb, device_owner_of(run))
@@ -500,7 +501,8 @@ def cmd_wait(args) -> int:
     ok, screen, el = dev.wait_for(ctx.adb, sel, args.timeout, gone=args.gone, stats=stats, alternatives=alts)
     instead = alts[stats["alternative"]] if "alternative" in stats else None
     event = {"type": "wait", "selector": sel.to_dict(), "gone": args.gone, "timeout": args.timeout, "ok": ok,
-             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None}
+             "polls": stats.get("polls"), "found_instead": instead.to_dict() if instead else None,
+             **({"alternatives": [a.to_dict() for a in alts]} if alts else {})}
     if ok and (sid := ctx.stamp(screen)):
         event["sid"] = sid
     ctx.log(event)
