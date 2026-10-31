@@ -1,0 +1,73 @@
+[
+  {"id": "J01", "story": "A plan step could not run: the button to tap was not on screen", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 12: tap \"Account settings\" --wait 10: not found: \"Account settings\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Account settings\""}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step"}},
+
+  {"id": "J02", "story": "A retried wait for the login screen timed out every time", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 10: retry 4: still failing after 4 attempts: line 22: wait desc=signInScreen --timeout 3", "step": {"cmd": "wait", "code": 1, "error": "timed out after 3s: desc=signInScreen"}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step"}},
+
+  {"id": "J03", "story": "The device went offline in the middle of a tap", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 12: tap \"Pay\": adb: device 'emulator-5554' not found", "step": {"cmd": "tap", "code": 2, "error": "adb: device 'emulator-5554' not found"}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "device"}},
+
+  {"id": "J04", "story": "A check failed because the screen read came back empty: nothing beyond the window root", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "~\"Order details for your purchase\" is visible", "blank_screen": true, "selector": {"text": "Order details for your purchase", "contains": true}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step"}},
+
+  {"id": "J05", "story": "A slow tap that then did not find its target: the reason must name the miss, not the slowness", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 14: tap \"Account settings\" --wait 10: SLOW: tap took 10.2s", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Account settings\""}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step", "reason_has": "not found"}},
+
+  {"id": "J06", "story": "A wait --or saw the error screen the plan named as failure", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 30: wait \"Home\" --or \"~Something went wrong\": \"Something went wrong\" showed instead", "step": {"cmd": "wait", "code": 4, "error": "\"Something went wrong\" showed instead"}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J07", "story": "A planted bug: the success message is missing, another text shows", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Payment successful\" is visible", "selector": {"text": "Payment successful"}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J08", "story": "A planted bug: the app crashed, every check before it passed", "checks": [{"type": "check", "kind": "ui", "ok": true, "what": "\"Home\" is visible"}], "states": [], "crash": true, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J09", "story": "A planted bug: the check proving E1 failed", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Order placed\" is visible", "for": ["E1"]}], "states": [{"id": "E1", "text": "Order placed", "state": "failed"}], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J10", "story": "A planted bug: a message that must be gone is still on screen", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Loading\" is gone", "gone": true, "selector": {"text": "Loading"}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J11", "story": "Everything matched", "checks": [{"type": "check", "kind": "ui", "ok": true, "what": "\"Home\" is visible", "for": ["E1"]}], "states": [{"id": "E1", "text": "Home", "state": "verified"}], "crash": false, "label": {"status": "pass"}},
+
+  {"id": "J12", "story": "The check for E1 never ran: nothing proves it either way", "checks": [{"type": "check", "kind": "ui", "ok": true, "what": "\"Home\" is visible"}], "states": [{"id": "E1", "text": "Order placed", "state": "unverified"}], "crash": false, "label": {"status": "blocked", "cause": "unverified"}},
+
+  {"id": "J13", "story": "A planted bug found by a database check", "checks": [{"type": "check", "kind": "db", "ok": false, "what": "txn row status = SUCCESS"}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J14", "story": "A planted bug and a step that could not run in the same case: the bug decides", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"₹500\" is visible"}, {"type": "check", "kind": "ui", "ok": false, "what": "line 40: tap \"Done\": not found: \"Done\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Done\""}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J15", "story": "Every expected result was proven, then a later step could not run", "checks": [{"type": "check", "kind": "ui", "ok": true, "what": "\"Home\" is visible", "for": ["E1"]}, {"type": "check", "kind": "ui", "ok": false, "what": "line 50: tap \"Logout\": not found: \"Logout\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Logout\""}}], "states": [{"id": "E1", "text": "Home", "state": "verified"}], "crash": false, "label": {"status": "blocked", "cause": "step"}},
+
+  {"id": "J16", "story": "The tester marked pass, but a check failed: a planted bug cannot be waved through", "given": {"status": "pass", "reason": "looks fine"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Saved\" is visible"}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J17", "story": "A planted bug on a blank screen: a crash still fails, even when the screen read was empty", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Home\" is visible", "blank_screen": true, "selector": {"text": "Home"}}], "states": [], "crash": true, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J18", "story": "No check was recorded at all", "checks": [], "states": [], "crash": false, "label": {"status": "blocked", "cause": "unverified"}},
+
+  {"id": "J19", "story": "A button named after the network was not on screen: that is the test, not the device", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 8: tap \"Go offline\": not found: \"Go offline\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Go offline\""}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step"}},
+
+  {"id": "J20", "story": "A planted bug: the loader never goes away (an unlabelled spinner on a screen with no text)", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "id=loader is gone", "selector": {"id": "loader"}, "gone": true}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J21", "story": "A planted bug: the app shows a white screen (layouts, no text): the check fails as the app's", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Home\" is visible", "selector": {"text": "Home"}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J22", "story": "adb timed out reading a frozen app: the device is there, so it is not a device problem", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 9: observe: adb timed out after 60s: shell uiautomator dump", "step": {"cmd": "observe", "code": 2, "error": "adb timed out after 60s: shell uiautomator dump"}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step"}},
+
+  {"id": "J23", "story": "A replay step that could not run (replay writes step N:)", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "step 3: not found: \"Pay\""}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step"}},
+
+  {"id": "J24", "story": "A planted bug recorded by hand with --result fail, worded like a plan line", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 2: amount wrong", "detail": "₹500 shown, ₹50 paid"}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J25", "story": "The device itself was lost", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 4: tap \"Pay\": adb: device offline", "step": {"cmd": "tap", "code": 2, "error": "adb: device offline"}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "device"}},
+
+  {"id": "J26", "story": "A step could not run after the tester's own reason: both are kept", "given": {"reason": "next case started without an explicit result"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 5: tap \"Next\": not found: \"Next\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Next\""}}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "step", "reason_has": "next case started without an explicit result"}},
+
+  {"id": "J27", "story": "A crash cannot be hidden behind a status someone handed in (replay closing a case as blocked)", "given": {"status": "blocked", "reason": "a step failed; rest of the case skipped"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "step 4: not found: \"Pay\""}], "states": [], "crash": true, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J28", "story": "Real run: a chat reopened with its history instead of starting fresh; the flow's require caught it before any expected result was checked", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Type a message\" is visible", "selector": {"text": "Type a message"}, "setup": true}], "states": [{"id": "E1", "text": "A new chat greets the user with the main menu", "state": "unverified"}], "crash": false, "label": {"status": "blocked", "cause": "precondition", "reason_has": "precondition not met"}},
+
+  {"id": "J29", "story": "A planted bug before the setup step: the app's failure decides", "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"₹500\" is visible", "selector": {"text": "₹500"}}, {"type": "check", "kind": "ui", "ok": false, "what": "\"Cart\" is visible", "selector": {"text": "Cart"}, "setup": true}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J30", "story": "A setup held, then the expected result was proven", "checks": [{"type": "check", "kind": "ui", "ok": true, "what": "\"Cart\" is visible", "selector": {"text": "Cart"}, "setup": true}, {"type": "check", "kind": "ui", "ok": true, "what": "\"Empty\" is visible", "selector": {"text": "Empty"}, "for": ["E1"]}], "states": [{"id": "E1", "text": "Cart is empty", "state": "verified"}], "crash": false, "label": {"status": "pass"}},
+
+  {"id": "J31", "story": "A setup held but no expected-result check ran: a require proves nothing about the app", "checks": [{"type": "check", "kind": "ui", "ok": true, "what": "\"Cart\" is visible", "selector": {"text": "Cart"}, "setup": true}], "states": [], "crash": false, "label": {"status": "blocked", "cause": "unverified"}},
+
+  {"id": "J32", "story": "A crash after a step failed: the reason names the crash, not only the step", "given": {"reason": "a step failed; rest of the case skipped"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "step 2: not found: \"Next\""}], "states": [], "crash": true, "label": {"status": "fail", "cause": "app", "reason_has": "app crashed or ANR"}},
+
+  {"id": "J33", "story": "A failed check and a handed-in reason: the reason names the failed check", "given": {"reason": "next case started without an explicit result"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Saved\" is visible", "selector": {"text": "Saved"}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app", "reason_has": "failed: \"Saved\" is visible"}},
+
+  {"id": "J34", "story": "A planted bug, then the case was closed as blocked (a dashboard message, an error): the failed check is not hidden", "given": {"status": "blocked", "reason": "stopped: a message from the dashboard"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"₹500\" is visible", "selector": {"text": "₹500"}, "for": ["E1"]}], "states": [{"id": "E1", "text": "Total is ₹500", "state": "failed"}], "crash": false, "label": {"status": "fail", "cause": "app", "reason_has": "stopped: a message from the dashboard"}},
+
+  {"id": "J35", "story": "A planted bug, then the case was marked skipped: the failed check is not hidden", "given": {"status": "skipped", "reason": "out of scope"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "\"Saved\" is visible", "selector": {"text": "Saved"}}], "states": [], "crash": false, "label": {"status": "fail", "cause": "app"}},
+
+  {"id": "J36", "story": "Closed as blocked with only a step that could not run: blocked stays", "given": {"status": "blocked", "reason": "backend down"}, "checks": [{"type": "check", "kind": "ui", "ok": false, "what": "line 4: tap \"Pay\": not found: \"Pay\"", "step": {"cmd": "tap", "code": 1, "error": "not found: \"Pay\""}}], "states": [], "crash": false, "label": {"status": "blocked"}}
+]

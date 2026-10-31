@@ -197,6 +197,18 @@ console.log(JSON.stringify(out));""")
         cur = {"view": "smoke", "follow": True, "lastActive": "smoke-next", "started": started}
         latest = self.page(f"console.log(JSON.stringify(nextView({json.dumps(cur)}, null, {json.dumps(runs)})));")
         self.check("DA-15", latest == "smoke-next", f"with nothing running it shows the newest run (-> {latest})")
+
+        # DA-16: a plan step that cannot run blocks its case as the test's, with the step's own error
+        plan = Path(self.home) / "smoke-judge.plan"
+        plan.write_text(f'app {APP}\nname smoke-judge\n\ncase SJ-1 "A missing button"\n'
+                        f'  tap "Smoke no such button" --wait 2\n  check "~Network"\n')
+        code, _ = self.tn("run", str(plan))
+        events = self.api("GET", "/api/events?run=smoke-judge&from=0")[1].get("events", [])
+        end = next((e for e in events if e["type"] == "case_end"), {})
+        label = self.page(f"console.log(JSON.stringify(resultLabel({json.dumps(end.get('status'))}, "
+                          f"{json.dumps(end.get('cause'))})));")
+        self.check("DA-16", code == 1 and label == "BLOCKED · STEP COULD NOT RUN" and "not found" in end.get("reason", "")
+                   and "SLOW" not in end.get("reason", ""), f"a step that could not run: {label}, {end.get('reason', '')[:60]}")
         return 0 if all(ok for _, ok, _ in self.results) else 1
 
     def close(self) -> None:

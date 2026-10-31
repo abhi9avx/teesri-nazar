@@ -691,13 +691,13 @@ end
     def test_two_failures_block_the_remaining_cases_without_touching_the_device(self):
         out, run = self.run_plan(self.BROKEN, expect=1)
         st = {c["id"]: (c["status"], c["reason"]) for c in rpt.summarize(run)["cases"]}
-        self.assertEqual((st["TC-01"][0], st["TC-02"][0]), ("fail", "fail"))
+        self.assertEqual((st["TC-01"][0], st["TC-02"][0]), ("blocked", "blocked"))
         for cid in ("TC-03", "TC-04"):
             self.assertEqual(st[cid], ("blocked", "precondition failed: flow enter (failed in TC-01, TC-02)"))
             self.assertEqual(self.case_events(run, cid), ["case_start", "case_end"])
         self.assertEqual(st["TC-05"][0], "pass")
         self.assertIn("TC-03    BLOCKED  precondition failed: flow enter", out)
-        self.assertIn("verified 3/5", out)
+        self.assertIn("verified 1/5", out)
 
     def test_a_dead_flow_also_blocks_cases_that_reach_it_through_another_flow(self):
         out, run = self.run_plan('''
@@ -801,7 +801,7 @@ case TC-03 "works"
   check "Pay now"
 ''', expect=1)
         st = {c["id"]: c["status"] for c in rpt.summarize(run)["cases"]}
-        self.assertEqual(st, {"TC-01": "fail", "TC-02": "pass", "TC-03": "pass"})
+        self.assertEqual(st, {"TC-01": "blocked", "TC-02": "pass", "TC-03": "pass"})
 
     def test_a_blocked_case_keeps_its_expected_results_unverified(self):
         body = self.BROKEN.replace('case TC-03 "uses the broken flow"\n',

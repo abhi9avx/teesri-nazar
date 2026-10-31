@@ -502,7 +502,7 @@ run <plan>` in progress): two runs on one device take the screen from each other
 
 ## 11. Layer 7 — Pass / fail and the report
 
-*Files: `teesri_nazar/cli.py` → `_end_case`, `teesri_nazar/report.py`*
+*Files: `teesri_nazar/judge.py` → `_end_case`, `verdict`; `teesri_nazar/report.py`*
 
 ### How a case gets its result
 
@@ -512,10 +512,13 @@ The agent wraps steps in `case start TC-01 "title"` … `case end`. At `case end
 ```mermaid
 flowchart TD
     E["case end"] --> C{"crash or ANR<br/>in logcat for this app?"}
-    C -->|yes| F["❌ fail"]
-    C -->|no| K{"any failed check?"}
+    C -->|yes| F["❌ fail · app"]
+    C -->|no| K{"a failed check about the app?<br/>(or an error screen named with --or)"}
     K -->|yes| F
-    K -->|no| H{"any checks at all?"}
+    K -->|no| S{"a step that could not run,<br/>or a screen with no text?"}
+    S -->|"adb lost the device"| BD["⛔ blocked · device"]
+    S -->|"target not on screen,<br/>wait ran out, empty read"| BT["⛔ blocked · step could not run"]
+    S -->|no| H{"any checks at all?"}
     H -->|yes| X{"every expected result<br/>(E1, E2…) proven?"}
     X -->|yes| P["✅ pass"]
     X -->|no| B2["⛔ blocked<br/>(not verified: E2 …)"]
@@ -537,13 +540,38 @@ unknown". Rules: `teesri_nazar/coverage.py`; design: `docs/trd-coverage.md`.
 - The agent **can** pass `blocked --reason "backend down"` or `skipped` explicitly.
 - The agent **cannot** mark a case `pass` if a check failed or the app crashed —
   `tnazar` overrides it to `fail` and notes that the tester tried to pass it. Nor while an
-  expected result is unproven: it becomes `blocked`, naming it.
+  expected result is unproven: it becomes `blocked`, naming it. Nor `blocked` or `skipped`
+  over a failed check or a crash, however the case is closed (a dashboard message, an error,
+  `stop`): it fails, and the reason says how it was closed. A check that was itself wrong
+  (wrong account, checked too early) is undone by starting the case again with `case start`.
 - Expected results: `expect` lines in a plan case (or `case plan --expect`) are E1, E2… in
   order; `check … --for E1` links a check to one. A failed linked check fails the case. On
   replay, an expected result proven only by a DB/Figma check is not re-verified, so its case
   is blocked, not green.
 - On fail / blocked / crash, an end-of-case screenshot and a logcat dump are attached
   automatically as evidence.
+
+**Only evidence about the app fails a case** (the judgment, `judge.verdict`). A plan step
+that could not run (a tap target not on screen, a wait that ran out, a retry that never
+passed) is recorded with its command, exit code and its own error line (never a `SLOW:`
+note), and blocks the case: `blocked · step could not run` names what happened without
+blaming the app or the test (either may be wrong; a person decides), and `blocked · device`
+is used only when adb lost the device (not for a timeout: a frozen app also times out). A
+failed check on a read with nothing beyond the window's root blocks it too. A screen with
+elements but no text (a white screen, a spinner, labels only) is the app's to answer for. A
+failed check, an error screen a plan named with `wait A --or B` (in any attempt of a
+`retry`), or a crash fails it: `fail · app`. A case with no checks, or an expected result
+nothing proved, is `blocked · not verified`. A plan's `require` (a `check --setup`) that
+does not hold stops its case as `blocked · precondition not met`: the setup never reached
+the state the case tests (a chat that reopened instead of starting fresh), so the app was
+not tested. A `require` is never an expected result and never passes a case alone. A screen
+left over from an earlier case (a chat reopened with its history) is the setup's to rule
+out: make the case's starting state a `require`. Telling an old chat message from a new one
+by the screen dump alone was tried and rejected: in chats, tappable options and newer
+bubbles look alike, so it passed stale messages. The cause is stored on `case_end` and shown
+in the report and dashboard. `tests/fixtures/judgment/cases.json` holds labelled cases (a
+senior tester's verdict, both false fails and planted bugs); `tests/test_judgment.py` fails
+if any case judged right in `baseline.json` is judged wrong, so the judgment only improves.
 
 This is a key safety rail: **the AI decides what to check; the tool decides whether it passed.**
 
@@ -868,6 +896,7 @@ on a real device.
 | DA-13 | show a `goto` as one plain line, a broken learned route as a red row saying what it expected, and no row for the map's screen reads | live |
 | DA-14 | show every requested case once the run ends: a case that never started is a grey row with the reason it did not run | live |
 | DA-15 | move an open page to a run as soon as it starts (even from a past run you picked), and with nothing running show the newest run, never an older one; no reload | live |
+| DA-16 | show who a result points at: `FAIL · APP` for the app, `BLOCKED · STEP COULD NOT RUN`, `BLOCKED · DEVICE` or `BLOCKED · PRECONDITION NOT MET` when it could not be judged, with the step's own error, never a SLOW note, as the reason | live |
 
 ### 15.1 Running a whole plan
 

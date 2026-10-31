@@ -542,6 +542,9 @@ def _for_fields(ctx: Ctx, ids: list[str] | None) -> dict:
 
 def cmd_check(args) -> int:
     ctx = Ctx.from_args(args.device)
+    if args.setup and (args.result or args.for_):
+        raise UserError("--setup is a condition on the screen that the setup must reach: it takes no --result "
+                        "and proves no expected result (--for)")
     linked = _for_fields(ctx, args.for_)
     if args.result:
         if not args.what:
@@ -568,7 +571,7 @@ def cmd_check(args) -> int:
     label = "pass" if ok else "fail"
     event = {"type": "check", "kind": "ui", "ok": ok, "what": what, "selector": sel.to_dict(),
              "gone": args.gone, "checked": args.checked, "enabled": args.enabled, "polls": stats.get("polls"),
-             **linked}
+             **linked, **({"setup": True} if args.setup else {})}
     if screen is not None:
         # Same screen, same fingerprint: the report shows one screenshot for all its checks.
         event["screen_sig"] = hashlib.sha1(screen.signature().encode()).hexdigest()[:12]
@@ -576,6 +579,10 @@ def cmd_check(args) -> int:
             event["sid"] = sid
     if shot := evidence_shot(ctx, f"check-{label}"):
         event["shot"] = shot
+    if not ok and not args.gone and el is None and (screen is None or len(screen.elements) <= 1):
+        # Nothing was read beyond the window's root. A screen with elements but no text (a white
+        # screen, a spinner, labels only) is the app's to answer for.
+        event["blank_screen"] = True
     if ctx.run and not ok:
         dump = ctx.artifact("dumps", "check-fail", "xml")
         save_xml(dump, screen.xml)
@@ -934,6 +941,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("check", cmd_check, "record a verification (UI by selector, or a manual DB/Figma/API result)")
     _add_selector_flags(p, TARGET_HELP)
     p.add_argument("--gone", action="store_true", help="expect the element to be absent")
+    p.add_argument("--setup", action="store_true",
+                   help="a setup condition (a plan's `require`): if it does not hold the case is blocked, not failed")
     p.add_argument("--checked", type=_bool, default=None, metavar="true|false")
     p.add_argument("--enabled", type=_bool, default=None, metavar="true|false")
     p.add_argument("--timeout", type=float, default=5)

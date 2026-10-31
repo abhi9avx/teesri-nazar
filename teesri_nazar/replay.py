@@ -126,13 +126,16 @@ def _recheck(ctx: Ctx, e: dict, timeout: float) -> None:
                  "text": f"[{kind}] not re-verified on replay: {e['what']}"})
         return
     sel = scr.Selector.from_dict(e["selector"])
-    ok, _, el = dev.wait_for(ctx.adb, sel, max(timeout, 5), gone=e.get("gone", False), exact=True)
+    ok, screen, el = dev.wait_for(ctx.adb, sel, max(timeout, 5), gone=e.get("gone", False), exact=True)
     if ok and el is not None:
         for flag, actual in (("checked", el.checked), ("enabled", el.enabled)):
             if e.get(flag) is not None and e[flag] != actual:
                 ok = False
     event = {"type": "check", "kind": "ui", "ok": ok, "what": e["what"], "selector": e["selector"],
-             "gone": e.get("gone", False), "recorded_ok": e["ok"], **({"for": e["for"]} if e.get("for") else {})}
+             "gone": e.get("gone", False), "recorded_ok": e["ok"], **({"for": e["for"]} if e.get("for") else {}),
+             **({"setup": True} if e.get("setup") else {})}
+    if not ok and not e.get("gone") and el is None and (screen is None or len(screen.elements) <= 1):
+        event["blank_screen"] = True  # as on a live run: nothing was read beyond the window root
     if shot := evidence_shot(ctx, f"check-{'pass' if ok else 'fail'}"):
         event["shot"] = shot
     ctx.log(event)
@@ -168,7 +171,7 @@ def run(args) -> int:
         print(f"warning: could not mark the device as in use: {exc}", file=sys.stderr)
     ctx = Ctx(adb, target)
     print(f"replaying {source.name} on {adb.serial} -> {target.name}")
-    skipping = False
+    skipping = ""
     pairs: list[tuple[str, str]] = []
     step = 0
     try:
@@ -187,17 +190,18 @@ def run(args) -> int:
             if t == "case_start":
                 if target.current_case():
                     _end_case(ctx, None, None)
-                skipping = False
+                skipping = ""
                 dev.logcat_clear(adb)
                 ctx.log({"type": "case_start", "case": e["case"], "title": e.get("title", "")})
                 print(f"case {e['case']} {e.get('title', '')}".rstrip())
                 continue
             if t == "case_end":
                 if target.current_case():
-                    status = _end_case(ctx, "blocked" if skipping else None,
-                                       "a step failed; rest of the case skipped" if skipping else None)
+                    # The judgment decides: a step that failed blocks the case, unless the app crashed or a
+                    # check failed first, which fails it.
+                    status = _end_case(ctx, None, f"{skipping}; rest of the case skipped" if skipping else None)
                     print(f"  -> {status.upper()}")
-                skipping = False
+                skipping = ""
                 continue
             if skipping or t in commands.NARRATION_EVENTS:
                 continue
@@ -206,6 +210,8 @@ def run(args) -> int:
                 last = target.events()[-1]
                 if last["type"] == "check":
                     print(f"  {'PASS' if last['ok'] else 'FAIL'} {last['what']}")
+                    if last.get("setup") and not last["ok"] and target.current_case():
+                        skipping = "the setup did not hold"  # the case stops here
                     if args.visual and e.get("shot") and last.get("shot"):
                         pairs.append((str(source.path / e["shot"]), str(target.path / last["shot"])))
                 continue
@@ -227,7 +233,8 @@ def run(args) -> int:
             except StepFailed as exc:
                 print(f"  step {step} failed: {exc}")
                 ctx.log({"type": "check", "kind": "ui", "ok": False, "what": f"step {step}: {exc}"})
-                skipping = bool(target.current_case())
+                if target.current_case():
+                    skipping = "a step failed"
         if target.current_case():
             _end_case(ctx, None, None)
         if pairs:

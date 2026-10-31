@@ -332,6 +332,15 @@ function layout(events) {
   return blocks;
 }
 
+// A case's result with what it points at: "FAIL · APP" is the app's; "BLOCKED · STEP COULD NOT RUN"
+// says the case could not be judged, without blaming the app or the test.
+const CAUSE = { app: "app", step: "step could not run", device: "device", unverified: "not verified",
+                precondition: "precondition not met" };
+function resultLabel(status, cause) {
+  const word = status === "not_run" ? "not run" : status;
+  return (cause in CAUSE && status !== "pass" ? `${word} · ${CAUSE[cause]}` : word).toUpperCase();
+}
+
 // The run the page moves to, or null to stay. A run that starts takes over, even from a past run
 // you picked; with nothing running, the newest run, unless you picked one. Never moves to a run
 // that started before the one on screen (the run list is polled more slowly than the state).
@@ -401,7 +410,7 @@ function render() {
       tl.append(c);
     } else if (b.kind === "case_end") {
       const c = el("div", "case-end");
-      c.append(el("span", `pill ${e.status}`, e.status.toUpperCase()), document.createTextNode(e.reason ? `  ${e.reason}` : ""));
+      c.append(el("span", `pill ${e.status}`, resultLabel(e.status, e.cause)), document.createTextNode(e.reason ? `  ${e.reason}` : ""));
       const cost = usageLabel(caseUsage[e.case]);
       if (cost) { const s = el("span", "case-cost", `🪙 ${cost}`); s.title = "model usage for this case (from the Claude Code session log)"; c.append(s); }
       tl.append(c);

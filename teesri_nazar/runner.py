@@ -37,6 +37,7 @@ class Failed:
     detail: str
     code: int = 1  # the failing step's exit code
     flows: list = field(default_factory=list)  # every flow the failing step was inside, innermost first
+    step: dict = field(default_factory=dict)  # the step that could not run: {cmd, code, error}, for the verdict
 
 
 @dataclass
@@ -93,12 +94,14 @@ def run(args) -> int:
     failed = False
     since = live.Since()
     broken: dict[str, list[str]] = {}  # flow -> the cases it failed in, in a row
+    unmet: set[str] = set()  # flows whose last failure was a `require`, theirs or a flow's they ran
     for case in cases:
         began = time.monotonic()
         needs = _flows_used(case.body, p.flows)
         if dead := [f for f in needs if len(broken.get(f, [])) >= 2]:
             why = "; ".join(f"flow {f} (failed in {', '.join(broken[f])})" for f in dead)
-            _block(the_run, case, f"precondition failed: {why}")
+            _block(the_run, case, f"precondition failed: {why}",
+                   "precondition" if all(f in unmet for f in dead) else "step")
             print(f"{case.id:8} BLOCKED  precondition failed: {why}")
             failed = True
             continue
@@ -124,6 +127,10 @@ def run(args) -> int:
         for f in needs:
             if isinstance(result, Failed) and f in result.flows:
                 broken.setdefault(f, []).append(case.id)
+                if result.step.get("cmd") == "require":
+                    unmet.add(f)
+                else:
+                    unmet.discard(f)
             elif f in executor.completed:  # it worked here: not a broken precondition any more
                 broken.pop(f, None)
         print(f"{case.id:8} {status.upper():7} {time.monotonic() - began:5.1f}s  {case.title}")
@@ -181,12 +188,17 @@ class Executor:
             self.run.log({"type": "if", "target": item.target, "found": found, "reads": reads, "case": self.case_id})
             return self.body(item.then if found else item.other, record)
         if isinstance(item, Retry):
+            instead = None  # an attempt that met the error screen the plan named: evidence about the app
             for attempt in range(1, item.times + 1):
                 result = self.body(item.body, record=False)
                 if not isinstance(result, Failed):
                     return result
+                if result.code == cli.EXIT_INSTEAD and instead is None:
+                    instead = result
+            result = instead or result
             return self.fail(item.line, f"retry {item.times}",
-                             f"still failing after {item.times} attempts: {result.detail}", record, result.code)
+                             f"still failing after {item.times} attempts: {result.detail}", record, result.code,
+                             result.step)
         return self.step(item, record)
 
     def hold(self) -> HandedBack | Paused | None:
@@ -225,18 +237,24 @@ class Executor:
             if paused:
                 return paused
         if step.argv[0] == "check" and code == cli.EXIT_FAIL:
+            if "--setup" in step.argv:  # recorded by `check`; the setup did not hold, so the case stops
+                return Failed(f"line {step.line}: require {' '.join(_quote(a) for a in step.argv[1:-1])}\n{tail(out)}",
+                              code, step={"cmd": "require", "code": code, "error": error_line(tail(out))})
             self.failed_checks += 1
             return None  # a failed check is already recorded; the case goes on
         if code == 0:
             return None
-        return self.fail(step.line, " ".join(_quote(a) for a in step.argv), tail(out), record, code)
+        detail = tail(out)
+        return self.fail(step.line, " ".join(_quote(a) for a in step.argv), detail, record, code,
+                         {"cmd": step.argv[0], "code": code, "error": error_line(detail)})
 
-    def fail(self, line: int, what: str, detail: str, record: bool, code: int = cli.EXIT_FAIL) -> Failed:
-        first = next((ln for ln in detail.splitlines() if ln.strip()), "failed")
+    def fail(self, line: int, what: str, detail: str, record: bool, code: int = cli.EXIT_FAIL,
+             step: dict | None = None) -> Failed:
+        step = step or {"cmd": what.split()[0], "code": code, "error": error_line(detail)}
         if record:
             self.run.log({"type": "check", "kind": "ui", "ok": False, "case": self.case_id,
-                          "what": f"line {line}: {what}: {first.strip()}"})
-        return Failed(f"line {line}: {what}\n{detail}", code)
+                          "what": f"line {line}: {what}: {step['error']}", "step": step})
+        return Failed(f"line {line}: {what}\n{detail}", code, step=step)
 
     def visible(self, target: str, alts: list[str], wait: float) -> tuple[bool, int]:
         """Is `target` on screen? With --wait, read until it or one of `alts` shows (or time runs out)."""
@@ -259,11 +277,11 @@ def _flows_used(body: list, flows: dict, seen: frozenset = frozenset()) -> list[
     return list(dict.fromkeys(out))
 
 
-def _block(the_run: Run, case: Case, reason: str) -> None:
+def _block(the_run: Run, case: Case, reason: str, cause: str = "step") -> None:
     """End a case unrun: no device call, so a dead precondition costs nothing per case."""
     events = the_run.events()
     the_run.log({"type": "case_start", "case": case.id, "title": case.title})
-    the_run.log(blocked_end(events, case.id, reason, []))
+    the_run.log(blocked_end(events, case.id, reason, [], cause))
 
 
 def _select(cases: list[Case], only: str | None, start: str | None) -> list[Case]:
@@ -284,6 +302,13 @@ def _select(cases: list[Case], only: str | None, start: str | None) -> list[Case
 def _last_status(the_run: Run, case_id: str) -> str:
     ends = [e for e in the_run.events() if e["type"] == "case_end" and e["case"] == case_id]
     return ends[-1]["status"] if ends else "blocked"
+
+
+def error_line(detail: str) -> str:
+    """Why a step failed, in its own words: a SLOW note or a dashboard line is never the reason."""
+    lines = [ln.strip() for ln in detail.splitlines()
+             if ln.strip() and not ln.lstrip().startswith(("SLOW:", ">> USER"))]
+    return next((ln.removeprefix("error: ") for ln in lines if ln.startswith("error: ")), lines[0] if lines else "failed")
 
 
 def tail(text: str) -> str:
