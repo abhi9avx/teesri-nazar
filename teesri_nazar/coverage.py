@@ -95,11 +95,13 @@ def requirement_states(events: list[dict], cases: list[dict], case_label) -> dic
         x = next((x for x in c.get("expects", []) if x["id"] == f"E{n}"), None)
         if x and x["state"] == "failed":
             return "failed", f"{cid} E{n} failed: {'; '.join(x['by'])}"
-        if x and x["state"] == "verified" and c["status"] == "pass":
-            return "verified", f"{cid} E{n} ← {'; '.join(x['by'])}"
-        if c["status"] == "pass" or c.get("cause") in (None, "unverified") and not c.get("crash"):
+        result = "failed: crash" if c.get("crash") else case_label(c["status"], c.get("cause"))
+        if x and x["state"] == "verified":
+            return ("verified", f"{cid} E{n} ← {'; '.join(x['by'])}") if c["status"] == "pass" else (
+                "unverified", f"{cid} {result}")  # its own proof held, the case did not
+        if c.get("cause") in (None, "unverified") and not c.get("crash"):
             return "unverified", f"{cid} E{n} not verified"
-        return "unverified", f"{cid} {'failed: crash' if c.get('crash') else case_label(c['status'], c.get('cause'))}"
+        return "unverified", f"{cid} {result}"
 
     rows, problems = [], []
     for r in last["requirements"]:

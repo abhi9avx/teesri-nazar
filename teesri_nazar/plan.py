@@ -201,9 +201,14 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
         elif head in ("source", "approved"):
             if top is not None or len(args) != 1:
                 fail(n, f"`{head} <value>` belongs at the top of the plan")
-            spec, approved = (args[0], approved) if head == "source" else (spec, args[0])
+            if (spec if head == "source" else approved):
+                fail(n, f"`{head}` is given twice")
+            if head == "source":
+                spec = args[0]
+            else:
+                approved = args[0]
         elif head == "requirement":
-            if top is not None:
+            if top is not None or cases or flows:
                 fail(n, "`requirement` belongs at the top of the plan, before the first `case` or `flow`")
             opts = _options(args[2:], ("--source", "--out-of-scope"))
             if len(args) < 2 or not args[1].strip() or opts is None:
@@ -364,21 +369,30 @@ def fingerprint(p: Plan) -> str:
     return hashlib.sha256(json.dumps(data, ensure_ascii=False).encode()).hexdigest()[:12]
 
 
+def uncovered(p: Plan) -> list[Requirement]:
+    """In-scope requirements no expected result links to."""
+    proof = links(p)
+    return [r for r in p.requirements if not r.out_of_scope and not proof[r.id]]
+
+
+def approval_gaps(p: Plan) -> list[str]:
+    """A scope not approved, or changed since `tnazar plan approve`."""
+    if not p.requirements:
+        return []
+    now = fingerprint(p)
+    if not p.approved:
+        return [f"requirements not approved: show this review to the user, then `tnazar plan approve` ({now})"]
+    if p.approved != now:
+        return [f"requirements changed since approval (approved {p.approved}, now {now}): "
+                "show the review again, then `tnazar plan approve`"]
+    return []
+
+
 def requirement_gaps(p: Plan) -> list[str]:
     """What keeps the requirements from being a claim: a requirement nothing proves, a scope not
     approved or changed since. `plan review` is not ready while any is left; `run` warns."""
-    if not p.requirements:
-        return []
-    proof = links(p)
-    out = [f'{r.id} "{r.text}" has no expected result: link one with --req {r.id}, '
-           f'or mark it --out-of-scope "<why>"' for r in p.requirements if not r.out_of_scope and not proof[r.id]]
-    now = fingerprint(p)
-    if not p.approved:
-        out.append(f"requirements not approved: show this review to the user, then `tnazar plan approve` ({now})")
-    elif p.approved != now:
-        out.append(f"requirements changed since approval (approved {p.approved}, now {now}): "
-                   "show the review again, then `tnazar plan approve`")
-    return out
+    return [f'{r.id} "{r.text}" has no expected result: link one with --req {r.id}, '
+            f'or mark it --out-of-scope "<why>"' for r in uncovered(p)] + approval_gaps(p)
 
 
 def approve(path: str | Path) -> str:
@@ -399,7 +413,7 @@ def approve(path: str | Path) -> str:
 
 
 def _head(line: str) -> str:
-    return line.strip().split(" ", 1)[0]
+    return (line.split(None, 1) or [""])[0]
 
 
 def review(p: Plan) -> tuple[str, bool]:
@@ -414,7 +428,8 @@ def review(p: Plan) -> tuple[str, bool]:
             by = ("OUT OF SCOPE: " + r.out_of_scope if r.out_of_scope else
                   "<- " + "; ".join(f"{cid} E{n}" for cid, n in proof[r.id]) if proof[r.id] else "<- NOT COVERED")
             out.append(f"  {r.id} {r.text}{src}  {by}")
-        out += [f"  fingerprint {fingerprint(p)}" + (" (approved)" if p.approved == fingerprint(p) else ""), ""]
+        now = fingerprint(p)
+        out += [f"  fingerprint {now}" + (" (approved)" if p.approved == now else ""), ""]
     for c in p.cases:
         out.append(f"{c.id}  {c.title}".rstrip())
         proof: dict[str, list[str]] = {}

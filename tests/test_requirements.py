@@ -2,6 +2,7 @@
 cases, each proven by linked expected results, so "every case passed" never reads as "the feature
 is tested"."""
 
+import json
 import os
 import tempfile
 import unittest
@@ -71,10 +72,16 @@ class RequirementSyntaxTest(unittest.TestCase):
         msg = self.error('app a.b\ncase T1\n  check X\nrequirement R1 "a"\n')
         self.assertIn("line 4", msg)
         self.assertIn("top", msg)
+        msg = self.error('app a.b\ncase T1\n  check X\nflow f\n  key back\nend\nrequirement R1 "a"\n')
+        self.assertIn("line 7", msg)
 
     def test_a_requirement_needs_an_id_and_one_text(self):
         self.assertIn("line 2", self.error('app a.b\nrequirement R1\ncase T1\n  check X\n'))
         self.assertIn("line 2", self.error('app a.b\nrequirement R1 "a" --colour red\ncase T1\n  check X\n'))
+
+    def test_source_and_approved_are_given_once(self):
+        self.assertIn("twice", self.error('app a.b\nsource "a"\nsource "b"\ncase T1\n  check X\n'))
+        self.assertIn("twice", self.error('app a.b\napproved abc\napproved def\ncase T1\n  check X\n'))
 
     def test_req_needs_a_requirement_id(self):
         self.assertIn("line 8", self.error(HEAD + 'case T1\n  expect X --req\n  check X --for E1\n'))
@@ -138,6 +145,8 @@ class FingerprintTest(unittest.TestCase):
             REVIEWED.replace("Transfer PRD v3", "Transfer PRD v4"),                  # the spec
             REVIEWED.replace('"One row in history" --req R1 --req R2', '"One row in history" --req R1'),  # a link
             REVIEWED.replace('"Limit message shows"', '"Limit message shows" --req R2'),               # a new link
+            REVIEWED.replace('"One row in history" --req R1 --req R2', '"One row in history" --req R1')
+                    .replace('"Limit message shows"', '"Limit message shows" --req R2'),                # a moved link
             REVIEWED.replace('requirement R5 "Daily limit resets at midnight" --out-of-scope "needs a clock change"\n',
                              ""),                                                   # a dropped requirement
         ):
@@ -188,6 +197,12 @@ class ApproveCommandTest(unittest.TestCase):
         tnazar("plan", "approve", self.path)
         self.assertEqual(self.text().count("approved "), 1)
         self.assertEqual(plan.load(self.path).approved, new)
+
+    def test_a_tab_separated_approved_line_is_replaced_not_kept(self):
+        self.write(REVIEWED.replace("\ncase TC-01", "\napproved\tstale0000000\ncase TC-01", 1))
+        tnazar("plan", "approve", self.path)
+        self.assertNotIn("stale0000000", self.text())
+        self.assertEqual(self.text().count("approved "), 1)
 
     def test_a_plan_without_requirements_has_nothing_to_approve(self):
         self.write("app a.b\ncase T1\n  check X\n")
@@ -325,7 +340,7 @@ class RunRequirementsTest(RequirementRunBase):
         _, _, _, md = self.run_req(text, expect=1)
         self.assertIn("| R2 | Second submit creates no second transfer | §2.4 | ◐ not verified | "
                       "TC-06 E2 not verified |", md)
-        self.assertIn("| R3 | Back returns to login | §3 | ◐ not verified |", md)  # TC-06 did not pass
+        self.assertIn("| R3 | Back returns to login | §3 | ◐ not verified | TC-06 blocked · not verified |", md)
 
     def test_a10_all_requirements_excluded_claims_nothing(self):
         head = "\n".join(ln + (' --out-of-scope "later"' if ln.startswith("requirement") else "")
@@ -452,6 +467,19 @@ class ReplayRequirementsTest(RequirementRunBase):
         self.assertIn("| R1 | Login reaches home | §1 | ❌ failed |", md)
         self.assertIn("all requirements verified", report.to_markdown(source, report.summarize(source)))
 
+    def test_a14_replaying_a_continued_run_adds_up_both_selections(self):
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(COMPLETE.replace('  expect "Login first" --req R5\n',
+                                     '  expect "Login first" --req R5\n  say "start screen"\n'))
+        tnazar("plan", "approve", path)
+        PartialRunTest.hand_back_at(self, "start screen", path)
+        self.assertEqual(tnazar("run", path, "--from", "TC-04")[0], 0)
+        self.adb.current = self.adb.app.start
+        _, run, _, md = self.replay(expect=0)
+        self.assertEqual(len([e for e in run.events() if e["type"] == "scope"]), 2)
+        self.assertIn("**Requirements:** all requirements verified", md)
+
     def test_a14_evidence_replay_cannot_collect_again_is_not_verified(self):
         text = COMPLETE.replace('''  expect "Login first" --req R5
   check Login --for E1''', '''  expect "Login first" --req R5
@@ -488,6 +516,54 @@ case TC-01 "Login"
         s = report.summarize(run)
         self.assertNotIn("requirements", report.summary_line(s) + out)
         self.assertIn("requirements not declared: feature completeness not claimed", report.to_markdown(run, s))
+
+
+LEGACY_PLAN = f"""app {PACKAGE}
+name demo
+flow login
+  type "9876543210" --into id=phone_input
+  tap Login
+end
+case TC-01 "Login"
+  expect "Home"
+  run login
+  check "Pay now" --for E1
+case TC-02 "Back"
+  key back
+  check Login
+case TC-03 "Missing"
+  expect "Nope"
+  check Nowhere --timeout 1 --for E1
+case TC-04 "Setup"
+  require Nowhere --timeout 1
+  check Login
+"""
+VOLATILE = {"t", "dur_ms", "shot", "file", "sid", "screen_sig", "polls", "evidence", "crash", "took", "ms", "dump"}
+
+
+class LegacyGoldenTest(PlanRunBase):
+    """C4, C5: a plan without requirements, and its replay, log the same events and exit the same
+    as main (b39bf69) did; the golden file was recorded there."""
+
+    maxDiff = None
+
+    def test_events_and_exit_codes_equal_mains(self):
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(LEGACY_PLAN)
+        run_code = tnazar("run", path)[0]
+        source = sorted(p.name for p in runs_dir().iterdir())[-1]
+        self.adb.current = self.adb.app.start
+        replay_code = tnazar("replay", source)[0]
+        replayed = sorted(p.name for p in runs_dir().iterdir() if "-replay-" in p.name)[-1]
+
+        def norm(events):
+            return [{k: v for k, v in sorted(e.items()) if k not in VOLATILE} for e in events]
+        got = {"run_code": run_code, "replay_code": replay_code,
+               "run": norm(Run.load(source).events()), "replay": norm(Run.load(replayed).events())}
+        with open(os.path.join(os.path.dirname(__file__), "fixtures", "requirements",
+                               "legacy-run-and-replay.json")) as f:
+            self.assertEqual(got, json.load(f))
 
 
 if __name__ == "__main__":

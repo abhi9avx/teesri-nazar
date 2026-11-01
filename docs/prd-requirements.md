@@ -169,8 +169,10 @@ of `run --only TC-01` cannot know that TC-05 also proves R1. Therefore:
 `replay.py` copies only `case_plan` events into the new run (`replay.py:195`), and an event type
 it does not know falls through to step execution. So:
 
-- Replay copies the source run's latest `scope` event, unchanged, before the cases (same place
-  as `case_plan`), and `scope` joins the events replay never executes as a step.
+- Replay copies the source run's `scope` events, unchanged and in order, before the cases (same
+  place as `case_plan`), so a continued run's selections add up and a mid-run change stays
+  visible; `scope` joins the events replay never executes as a step. (Build: "latest" in the
+  draft would have judged a continued run's first cases as not selected.)
 - Requirement states in the replay are computed from the replay's **own** new checks and case
   results against that copied scope. Nothing is copied from the source run's verdicts.
 - A link whose evidence replay cannot re-collect (a recorded `check --result pass --kind db`,

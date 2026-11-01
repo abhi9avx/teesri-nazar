@@ -195,9 +195,9 @@ def run(args) -> int:
         for e in source.events():  # the same requested cases, so one that never ran is still a row
             if e["type"] == "case_plan":
                 target.log({k: v for k, v in e.items() if k != "t"})
-        scopes = [e for e in source.events() if e["type"] == "scope"]
-        if scopes:  # the claim, never its verdicts: the requirements are judged on this replay's checks
-            target.log({k: v for k, v in scopes[-1].items() if k != "t"})
+        for e in source.events():  # the claim, never its verdicts: judged on this replay's checks
+            if e["type"] == "scope":  # every one, so a continued run's selections still add up
+                target.log({k: v for k, v in e.items() if k != "t"})
         for e in source.events():
             t = e["type"]
             if t == "case_start":
@@ -277,7 +277,7 @@ def run(args) -> int:
     for p in paths:
         print(f"report: {p}")
     failed = (summary["counts"].get("fail", 0) + summary["counts"].get("blocked", 0)
-              + summary["counts"].get("not_run", 0) + summary["checks_failed"]
-              + (summary["requirements"] is not None and not summary["requirements"]["ok"]))
-    return 0 if failed == 0 else EXIT_FAIL
+              + summary["counts"].get("not_run", 0) + summary["checks_failed"])
+    incomplete = summary["requirements"] is not None and not summary["requirements"]["ok"]
+    return 0 if failed == 0 and not incomplete else EXIT_FAIL
 
