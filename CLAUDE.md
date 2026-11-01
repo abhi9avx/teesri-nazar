@@ -29,6 +29,12 @@ one before each group of cases. Never write an OTP or MPIN into a plan.
    inputs missed (empty/invalid input, back navigation mid-flow, retry after failure,
    boundary amounts, kill-and-reopen). Say what you will **not** test and why.
    Show the plan and wait for approval unless the user said to go ahead directly.
+   Given a spec (PRD, story, acceptance criteria, ticket), list its testable statements first as
+   `requirement R1 "…" --source "§2.4"` lines at the top of the plan and link each expected
+   result with `expect "…" --req R1`. After the user approves the review, run `./tnazar plan
+   approve plans/<name>.plan`. Never delete or descope a requirement to get a run green; mark it
+   `--out-of-scope "<why>"` only when the user agrees. A requirements plan exits 1 until every
+   in-scope requirement is verified.
 2. **Explore** just enough to write exact selectors: `observe` the screens the cases touch
    (in a short run: `./tnazar start explore --package <pkg>` … `./tnazar stop`). Find the
    package with `./tnazar packages <keyword>`.
@@ -63,7 +69,8 @@ one before each group of cases. Never write an OTP or MPIN into a plan.
    case, `./tnazar case plan TC-01 "title" --expect "…" --expect "…"`, so one that never
    runs still shows up; then `./tnazar case start TC-01` … `./tnazar check … --for E1` …
    `./tnazar case end`, then `./tnazar stop`.
-5. **Report back** in chat: the summary line (quote its `verified N/M`), a table of every
+5. **Report back** in chat: the summary line (quote its `verified N/M` and, with requirements,
+   its `requirements V/N verified` and every requirement not covered or not verified), a table of every
    requested case with result and reason (not-run and not-verified ones included),
    each failure with what you saw vs what was expected, bugs found, and anything you
    could not test. Link the HTML report path.

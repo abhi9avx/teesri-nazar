@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from . import cli, coverage, live
 from . import device as dev
 from .judge import blocked_end
-from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
+from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, approval_gaps, claim, load, uncovered
 from .session import Run, claim_active, get_active
 from .targets import selector_of
 
@@ -89,7 +89,11 @@ def run(args) -> int:
     the_run = get_active()[0]
     for case in cases:  # requested before any runs, so a case that never starts still has a row
         the_run.log(coverage.case_plan(case.id, case.title, case.expects))
+    if p.requirements:
+        the_run.log(coverage.scope(claim(p), [c.id for c in cases]))
     print(f"plan {p.name}: {len(cases)} case(s) on {p.app}")
+    if p.requirements:
+        _warn_scope(p)
 
     failed = False
     since = live.Since()
@@ -143,12 +147,23 @@ def run(args) -> int:
                 the_run.update_meta(stop_reason=f"--stop-on-fail after {case.id}")
                 break
     _stop()
+    if p.requirements:  # `stop` judged them once; an incomplete feature never exits 0
+        failed = failed or not the_run.meta().get("requirements_ok")
     return cli.EXIT_FAIL if failed else 0
+
+
+def _warn_scope(p: Plan) -> None:
+    bare = [r.id for r in uncovered(p)]
+    if bare:
+        print(f"{len(bare)} requirement{'s have' if len(bare) > 1 else ' has'} no expected result: "
+              f"{', '.join(bare)} (the run cannot verify the feature)")
+    for gap in approval_gaps(p):
+        print(gap)
 
 
 def _stop() -> None:
     _, out = call(["stop"])
-    print("\n".join(ln for ln in out.splitlines() if ln.startswith(("report:", " ")) or "case(s)" in ln))
+    print("\n".join(ln for ln in out.splitlines() if ln.startswith(("report:", "requirements:", " ")) or "case(s)" in ln))
 
 
 class Executor:

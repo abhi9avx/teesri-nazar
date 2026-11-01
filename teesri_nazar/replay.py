@@ -195,6 +195,9 @@ def run(args) -> int:
         for e in source.events():  # the same requested cases, so one that never ran is still a row
             if e["type"] == "case_plan":
                 target.log({k: v for k, v in e.items() if k != "t"})
+        for e in source.events():  # the claim, never its verdicts: judged on this replay's checks
+            if e["type"] == "scope":  # every one, so a continued run's selections still add up
+                target.log({k: v for k, v in e.items() if k != "t"})
         for e in source.events():
             t = e["type"]
             if t == "case_start":
@@ -265,13 +268,15 @@ def run(args) -> int:
         if meta["animations_before"] is not None:
             dev.animations_restore(adb, meta["animations_before"])
         target.update_meta(finished_at=now_iso())
-        paths = rpt.write(target)
+        summary = rpt.summarize(target)
+        paths = rpt.write(target, summary)
 
-    summary = rpt.summarize(target)
     print(rpt.summary_line(summary))
+    if summary["requirements"]:
+        print(f"requirements: {summary['requirements']['line']}")
     for p in paths:
         print(f"report: {p}")
     failed = (summary["counts"].get("fail", 0) + summary["counts"].get("blocked", 0)
               + summary["counts"].get("not_run", 0) + summary["checks_failed"])
-    return 0 if failed == 0 else EXIT_FAIL
+    return 0 if failed == 0 and not rpt.incomplete(summary) else EXIT_FAIL
 

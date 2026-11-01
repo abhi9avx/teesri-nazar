@@ -22,6 +22,12 @@ Follow `CLAUDE.md` (the playbook). In short:
    draft plan; note each case's account and log in as it. Before running, show
    `./tnazar plan review plans/<name>.plan` (every expected result and what proves it).
    Wait for approval unless the user said to go ahead.
+   Given a spec (PRD, user story, acceptance criteria, ticket): first list its testable
+   statements as `requirement R<n> "…" --source "<section>"` at the top of the plan and link
+   each expected result to them with `--req`. Show the review; only after the user says yes,
+   `./tnazar plan approve plans/<name>.plan`. Never drop or descope a requirement to make a
+   run pass: mark it `--out-of-scope "<why>"` only when the user agrees. No spec (a one-line
+   ask): no requirements.
 4. **Run.** Check the app map first (`./tnazar flows`; `./tnazar flow <name>` runs a saved
    route). Explore the screens the cases touch (`observe`), save new routes as `flow`s, write `plans/<name>.plan`
    (format: `teesri_nazar/plan.py`, example `examples/settings.plan`; each expected result
@@ -33,7 +39,8 @@ Follow `CLAUDE.md` (the playbook). In short:
    dependent cases `blocked` with the reason.
    Driving by hand instead: `./tnazar case plan TC-NN "title" --expect …` for every planned
    case first, so a case that never runs is still reported.
-5. **Finish.** `./tnazar stop`, then report in chat: summary line with `verified N/M`, case table
+5. **Finish.** `./tnazar stop`, then report in chat: summary line with `verified N/M` (and
+   `requirements V/N verified` plus every requirement not covered or not verified), case table
    of every requested case
    (id, title, result, reason), each failure with expected vs actual and the screenshot
    path, bugs found, what was not tested, and the `report.html` path.

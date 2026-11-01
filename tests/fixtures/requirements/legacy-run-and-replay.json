@@ -1,0 +1,361 @@
+{
+ "run_code": 1,
+ "replay_code": 1,
+ "run": [
+  {
+   "added": false,
+   "case": "TC-01",
+   "expects": [
+    "Home"
+   ],
+   "title": "Login",
+   "type": "case_plan"
+  },
+  {
+   "added": false,
+   "case": "TC-02",
+   "expects": [],
+   "title": "Back",
+   "type": "case_plan"
+  },
+  {
+   "added": false,
+   "case": "TC-03",
+   "expects": [
+    "Nope"
+   ],
+   "title": "Missing",
+   "type": "case_plan"
+  },
+  {
+   "added": false,
+   "case": "TC-04",
+   "expects": [],
+   "title": "Setup",
+   "type": "case_plan"
+  },
+  {
+   "case": "TC-01",
+   "title": "Login",
+   "type": "case_start"
+  },
+  {
+   "clear": false,
+   "enter": false,
+   "env": null,
+   "screen": [
+    1080,
+    2400
+   ],
+   "secret": false,
+   "selector": {
+    "id": "phone_input"
+   },
+   "text": "9876543210",
+   "type": "type",
+   "xy": [
+    540,
+    460
+   ]
+  },
+  {
+   "label": "Login",
+   "long": false,
+   "screen": [
+    1080,
+    2400
+   ],
+   "selector": {
+    "text": "Login"
+   },
+   "stable": {
+    "id": "btn_login"
+   },
+   "type": "tap",
+   "xy": [
+    540,
+    860
+   ]
+  },
+  {
+   "case": "TC-01",
+   "checked": null,
+   "enabled": null,
+   "for": [
+    "E1"
+   ],
+   "gone": false,
+   "kind": "ui",
+   "ok": true,
+   "selector": {
+    "text": "Pay now"
+   },
+   "type": "check",
+   "what": "\"Pay now\" is visible"
+  },
+  {
+   "case": "TC-01",
+   "expects": [
+    {
+     "id": "E1",
+     "text": "Home",
+     "state": "verified",
+     "by": [
+      "\"Pay now\" is visible"
+     ]
+    }
+   ],
+   "reason": "",
+   "status": "pass",
+   "type": "case_end"
+  },
+  {
+   "case": "TC-02",
+   "title": "Back",
+   "type": "case_start"
+  },
+  {
+   "key": "back",
+   "keyboard": false,
+   "type": "key"
+  },
+  {
+   "case": "TC-02",
+   "checked": null,
+   "enabled": null,
+   "gone": false,
+   "kind": "ui",
+   "ok": true,
+   "selector": {
+    "text": "Login"
+   },
+   "type": "check",
+   "what": "\"Login\" is visible"
+  },
+  {
+   "case": "TC-02",
+   "reason": "",
+   "status": "pass",
+   "type": "case_end"
+  },
+  {
+   "case": "TC-03",
+   "title": "Missing",
+   "type": "case_start"
+  },
+  {
+   "case": "TC-03",
+   "checked": null,
+   "enabled": null,
+   "for": [
+    "E1"
+   ],
+   "gone": false,
+   "kind": "ui",
+   "ok": false,
+   "selector": {
+    "text": "Nowhere"
+   },
+   "type": "check",
+   "what": "\"Nowhere\" is visible"
+  },
+  {
+   "case": "TC-03",
+   "cause": "app",
+   "expects": [
+    {
+     "id": "E1",
+     "text": "Nope",
+     "state": "failed",
+     "by": [
+      "\"Nowhere\" is visible"
+     ]
+    }
+   ],
+   "reason": "failed: \"Nowhere\" is visible",
+   "status": "fail",
+   "type": "case_end"
+  },
+  {
+   "case": "TC-04",
+   "title": "Setup",
+   "type": "case_start"
+  },
+  {
+   "case": "TC-04",
+   "checked": null,
+   "enabled": null,
+   "gone": false,
+   "kind": "ui",
+   "ok": false,
+   "selector": {
+    "text": "Nowhere"
+   },
+   "setup": true,
+   "type": "check",
+   "what": "\"Nowhere\" is visible"
+  },
+  {
+   "case": "TC-04",
+   "cause": "precondition",
+   "reason": "precondition not met: \"Nowhere\" is visible",
+   "status": "blocked",
+   "type": "case_end"
+  }
+ ],
+ "replay": [
+  {
+   "added": false,
+   "case": "TC-01",
+   "expects": [
+    "Home"
+   ],
+   "title": "Login",
+   "type": "case_plan"
+  },
+  {
+   "added": false,
+   "case": "TC-02",
+   "expects": [],
+   "title": "Back",
+   "type": "case_plan"
+  },
+  {
+   "added": false,
+   "case": "TC-03",
+   "expects": [
+    "Nope"
+   ],
+   "title": "Missing",
+   "type": "case_plan"
+  },
+  {
+   "added": false,
+   "case": "TC-04",
+   "expects": [],
+   "title": "Setup",
+   "type": "case_plan"
+  },
+  {
+   "case": "TC-01",
+   "title": "Login",
+   "type": "case_start"
+  },
+  {
+   "case": "TC-01",
+   "for": [
+    "E1"
+   ],
+   "gone": false,
+   "kind": "ui",
+   "ok": true,
+   "recorded_ok": true,
+   "selector": {
+    "text": "Pay now"
+   },
+   "type": "check",
+   "what": "\"Pay now\" is visible"
+  },
+  {
+   "case": "TC-01",
+   "expects": [
+    {
+     "id": "E1",
+     "text": "Home",
+     "state": "verified",
+     "by": [
+      "\"Pay now\" is visible"
+     ]
+    }
+   ],
+   "reason": "",
+   "status": "pass",
+   "type": "case_end"
+  },
+  {
+   "case": "TC-02",
+   "title": "Back",
+   "type": "case_start"
+  },
+  {
+   "case": "TC-02",
+   "gone": false,
+   "kind": "ui",
+   "ok": true,
+   "recorded_ok": true,
+   "selector": {
+    "text": "Login"
+   },
+   "type": "check",
+   "what": "\"Login\" is visible"
+  },
+  {
+   "case": "TC-02",
+   "reason": "",
+   "status": "pass",
+   "type": "case_end"
+  },
+  {
+   "case": "TC-03",
+   "title": "Missing",
+   "type": "case_start"
+  },
+  {
+   "case": "TC-03",
+   "for": [
+    "E1"
+   ],
+   "gone": false,
+   "kind": "ui",
+   "ok": false,
+   "recorded_ok": false,
+   "selector": {
+    "text": "Nowhere"
+   },
+   "type": "check",
+   "what": "\"Nowhere\" is visible"
+  },
+  {
+   "case": "TC-03",
+   "cause": "app",
+   "expects": [
+    {
+     "id": "E1",
+     "text": "Nope",
+     "state": "failed",
+     "by": [
+      "\"Nowhere\" is visible"
+     ]
+    }
+   ],
+   "reason": "failed: \"Nowhere\" is visible",
+   "status": "fail",
+   "type": "case_end"
+  },
+  {
+   "case": "TC-04",
+   "title": "Setup",
+   "type": "case_start"
+  },
+  {
+   "case": "TC-04",
+   "gone": false,
+   "kind": "ui",
+   "ok": false,
+   "recorded_ok": false,
+   "selector": {
+    "text": "Nowhere"
+   },
+   "setup": true,
+   "type": "check",
+   "what": "\"Nowhere\" is visible"
+  },
+  {
+   "case": "TC-04",
+   "cause": "precondition",
+   "reason": "precondition not met: \"Nowhere\" is visible; the setup did not hold; rest of the case skipped",
+   "status": "blocked",
+   "type": "case_end"
+  }
+ ]
+}

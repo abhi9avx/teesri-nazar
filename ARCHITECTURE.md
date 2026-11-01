@@ -600,7 +600,7 @@ Claude (and CI) can act on them without reading the output:
 | Code | Meaning | What to do |
 |---|---|---|
 | `0` | OK: the command worked; for `run` / `replay`, every case passed | Go on. |
-| `1` | Failed: a check failed, an element was not found, or an adb command failed. For `run` / `replay`, any requested case that did not pass: fail, blocked (e.g. an expected result not verified) or not run | Read the output; for `run`, see the report. |
+| `1` | Failed: a check failed, an element was not found, or an adb command failed. For `run` / `replay`, any requested case that did not pass: fail, blocked (e.g. an expected result not verified) or not run; for a plan that declares requirements, also any requirement not verified or not covered, or a scope not approved or changed since | Read the output; for `run`, see the report (the `requirements:` line names what is missing). |
 | `2` | Error: a bad plan line, or a setup problem (no device, app not installed, bad flags, another process's run still in progress on the device) | Fix the line or the setup; nothing was tested. For a run in progress, wait for it or `./tnazar stop` it. |
 | `3` | Held: the user sent a dashboard message, so the command was **not run**. For `wait-message`: a message arrived | Read the `>> USER` message and re-plan; for `run`, continue with `--from <case>`. An *info* message (the dashboard already typed a secret) is shown without holding. |
 | `4` | `wait A --or B`: B showed up instead of A | Treat as the failure B stands for. Inside a plan this fails the case. |
@@ -901,6 +901,7 @@ on a real device.
 | DA-14 | show every requested case once the run ends: a case that never started is a grey row with the reason it did not run | live |
 | DA-15 | move an open page to a run as soon as it starts (even from a past run you picked), and with nothing running show the newest run, never an older one; no reload | live |
 | DA-16 | show who a result points at: `FAIL · APP` for the app, `BLOCKED · STEP COULD NOT RUN`, `BLOCKED · DEVICE` or `BLOCKED · PRECONDITION NOT MET` when it could not be judged, with the step's own error, never a SLOW note, as the reason | live |
+| DA-17 | count verified requirements on the summary of a requirements plan (`requirements 2/5 verified`), and nothing more for a plan without them | |
 
 ### 15.1 Running a whole plan
 
@@ -948,6 +949,18 @@ case TC-01 "Network & internet opens"
   `tnazar plan review` prints each case's expected results with the checks proving them,
   then all gaps (exit 0 ready, 1 not ready, 2 a syntax error). `run` parses strictly, so its
   first error is unchanged.
+- **Requirements** (docs/prd-requirements.md). Optional `source`, `requirement <id> "<text>"
+  [--source …] [--out-of-scope …]` lines at the top, and `expect "…" --req <id>` links. `plan
+  review` lists each requirement and the expected results proving it; one nothing proves, or a
+  scope not approved or changed since `tnazar plan approve` wrote its fingerprint (spec,
+  requirements, sources, scope and links; not steps or case order), is a gap — but `run` only
+  warns, so the omission stays visible in the report instead of being deleted to get running.
+  Each `run` call logs one `scope` event with every case's links, selected or not;
+  `coverage.requirement_states` judges each requirement from the latest scope and the case
+  evidence: verified only when every link's expected result was verified and its case passed.
+  The summary adds `| requirements V/N verified`, the report a Requirements verdict and table;
+  a requirements plan exits 1 unless every in-scope requirement is verified. Replay copies the
+  scope and judges it on its own checks. Plans without requirements are unchanged.
 - **Import.** `tnazar cases import` (`teesri_nazar/intake.py`) reads CSV, TSV (a sheet's
   paste: a row ends once it has all its tabs, so a cell's line breaks survive) or a Markdown
   table; matches columns by header synonyms, or by `--columns` when there is no header;
