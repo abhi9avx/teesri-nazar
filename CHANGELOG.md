@@ -5,7 +5,7 @@ are built from this file, so every version shipped here shows up there too.
 
 ## v4: Easy to set up, honest to trust
 
-In progress since 21 October 2026, last updated 1 November 2026. Merged so far: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7), [PR #8](https://github.com/abhi9avx/teesri-nazar/pull/8), [PR #9](https://github.com/abhi9avx/teesri-nazar/pull/9), [PR #10](https://github.com/abhi9avx/teesri-nazar/pull/10), [PR #11](https://github.com/abhi9avx/teesri-nazar/pull/11), [PR #12](https://github.com/abhi9avx/teesri-nazar/pull/12), [PR #13](https://github.com/abhi9avx/teesri-nazar/pull/13)
+In progress since 21 October 2026, last updated 1 November 2026. Merged so far: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7), [PR #8](https://github.com/abhi9avx/teesri-nazar/pull/8), [PR #9](https://github.com/abhi9avx/teesri-nazar/pull/9), [PR #11](https://github.com/abhi9avx/teesri-nazar/pull/11), [PR #12](https://github.com/abhi9avx/teesri-nazar/pull/12), [PR #13](https://github.com/abhi9avx/teesri-nazar/pull/13), [PR #14](https://github.com/abhi9avx/teesri-nazar/pull/14)
 
 v4 is about people outside the project installing Teesri Nazar, trusting what it says and
 finishing a run on their own app.
@@ -26,15 +26,14 @@ finishing a run on their own app.
 - `tnazar cases import` brings test cases from a sheet (CSV, a table pasted from a
   spreadsheet, or a Markdown table) into a draft plan, keeping their IDs, sections and
   accounts; `tnazar plan review` shows every expected result and what proves it, and all
-  that is still missing, before a run. Values that look like secrets (passwords, OTPs,
-  PINs, long numbers) are masked in the draft, and an OTP, MPIN or password column is never
-  copied.
+  that is still missing, before a run. In a cell that names a secret (OTP, PIN, password),
+  the value is masked in the draft, and an OTP, MPIN or password column is never copied.
 - Requirements: give it a spec and the plan lists what the feature must do
   (`requirement R1 "…" --source "§2.4"`), each expected result says which one it proves
   (`expect "…" --req R1`), and you approve the list with `tnazar plan approve`. The report
   says `requirements 4/5 verified` and names any requirement nothing tested, so six passing
-  cases never read as a tested feature. A plan with requirements exits 1 until every one in
-  scope is verified; plans without them work as before.
+  cases never read as a tested feature. A plan with requirements exits 1 until the list is
+  approved and every requirement in scope is verified; plans without them work as before.
 - Only evidence about the app fails a case. A step that could not run, a device that
   stopped answering or an expected result never proven blocks the case and says why;
   `require` in a plan names the state the setup must reach, and when it does not hold the
@@ -48,8 +47,8 @@ finishing a run on their own app.
 - `tnazar observe --full` prints long texts whole, for chat replies and articles.
 - The dashboard follows the newest run without a reload: a run that starts takes over the
   open page, and with nothing running it shows the latest run, never an older one.
-- The website deploys within a minute of a merge instead of waiting up to 6 hours for the
-  scheduled build.
+- A merge that changes the website or the changelog starts its deploy within a minute,
+  instead of waiting up to 6 hours for the scheduled build.
 - The website's hero animation is labelled as an illustration, with a link to a report
   from a real run.
 - New docs page, *Data and privacy*: what stays on your computer, what Claude Code sends

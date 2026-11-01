@@ -76,7 +76,7 @@ case TC-01 "Transfer"
     <li>You read the list. When you agree, <code>./tnazar plan approve plans/transfer.plan</code> records a fingerprint of it. If a requirement, its source or what proves it changes later, the report says so.</li>
     <li>The run reports <code>requirements 4/5 verified</code> next to the case results, and names each requirement that is <em>not covered</em>, <em>not verified</em> or <em>failed</em>.</li>
   </ol>
-  <p>A requirement is verified only when every expected result linked to it was proven and its case passed. A plan with requirements exits 1 until every requirement in scope is verified, so a green CI job means the feature was tested, not only the cases someone thought of. Plans without requirements work as before.</p>
+  <p>A requirement is verified only when every expected result linked to it was proven and its case passed. A plan with requirements exits 1 until the list is approved and every requirement in scope is verified, so a green CI job means the feature was tested, not only the cases someone thought of. Plans without requirements work as before.</p>
 
   <h2 id="exit-codes">Exit codes</h2>
   <p>Every command, <code>run</code>, <code>flow</code> and <code>replay</code> use the same codes, so CI can act on them.</p>
@@ -85,7 +85,7 @@ case TC-01 "Transfer"
       <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
       <tbody>
         <tr><td><code>0</code></td><td>OK. For <code>run</code> and <code>replay</code>, every case passed, and, in a plan with requirements, every requirement in scope is verified.</td></tr>
-        <tr><td><code>1</code></td><td>Failed: a check failed or an element was not found. In a plan with requirements, also when one is not covered or not verified, or the approved list changed.</td></tr>
+        <tr><td><code>1</code></td><td>Failed: a check failed or an element was not found. In a plan with requirements, also when one is not covered or not verified, or the list was never approved or changed since.</td></tr>
         <tr><td><code>2</code></td><td>Error: a bad plan line or a setup problem. Nothing was tested.</td></tr>
         <tr><td><code>3</code></td><td>Held: you sent a dashboard message. Continue with <code>--from &lt;case&gt;</code>.</td></tr>
         <tr><td><code>4</code></td><td><code>wait A --or B</code> saw B instead of A.</td></tr>
