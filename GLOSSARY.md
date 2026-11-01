@@ -33,6 +33,15 @@ lists what is missing.
 (such as `login`) failed in the two cases before. Its cause is *precondition* when the flow
 failed on a `require`, else *step*.
 
+**Requirement**: one testable statement of what the feature must do, taken from a spec (PRD,
+story, acceptance criteria) and approved by the user; proven by the expected results linked to
+it with `--req`. *Verified* only when every linked expected result is verified and its case
+passed; *not covered* when nothing links to it; *excluded* when marked out of scope.
+_Avoid_: test case (a case proves expected results; a requirement is what they add up to).
+
+**Scope**: a plan's requirements, their sources and links, as the user approved them
+(`tnazar plan approve` records its fingerprint). A run logs it once per `run` call.
+
 **Require**: a plan step naming the state a case's setup must reach before its checks (a
 fresh chat, a logged-in home). When it does not hold, the case stops as *precondition not
 met*. Never an expected result.

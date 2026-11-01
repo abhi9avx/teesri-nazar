@@ -4,13 +4,16 @@ A plan is the tnazar commands a tester would type, without the `./tnazar` prefix
 
     app com.android.settings          # the app under test (required)
     name settings-smoke               # run name (default: the file name)
+    source "Settings PRD v2"          # optional: the spec the requirements come from
+    requirement R1 "Internet settings open" --source "§3"   # optional, see below
+    approved 1a2b3c4d5e6f             # written by `tnazar plan approve`, never by hand
 
     flow open_network                 # a reusable block, used with `run open_network`
       tap "Network & internet" --wait 5
     end
 
     case TC-01 "Network page opens"   # a case runs until the next `case`, `flow` or the end
-      expect "Internet settings show" # optional: expected results E1, E2… before the steps
+      expect "Internet settings show" --req R1  # optional: expected results E1, E2… before the steps
       launch --restart
       run open_network
       require "Search Settings"       # setup: if it does not hold, the case is blocked, never failed
@@ -36,12 +39,19 @@ chat, an empty cart, a logged-in home). When it does not hold, the case stops th
 `blocked · precondition not met`: the app was never tested, so it never fails. It is never
 an expected result (no `--for`) and a case needs a real `check` besides it.
 
+`requirement <id> "<text>" [--source "<where in the spec>"] [--out-of-scope "<why>"]`: what the
+feature must do, above the cases. `expect … --req <id>` (repeatable) says which requirements an
+expected result proves. `plan review` lists each requirement and what proves it; one nothing
+proves, or a scope not approved by `tnazar plan approve` (or changed since), is a gap. `run` does
+not refuse it: it warns, and the report and exit code say the feature was not fully verified.
+
 `wait A --or B` is a step like any other: when B shows up instead of A it fails (exit 4),
 which fails the case. To branch on whichever screen shows first, use
 `if A --or B --wait <seconds>`. `if` targets are selectors ("Text", ~partial, id=, desc=),
 never `#index` or `x,y`: there is no observed screen to index and no element to look for.
 
-`tnazar run` exits 0 when every case passed, 1 when a case failed, 2 on a plan or setup
+`tnazar run` exits 0 when every case passed (and, for a plan with requirements, every in-scope
+requirement is verified), 1 when a case failed or a requirement is not verified, 2 on a plan or setup
 error (or an unexpected error mid-run, which ends the case as blocked and stops the run),
 and 3 when a dashboard message handed the run back (it stays open; continue with --from).
 

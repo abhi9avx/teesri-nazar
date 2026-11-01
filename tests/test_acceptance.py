@@ -48,6 +48,7 @@ ACCEPTANCE = {
     "DA-16": ["test_the_dashboard_says_why_a_case_did_not_pass",
               "test_the_report_says_why_a_case_did_not_pass",
               "test_a_target_not_on_screen_blocks_the_case_and_names_the_miss_not_the_slowness"],
+    "DA-17": ["test_the_dashboard_summary_counts_verified_requirements_while_the_run_is_open"],
     "DA-15": ["test_a_run_that_starts_takes_over_the_open_page",
               "test_a_past_run_you_pick_while_one_runs_stays_until_another_starts",
               "test_with_nothing_running_the_page_shows_the_newest_run_and_never_an_older_one",

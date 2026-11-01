@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Grilled 2026-11-01** (Q1–Q10), then revised for an external review (R1–R5, §10). Ready to freeze; not built. |
+| Status | **Grilled 2026-11-01** (Q1–Q10), then revised for an external review (R1–R5, §10). Frozen; **built** on `feature/requirements` (2026-11-01). |
 | Branch | `feature/requirements` (off `main` once `feature/judgment` merges) |
 | Builds on | [prd-coverage.md](prd-coverage.md) (case and expectation ledger), `feature/judgment` (verdicts and causes) |
 | Code | `teesri_nazar/plan.py`, `coverage.py`, `runner.py`, `report.py`, `intake.py`, `cli.py` (`plan review`, new `plan approve`) |
@@ -223,7 +223,10 @@ in by declaring requirements, which no plan does today.
   `incomplete`, exit 1.
 - A7 `plan review` lists every requirement and the not-covered gap; legacy plans unchanged (C1).
 - A8 `--req R9`, duplicate `requirement R1`, `requirement` after a `case` → plan error with line.
-- A9 a case covering R1 and R2 proves only R1's expected result → R2 not verified, R1 verified.
+- A9 a case covering R1 and R2 proves only R1's expected result → R2 `not verified (TC-06 E2 not
+  verified)`; R1 is not verified either, because its case did not pass (Q6). Never verified by
+  the other requirement's evidence. (Corrected during build: the draft said R1 verified, which
+  contradicts Q6.)
 - A10 every requirement out of scope → `no in-scope requirement: feature verification not
   claimed`, exit 1. A legacy plan with all cases passing → exit 0, as today.
 - A11 TC-03 proves R2's expected result, then crashes → R2 not verified, cause `TC-03 failed: crash`.

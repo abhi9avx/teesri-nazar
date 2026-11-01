@@ -461,6 +461,19 @@ class ReplayRequirementsTest(RequirementRunBase):
         self.assertIn("| R5 | Login is the start screen | §5 | ◐ not verified | TC-04 E1 not verified |", md)
 
 
+class DashboardRequirementsTest(RequirementRunBase):
+    def test_the_dashboard_summary_counts_verified_requirements_while_the_run_is_open(self):
+        from teesri_nazar import ui
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(COMPLETE.replace('  expect "Login first" --req R5\n',
+                                     '  expect "Login first" --req R5\n  say "start screen"\n'))
+        tnazar("plan", "approve", path)
+        PartialRunTest.hand_back_at(self, "start screen", path)  # the run stays open
+        summary = ui.Dashboard(0).state()["active"]["summary"]
+        self.assertTrue(summary.endswith("| requirements 2/5 verified"), summary)  # R1 also needs TC-05, still pending
+
+
 class LegacyRunTest(PlanRunBase):
     """C4: a plan with no requirements runs, logs and exits exactly as before."""
 
