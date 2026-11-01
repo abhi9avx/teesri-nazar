@@ -29,6 +29,10 @@ def result_label(status: str, cause: str | None = None) -> str:
 
 
 UNDECLARED = "requested cases not declared: completeness unknown"
+REQUIREMENTS_UNDECLARED = "requirements not declared: feature completeness not claimed"
+REQ_ICON = {"verified": "✅", "failed": "❌", "unverified": "◐", "not_covered": "○", "excluded": "⊘"}
+REQ_WORD = {"verified": "verified", "failed": "failed", "unverified": "not verified", "not_covered": "not covered",
+            "excluded": "out of scope"}
 SLOW_MS = 5000
 
 
@@ -110,6 +114,7 @@ def summarize(run: Run) -> dict:
     return {
         "declared": declared,
         "tally": tally,
+        "requirements": coverage.requirement_states(events, cases, result_label),
         "selection": run.meta().get("selection"),
         "cases": cases,
         "counts": counts,
@@ -146,6 +151,9 @@ def summary_line(s: dict) -> str:
     line = f"{head}  | checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed"
     if s.get("tally"):
         line += f"  | verified {s['tally']['verified']}/{s['tally']['requested']}"
+    if r := s.get("requirements"):
+        line += f"  | requirements {r['verified']}/{r['total']} verified" + (
+            f" ({r['excluded']} excluded)" if r["excluded"] else "")
     return line
 
 
@@ -162,7 +170,21 @@ def coverage_lines(s: dict) -> list[str]:
     sel = s.get("selection")
     if sel and sel.get("how"):
         out.append(f"{s['tally']['requested']} of {sel['plan_cases']} plan cases selected ({sel['how']})")
+    r = s.get("requirements")
+    out.append(f"**Requirements:** {r['line']}" if r else REQUIREMENTS_UNDECLARED)
     return out
+
+
+def requirement_lines(s: dict) -> list[str]:
+    """The Requirements table: each requirement, where it comes from, its state and what proved it."""
+    r = s.get("requirements")
+    if not r:
+        return []
+    out = ["## Requirements", ""] + ([f"Source: {r['source']}", ""] if r["source"] else [])
+    out += ["| Requirement | Text | Source | State | Proven by / why not |", "|---|---|---|---|---|"]
+    out += [f"| {x['id']} | {x['text']} | {x.get('source') or '-'} | {REQ_ICON[x['state']]} {REQ_WORD[x['state']]} | "
+            f"{x['detail']} |" for x in r["rows"]]
+    return out + [""]
 
 
 EXPECT_ICON = {"verified": "✅", "failed": "❌", "unverified": "○"}
@@ -207,6 +229,7 @@ def to_markdown(run: Run, s: dict) -> str:
     out += ["## Summary", "", summary_line(s), ""]
     for line in coverage_lines(s):
         out += [line, ""]
+    out += requirement_lines(s)
     cases = s["cases"]
     tokens = usage.per_case(run)
     if cases:

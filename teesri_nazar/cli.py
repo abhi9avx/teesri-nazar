@@ -276,6 +276,8 @@ def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
         summary = rpt.summarize(run)
         print(f"run finished: {run.name}")
         print(rpt.summary_line(summary))
+        if summary.get("requirements"):
+            print(f"requirements: {summary['requirements']['line']}")
         for p in paths:
             print(f"report: {p}")
         if learned:
@@ -804,6 +806,9 @@ def cmd_cases(args) -> int:
 def cmd_plan(args) -> int:
     from . import plan as plan_mod
     try:
+        if args.action == "approve":
+            print(f"approved {plan_mod.approve(args.plan)}: written to {args.plan}")
+            return 0
         p = plan_mod.load(args.plan, draft=True)
     except (plan_mod.PlanError, OSError) as exc:
         raise UserError(str(exc))
@@ -981,6 +986,8 @@ def build_parser() -> argparse.ArgumentParser:
     psub = p.add_subparsers(dest="action", required=True)
     pr = psub.add_parser("review", help="every case, its expected results and what proves them; all gaps at once")
     pr.add_argument("plan")
+    pa = psub.add_parser("approve", help="record that the user approved the plan's requirements (after they said yes)")
+    pa.add_argument("plan")
 
     p = add("case", cmd_case, "mark test case boundaries")
     csub = p.add_subparsers(dest="action", required=True)

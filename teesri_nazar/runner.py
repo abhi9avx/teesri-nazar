@@ -22,7 +22,8 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-from . import cli, coverage, live
+from . import cli, coverage, live, report
+from . import plan as plan_mod
 from . import device as dev
 from .judge import blocked_end
 from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, load
@@ -89,7 +90,11 @@ def run(args) -> int:
     the_run = get_active()[0]
     for case in cases:  # requested before any runs, so a case that never starts still has a row
         the_run.log(coverage.case_plan(case.id, case.title, case.expects))
+    if p.requirements:
+        _log_scope(the_run, p, cases)
     print(f"plan {p.name}: {len(cases)} case(s) on {p.app}")
+    if p.requirements:
+        _warn_scope(p)
 
     failed = False
     since = live.Since()
@@ -143,7 +148,30 @@ def run(args) -> int:
                 the_run.update_meta(stop_reason=f"--stop-on-fail after {case.id}")
                 break
     _stop()
+    if p.requirements:
+        reqs = report.summarize(the_run)["requirements"]
+        print(f"requirements: {reqs['line']}")
+        failed = failed or not reqs["ok"]  # an incomplete feature never exits 0
     return cli.EXIT_FAIL if failed else 0
+
+
+def _log_scope(the_run: Run, p, cases: list[Case]) -> None:
+    the_run.log(coverage.scope(
+        p.source, plan_mod.fingerprint(p), p.approved,
+        [{"id": r.id, "text": r.text, "source": r.source, "out_of_scope": r.out_of_scope} for r in p.requirements],
+        [{"id": c.id, "expects": [{"text": t, "reqs": q} for t, q in zip(c.expects, c.expect_reqs)]} for c in p.cases],
+        [c.id for c in cases]))
+
+
+def _warn_scope(p) -> None:
+    proof = plan_mod.links(p)
+    bare = [r.id for r in p.requirements if not r.out_of_scope and not proof[r.id]]
+    if bare:
+        print(f"{len(bare)} requirement{'s have' if len(bare) > 1 else ' has'} no expected result: "
+              f"{', '.join(bare)} (the run cannot verify the feature)")
+    for gap in plan_mod.requirement_gaps(p):
+        if "has no expected result" not in gap:
+            print(gap)
 
 
 def _stop() -> None:

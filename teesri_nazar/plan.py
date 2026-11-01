@@ -53,7 +53,9 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import io
+import json
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -125,6 +127,16 @@ class Case:
     body: list = field(default_factory=list)
     expects: list = field(default_factory=list)       # expected results E1, E2… in order
     expect_lines: list = field(default_factory=list)  # the plan line of each, for errors
+    expect_reqs: list = field(default_factory=list)   # per expected result: the requirement ids it proves
+
+
+@dataclass
+class Requirement:
+    line: int
+    id: str
+    text: str
+    source: str = ""        # where in the spec it comes from (--source)
+    out_of_scope: str = ""  # why it is not tested (--out-of-scope); never verified
 
 
 @dataclass
@@ -134,6 +146,9 @@ class Plan:
     flows: dict[str, Flow]
     cases: list[Case]
     gaps: list = field(default_factory=list)  # draft only: what still keeps it from running
+    requirements: list = field(default_factory=list)
+    source: str = ""    # the spec the requirements come from
+    approved: str = ""  # fingerprint written by `tnazar plan approve`
 
 
 def load(path: str | Path, flows_only: bool = False, draft: bool = False) -> Plan:
@@ -148,7 +163,8 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
     steps, no check, an unproven `expect`, a wrong `--for`) is listed in `Plan.gaps` instead of
     stopping at the first. Syntax errors still stop at once.
     """
-    app = name = ""
+    app = name = spec = approved = ""
+    requirements: list[Requirement] = []
     flows: dict[str, Flow] = {}
     cases: list[Case] = []
     top: Flow | Case | None = None   # the case or flow being filled
@@ -172,6 +188,21 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
             if top is not None or len(args) != 1:
                 fail(n, f"`{head} <value>` belongs at the top of the plan")
             app, name = (args[0], name) if head == "app" else (app, args[0])
+        elif head in ("source", "approved"):
+            if top is not None or len(args) != 1:
+                fail(n, f"`{head} <value>` belongs at the top of the plan")
+            spec, approved = (args[0], approved) if head == "source" else (spec, args[0])
+        elif head == "requirement":
+            if top is not None:
+                fail(n, "`requirement` belongs at the top of the plan, before the first `case` or `flow`")
+            opts = _options(args[2:], ("--source", "--out-of-scope"))
+            if len(args) < 2 or not args[1].strip() or opts is None:
+                fail(n, 'use `requirement <id> "<what the feature must do>" [--source "<where in the spec>"] '
+                        '[--out-of-scope "<why not tested>"]`')
+            if any(r.id == args[0] for r in requirements):
+                fail(n, f"requirement {args[0]} is defined twice")
+            requirements.append(Requirement(n, args[0], args[1], opts.get("--source", ""),
+                                            opts.get("--out-of-scope", "")))
         elif head in ("case", "flow"):
             if opened:
                 fail(opened[-1][0], "this block has no `end`")
@@ -207,10 +238,15 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
         elif head == "expect":
             if not isinstance(top, Case) or opened or top.body:
                 fail(n, "`expect` belongs directly inside a `case`, before its first step")
-            if len(args) != 1 or not args[0].strip():
-                fail(n, 'use `expect "<one expected result>"`')
+            reqs = _reqs(args[1:])
+            if not args or not args[0].strip() or reqs is None:
+                fail(n, 'use `expect "<one expected result>" [--req <requirement id>]...`')
+            for rid in reqs:
+                if all(r.id != rid for r in requirements):
+                    fail(n, f"no requirement {rid}: define it with `requirement {rid} \"...\"` at the top")
             top.expects.append(args[0])
             top.expect_lines.append(n)
+            top.expect_reqs.append(reqs)
         elif top is None:
             fail(n, "steps belong inside a `case` or a `flow`")
         elif head == "retry":
@@ -296,12 +332,79 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
         for i, (text, line) in enumerate(zip(c.expects, c.expect_lines), 1):
             if f"E{i}" not in linked:
                 gap(line, f"case {c.id}: E{i} \"{text}\" has no `check ... --for E{i}`")
-    return Plan(app, name or Path(source).stem, flows, cases, gaps)
+    return Plan(app, name or Path(source).stem, flows, cases, gaps, requirements, spec, approved)
+
+
+def links(p: Plan) -> dict[str, list[tuple[str, int]]]:
+    """Per requirement id: the expected results that prove it, as (case id, E number), in plan order."""
+    out: dict[str, list[tuple[str, int]]] = {r.id: [] for r in p.requirements}
+    for c in p.cases:
+        for i, reqs in enumerate(c.expect_reqs, 1):
+            for rid in reqs:
+                out[rid].append((c.id, i))
+    return out
+
+
+def fingerprint(p: Plan) -> str:
+    """What the user approved: the spec, each requirement, its source and scope, and which expected
+    results prove it (by case id and text, so reordering cases or editing steps keeps it)."""
+    expect = {c.id: c.expects for c in p.cases}
+    data = [p.source, [[r.id, r.text, r.source, r.out_of_scope,
+                        sorted([cid, expect[cid][n - 1]] for cid, n in links(p)[r.id])] for r in p.requirements]]
+    return hashlib.sha256(json.dumps(data, ensure_ascii=False).encode()).hexdigest()[:12]
+
+
+def requirement_gaps(p: Plan) -> list[str]:
+    """What keeps the requirements from being a claim: a requirement nothing proves, a scope not
+    approved or changed since. `plan review` is not ready while any is left; `run` warns."""
+    if not p.requirements:
+        return []
+    proof = links(p)
+    out = [f'{r.id} "{r.text}" has no expected result: link one with --req {r.id}, '
+           f'or mark it --out-of-scope "<why>"' for r in p.requirements if not r.out_of_scope and not proof[r.id]]
+    now = fingerprint(p)
+    if not p.approved:
+        out.append(f"requirements not approved: show this review to the user, then `tnazar plan approve` ({now})")
+    elif p.approved != now:
+        out.append(f"requirements changed since approval (approved {p.approved}, now {now}): "
+                   "show the review again, then `tnazar plan approve`")
+    return out
+
+
+def approve(path: str | Path) -> str:
+    """Write (or replace) the `approved <fingerprint>` line at the top of the plan; returns the fingerprint."""
+    f = Path(path)
+    text = f.read_text()
+    p = parse(text, str(f), draft=True)
+    if not p.requirements:
+        raise PlanError(f"{f}: no `requirement` lines, so there is no scope to approve")
+    fp = fingerprint(p)
+    lines = [ln for ln in text.splitlines(keepends=True) if _head(ln) != "approved"]
+    last = max(i for i, ln in enumerate(lines) if _head(ln) == "requirement")
+    if not lines[last].endswith("\n"):
+        lines[last] += "\n"
+    lines.insert(last + 1, f"approved {fp}\n")
+    f.write_text("".join(lines))
+    return fp
+
+
+def _head(line: str) -> str:
+    return line.strip().split(" ", 1)[0]
 
 
 def review(p: Plan) -> tuple[str, bool]:
-    """Every case, each expected result and the checks that prove it, then every gap: (text, ready)."""
+    """Every requirement and what proves it, every case, each expected result and the checks that
+    prove it, then every gap: (text, ready)."""
     out = []
+    if p.requirements:
+        proof = links(p)
+        out.append(f"requirements (source: {p.source or 'not named'})")
+        for r in p.requirements:
+            src = f" [{r.source}]" if r.source else ""
+            by = ("OUT OF SCOPE: " + r.out_of_scope if r.out_of_scope else
+                  "<- " + "; ".join(f"{cid} E{n}" for cid, n in proof[r.id]) if proof[r.id] else "<- NOT COVERED")
+            out.append(f"  {r.id} {r.text}{src}  {by}")
+        out += [f"  fingerprint {fingerprint(p)}" + (" (approved)" if p.approved == fingerprint(p) else ""), ""]
     for c in p.cases:
         out.append(f"{c.id}  {c.title}".rstrip())
         proof: dict[str, list[str]] = {}
@@ -310,17 +413,43 @@ def review(p: Plan) -> tuple[str, bool]:
                 proof.setdefault(eid, []).append(f"line {step.line}: {step.summary()}")
         for i, text in enumerate(c.expects, 1):
             by = proof.get(f"E{i}")
-            out.append(f"  E{i} {text}  <- " + ("; ".join(by) if by else "NOT PROVEN"))
+            reqs = c.expect_reqs[i - 1] if i <= len(c.expect_reqs) else []
+            tag = f" [{', '.join(reqs)}]" if reqs else ""
+            out.append(f"  E{i} {text}{tag}  <- " + ("; ".join(by) if by else "NOT PROVEN"))
         if not c.expects:
             checks = sum(1 for _ in _checks(c.body))
             out.append(f"  (no expected results listed; {checks} check(s))")
     out.append("")
-    if p.gaps:
-        out += [f"{len(p.gaps)} gap(s): not ready to run"] + [f"  {g}" for g in p.gaps]
+    gaps = p.gaps + requirement_gaps(p)
+    if gaps:
+        out += [f"{len(gaps)} gap(s): not ready to run"] + [f"  {g}" for g in gaps]
     else:
         n = sum(len(c.expects) for c in p.cases)
         out.append(f"ready to run: {len(p.cases)} case(s), {n} expected result(s), every one proven")
-    return "\n".join(out), not p.gaps
+        if p.requirements:
+            excluded = sum(1 for r in p.requirements if r.out_of_scope)
+            out.append(f"{len(p.requirements)} requirement(s): {len(p.requirements) - excluded} covered"
+                       + (f", {excluded} out of scope" if excluded else "") + ", approved")
+    return "\n".join(out), not gaps
+
+
+def _options(args: list[str], names: tuple) -> dict | None:
+    """`--name value` pairs, each name at most once; None when anything else is there."""
+    out: dict[str, str] = {}
+    if len(args) % 2:
+        return None
+    for k, v in zip(args[::2], args[1::2]):
+        if k not in names or k in out:
+            return None
+        out[k] = v
+    return out
+
+
+def _reqs(args: list[str]) -> list[str] | None:
+    """`--req R1 --req R2` after an expected result; None when anything else is there."""
+    if len(args) % 2 or any(k != "--req" or not v or v.startswith("-") for k, v in zip(args[::2], args[1::2])):
+        return None
+    return list(dict.fromkeys(args[1::2]))
 
 
 def _count(args: list[str]) -> int | None:
