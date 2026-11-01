@@ -4,7 +4,6 @@ is tested"."""
 
 import json
 import os
-import tempfile
 import unittest
 
 from unittest import mock
@@ -12,6 +11,7 @@ from unittest import mock
 from teesri_nazar import live, plan, report
 from teesri_nazar.session import Run, runs_dir
 from fakedevice import PACKAGE, tnazar
+from test_cli import CliTestCase
 from test_plan import PlanRunBase
 
 HEAD = '''
@@ -165,11 +165,10 @@ class FingerprintTest(unittest.TestCase):
         self.assertRegex(base, r"^[0-9a-f]{12}$")
 
 
-class ApproveCommandTest(unittest.TestCase):
+class ApproveCommandTest(CliTestCase):
     def setUp(self):
-        self.dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.dir.cleanup)
-        self.path = os.path.join(self.dir.name, "transfer.plan")
+        super().setUp()  # an isolated home: the CLI never reads the checkout's .env or writes into it
+        self.path = os.path.join(self.home, "transfer.plan")
 
     def write(self, text: str) -> None:
         with open(self.path, "w") as f:
