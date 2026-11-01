@@ -71,4 +71,5 @@ NOT_IN_PLANS = frozenset(c.name for c in COMMANDS if not c.in_plans)
 # Events that only narrate or record the user's input: replay skips them.
 NARRATION_EVENTS = frozenset({"note", "say", "user_msg", "hold", "if", "io",  # "io": logged by older runs
                               "seen", "nav",  # the navigation map's: a screen read, a goto's outcome
-                              "case_plan", "not_run"})  # the requested cases: copied up front, not steps
+                              "case_plan", "not_run",  # the requested cases: copied up front, not steps
+                              "scope"})  # a requirements plan's claim: copied up front, judged on new evidence

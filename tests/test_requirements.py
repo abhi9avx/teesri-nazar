@@ -8,7 +8,7 @@ import unittest
 
 from unittest import mock
 
-from teesri_nazar import plan, report
+from teesri_nazar import live, plan, report
 from teesri_nazar.session import Run, runs_dir
 from fakedevice import PACKAGE, tnazar
 from test_plan import PlanRunBase
@@ -348,6 +348,117 @@ class RunRequirementsTest(RequirementRunBase):
         with mock.patch("teesri_nazar.cli.main", main):
             _, _, _, md = self.run_req(text, expect=1)
         self.assertIn("| R4 | Login screen shows | §4 | ◐ not verified | TC-03 failed: crash |", md)
+
+
+COMPLETE = TRANSFER_HEAD + TRANSFER_CASES.replace('expect "Login again"', 'expect "Login again" --req R2')
+
+
+class PartialRunTest(RequirementRunBase):
+    """A4, A12, A15: the scope covers every case, selected or not; case results stay selected-only."""
+
+    def test_a4_only_one_of_two_linked_cases_leaves_the_requirement_not_verified(self):
+        out, run, s, md = self.run_req(COMPLETE, "--only", "TC-01", expect=1)
+        self.assertEqual([e["case"] for e in run.events() if e["type"] == "case_plan"], ["TC-01"])
+        [scope] = [e for e in run.events() if e["type"] == "scope"]
+        self.assertEqual([c["id"] for c in scope["cases"]], [f"TC-0{i}" for i in range(1, 7)])
+        self.assertEqual(scope["selected"], ["TC-01"])
+        self.assertIn("1 case(s): ✅ 1 pass", report.summary_line(s))  # case results as today
+        self.assertIn("| R1 | Login reaches home | §1 | ◐ not verified | TC-05 not selected |", md)
+        self.assertIn("R1 not verified (TC-05 not selected)", out)
+
+    def test_a12_from_marks_the_earlier_cases_not_selected(self):
+        _, _, _, md = self.run_req(COMPLETE, "--from", "TC-04", expect=1)
+        self.assertIn("| R3 | Back returns to login | §3 | ◐ not verified | TC-02 not selected |", md)
+        self.assertIn("| R5 | Login is the start screen | §5 | ✅ verified | TC-04 E1 ← \"Login\" is visible |", md)
+
+    def test_a12_stop_on_fail_marks_the_rest_not_run(self):
+        text = COMPLETE.replace("  key back\n  check Login --for E1\ncase TC-03",
+                                "  key back\n  check Nowhere --timeout 1 --for E1\ncase TC-03")
+        _, _, _, md = self.run_req(text, "--stop-on-fail", expect=1)
+        self.assertIn("| R4 | Login screen shows | §4 | ◐ not verified | TC-03 not run |", md)
+
+    def hand_back_at(self, case_say: str, path: str):
+        """Run the plan; a dashboard message at `say <case_say>` hands the run back (exit 3)."""
+        posted = []
+        real_main = __import__("teesri_nazar.cli", fromlist=["main"]).main
+
+        def main(argv):
+            if argv[:2] == ["say", case_say] and not posted:
+                posted.append(1)
+                live.post("wait a moment")
+            return real_main(argv)
+        with mock.patch("teesri_nazar.cli.main", main):
+            return tnazar("run", path)
+
+    def test_a12_a_hand_back_then_from_in_the_same_run_adds_up_to_all_verified(self):
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(COMPLETE.replace('  expect "Login first" --req R5\n',
+                                     '  expect "Login first" --req R5\n  say "start screen"\n'))
+        tnazar("plan", "approve", path)
+        code, out, _ = self.hand_back_at("start screen", path)
+        self.assertEqual(code, live.EXIT_HELD, out)
+        code, out, _ = tnazar("run", path, "--from", "TC-04")
+        self.assertEqual(code, 0, out)
+        self.assertIn("requirements: all requirements verified", out)
+
+    def test_a15_a_scope_edited_between_a_run_and_its_continuation_is_never_verified(self):
+        path = os.path.join(self.home, "demo.plan")
+        with open(path, "w") as f:
+            f.write(COMPLETE.replace('  expect "Login first" --req R5\n',
+                                     '  expect "Login first" --req R5\n  say "start screen"\n'))
+        tnazar("plan", "approve", path)
+        self.hand_back_at("start screen", path)
+        with open(path) as f:
+            edited = f.read().replace("Back returns to login", "Back goes to login")
+        with open(path, "w") as f:
+            f.write(edited)
+        tnazar("plan", "approve", path)  # even re-approved: the run's own evidence spans two scopes
+        code, out, _ = tnazar("run", path, "--from", "TC-04")
+        self.assertEqual(code, 1, out)
+        self.assertIn("requirements: incomplete — scope changed mid-run", out)
+
+
+class ReplayRequirementsTest(RequirementRunBase):
+    """A14: replay keeps the approved scope and judges requirements on its own new evidence."""
+
+    def record(self, text: str, expect: int = 0):
+        self.run_req(text, expect=expect)
+        self.adb.current = self.adb.app.start
+
+    def replay(self, expect: int):
+        source = sorted(p.name for p in runs_dir().iterdir())[-1]
+        code, out, err = tnazar("replay", source)
+        self.assertEqual(code, expect, out + err)
+        run = Run.load(sorted(p.name for p in runs_dir().iterdir() if "-replay-" in p.name)[-1])
+        s = report.summarize(run)
+        return out, run, s, report.to_markdown(run, s)
+
+    def test_a14_a_faithful_replay_copies_the_scope_and_verifies_again(self):
+        self.record(COMPLETE)
+        source = Run.load(sorted(p.name for p in runs_dir().iterdir())[-1])
+        out, run, s, md = self.replay(expect=0)
+        [copied] = [e for e in run.events() if e["type"] == "scope"]
+        [recorded] = [e for e in source.events() if e["type"] == "scope"]
+        self.assertEqual({k: v for k, v in copied.items() if k != "t"}, {k: v for k, v in recorded.items() if k != "t"})
+        self.assertIn("**Requirements:** all requirements verified", md)
+        self.assertIn("requirements 5/5 verified", out)
+
+    def test_a14_a_check_that_fails_on_replay_fails_its_requirement_there_only(self):
+        self.record(COMPLETE)
+        source = Run.load(sorted(p.name for p in runs_dir().iterdir())[-1])
+        self.adb.app.screens["home"] = [n for n in self.adb.app.screens["home"] if n.get("text") != "Pay now"]
+        _, _, _, md = self.replay(expect=1)
+        self.assertIn("| R1 | Login reaches home | §1 | ❌ failed |", md)
+        self.assertIn("all requirements verified", report.to_markdown(source, report.summarize(source)))
+
+    def test_a14_evidence_replay_cannot_collect_again_is_not_verified(self):
+        text = COMPLETE.replace('''  expect "Login first" --req R5
+  check Login --for E1''', '''  expect "Login first" --req R5
+  check --result pass --kind db --what "start screen flag = login" --for E1''')
+        self.record(text)
+        _, _, _, md = self.replay(expect=1)
+        self.assertIn("| R5 | Login is the start screen | §5 | ◐ not verified | TC-04 E1 not verified |", md)
 
 
 class LegacyRunTest(PlanRunBase):
