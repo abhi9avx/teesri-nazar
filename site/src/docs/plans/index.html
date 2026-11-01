@@ -42,11 +42,14 @@ case TC-02 "Search finds Wi-Fi settings"
       <tbody>
         <tr><td><code>app &lt;package&gt;</code></td><td>The app under test. Required.</td></tr>
         <tr><td><code>name &lt;run-name&gt;</code></td><td>Run name. Defaults to the file name.</td></tr>
+        <tr><td><code>source "Spec name"</code></td><td>Optional, at the top: the spec the requirements come from (a PRD, a user story).</td></tr>
+        <tr><td><code>requirement R1 "Text"</code></td><td>Optional, at the top: one thing the feature must do. <code>--source "§2.4"</code> says where in the spec; <code>--out-of-scope "why"</code> leaves it untested on purpose. See <a href="#requirements">Requirements</a>.</td></tr>
+        <tr><td><code>approved &lt;fingerprint&gt;</code></td><td>Written by <code>./tnazar plan approve</code> after you agree to the requirements. Never write it by hand.</td></tr>
         <tr><td><code>case TC-01 "title"</code></td><td>A test case. It runs until the next <code>case</code>, <code>flow</code> or the end.</td></tr>
         <tr><td><code>flow &lt;name&gt;</code> … <code>end</code></td><td>A reusable block, used with <code>run &lt;name&gt;</code>.</td></tr>
         <tr><td><code>retry N</code> … <code>end</code></td><td>Repeat until every step inside passes, up to N times.</td></tr>
         <tr><td><code>if "Text"</code> … <code>else</code> … <code>end</code></td><td>Branch on what is on screen. Never fails the case.</td></tr>
-        <tr><td><code>expect "Text"</code></td><td>Optional, at the top of a case: an expected result, E1, E2… in order. Each one needs a <code>check … --for E1</code> in that case, or the plan is refused.</td></tr>
+        <tr><td><code>expect "Text"</code></td><td>Optional, at the top of a case: an expected result, E1, E2… in order. Each one needs a <code>check … --for E1</code> in that case, or the plan is refused. <code>--req R1</code> says which requirement it proves.</td></tr>
         <tr><td><code>check "Text"</code></td><td>A verification. <code>--for E1</code> links it to an expected result; a linked check that never ran leaves its case blocked, by name.</td></tr>
         <tr><td><code>require "Text"</code></td><td>The state the setup must reach (a fresh chat, a logged-in home). If it does not hold, the case stops as <em>blocked · precondition not met</em>: the app was never tested, so it never fails.</td></tr>
         <tr><td><code># comment</code></td><td>Ignored, on a line of its own. Indentation is for people.</td></tr>
@@ -57,14 +60,32 @@ case TC-02 "Search finds Wi-Fi settings"
   <p>Have your test cases in a sheet? <code>./tnazar cases import cases.csv --app &lt;app&gt;</code> writes a draft plan with every case, its ID and its expected results; <code>./tnazar plan review plans/cases.plan</code> lists what is still missing. A run refuses the draft until every expected result has a check.</p>
   <p>Every selected case is in the report. If the run stops early (an error, <code>--stop-on-fail</code>), the cases after it are listed as <em>not run</em> with the reason, and the summary ends with <code>verified N/M</code>.</p>
 
+  <h2 id="requirements">Requirements: is the whole feature tested?</h2>
+  <p>Six passing cases do not prove a feature works if none of them tested the rule that matters. Give Teesri Nazar the spec, and the agent lists what the feature must do as requirements at the top of the plan, then links each expected result to the requirement it proves.</p>
+  <pre><code>source "Transfer PRD v3"
+requirement R1 "A valid amount transfers and shows a reference" --source "§2.1"
+requirement R2 "A second tap on Pay creates no second transfer" --source "§2.4"
+requirement R3 "Daily limit resets at midnight" --source "§3.2" --out-of-scope "needs a clock change"
+
+case TC-01 "Transfer"
+  expect "Reference number shows" --req R1
+  ...
+  check "~Reference" --for E1</code></pre>
+  <ol>
+    <li><code>./tnazar plan review plans/transfer.plan</code> lists every requirement with its source and the expected results that prove it. One that nothing proves shows as <em>NOT COVERED</em>.</li>
+    <li>You read the list. When you agree, <code>./tnazar plan approve plans/transfer.plan</code> records a fingerprint of it. If a requirement, its source or what proves it changes later, the report says so.</li>
+    <li>The run reports <code>requirements 4/5 verified</code> next to the case results, and names each requirement that is <em>not covered</em>, <em>not verified</em> or <em>failed</em>.</li>
+  </ol>
+  <p>A requirement is verified only when every expected result linked to it was proven and its case passed. A plan with requirements exits 1 until the list is approved and every requirement in scope is verified, so a green CI job means the feature was tested, not only the cases someone thought of. Plans without requirements work as before.</p>
+
   <h2 id="exit-codes">Exit codes</h2>
   <p>Every command, <code>run</code>, <code>flow</code> and <code>replay</code> use the same codes, so CI can act on them.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
       <tbody>
-        <tr><td><code>0</code></td><td>OK. For <code>run</code> and <code>replay</code>, every case passed.</td></tr>
-        <tr><td><code>1</code></td><td>Failed: a check failed or an element was not found.</td></tr>
+        <tr><td><code>0</code></td><td>OK. For <code>run</code> and <code>replay</code>, every case passed, and, in a plan with requirements, every requirement in scope is verified.</td></tr>
+        <tr><td><code>1</code></td><td>Failed: a check failed or an element was not found. In a plan with requirements, also when one is not covered or not verified, or the list was never approved or changed since.</td></tr>
         <tr><td><code>2</code></td><td>Error: a bad plan line or a setup problem. Nothing was tested.</td></tr>
         <tr><td><code>3</code></td><td>Held: you sent a dashboard message. Continue with <code>--from &lt;case&gt;</code>.</td></tr>
         <tr><td><code>4</code></td><td><code>wait A --or B</code> saw B instead of A.</td></tr>

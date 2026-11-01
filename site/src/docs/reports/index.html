@@ -49,7 +49,8 @@ description: Every Teesri Nazar run ends in a pass/fail report: a summary, each 
   <h2 id="contents">What it contains</h2>
   <ol>
     <li><strong>Header.</strong> The app and its version, the device and Android version, when it started and how long it took, and your original request.</li>
-    <li><strong>Summary.</strong> Cases passed, failed, blocked and skipped, and how many checks passed.</li>
+    <li><strong>Summary.</strong> Cases passed, failed, blocked, skipped and not run, how many checks passed, <code>verified N/M</code> cases, and for a plan with requirements, <code>requirements V/N verified</code>.</li>
+    <li><strong>Requirements.</strong> For a plan with requirements: one verdict line (all verified, or what is missing) and a table of every requirement, where it comes from in the spec, its state and the check that proved it, or why not.</li>
     <li><strong>Case table.</strong> Every case with its result, checks passed, and the reason it failed or was blocked. When available, the AI token cost of each case.</li>
     <li><strong>Case details.</strong> Each check with what was expected and what was seen, notes, and screenshots. Within a case, the screenshots of failed checks come first, framed in red, so the problem is the first thing you see. Cases stay in run order.</li>
     <li><strong>Crashes and ANRs.</strong> Caught automatically and attached to the case they happened in, with the log.</li>
@@ -65,8 +66,23 @@ description: Every Teesri Nazar run ends in a pass/fail report: a summary, each 
       <tbody>
         <tr><td>✅ pass</td><td>Every check in the case passed.</td></tr>
         <tr><td>❌ fail</td><td>A check failed, or the app crashed or stopped responding.</td></tr>
-        <tr><td>⛔ blocked</td><td>The case could not run, for example the environment was down. The reason is recorded.</td></tr>
+        <tr><td>⛔ blocked</td><td>The case could not be judged, so it never fails the app: a step could not run, the device stopped answering, a setup condition (<code>require</code>) did not hold, or an expected result was never proven. The reason names which.</td></tr>
+        <tr><td>○ not run</td><td>Requested, but the run stopped before it started. The reason is recorded.</td></tr>
         <tr><td>⏭ skipped</td><td>Out of scope for this run.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="requirements">What each requirement state means</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">State</th><th scope="col">Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>✅ verified</td><td>Every expected result linked to it was proven, and each of those cases passed.</td></tr>
+        <tr><td>❌ failed</td><td>An expected result linked to it failed.</td></tr>
+        <tr><td>◐ not verified</td><td>Something linked to it was not proven: a case blocked, not run, not selected, or one that did not pass. The table says which.</td></tr>
+        <tr><td>○ not covered</td><td>No expected result is linked to it. Nothing tested it.</td></tr>
+        <tr><td>⊘ out of scope</td><td>Left untested on purpose, with the reason. It still counts in the total.</td></tr>
       </tbody>
     </table>
   </div>

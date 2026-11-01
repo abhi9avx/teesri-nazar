@@ -17,7 +17,8 @@ description: Every tnazar command, grouped by task: runs, reading the screen, ac
       <tr><td><code>stop</code></td><td>Finish the run and write the report</td></tr>
       <tr><td><code>status</code></td><td>Show the active run</td></tr>
       <tr><td><code>cases import cases.csv --app &lt;app&gt;</code></td><td>Bring test cases from a sheet (CSV, a pasted spreadsheet table, or Markdown) into a draft plan, keeping their IDs</td></tr>
-      <tr><td><code>plan review plans/x.plan</code></td><td>Every case, its expected results and what proves each; everything still missing</td></tr>
+      <tr><td><code>plan review plans/x.plan</code></td><td>Every requirement and case, its expected results and what proves each; everything still missing</td></tr>
+      <tr><td><code>plan approve plans/x.plan</code></td><td>Record that you agreed to the plan's requirements, so a later change to them shows in the report</td></tr>
       <tr><td><code>case plan TC-01 "title" --expect "…"</code></td><td>Declare a case and its expected results first, so the report shows it even if it never runs</td></tr>
       <tr><td><code>case start TC-01 "title"</code> / <code>case end</code></td><td>Group the steps between them into a test case</td></tr>
       <tr><td><code>runs</code> / <code>report</code></td><td>List recent runs, or rewrite a run's <a href="/docs/reports/">report</a></td></tr>

@@ -234,6 +234,11 @@ Say "done" or "fixed" only after all four, in this order, in one pass:
    device or emulator, and anything the script does not cover was checked in the live
    dashboard. Report what you saw, not what the code should do.
 
+Every branch that changes tnazar, its docs or the website also adds its lines to
+`CHANGELOG.md` under the version in progress (and the PR number on its first line once the
+PR exists), in the same branch, before review: the website's changelog pages are built from
+it. The pre-push gate refuses a branch that changes code or the site without it.
+
 Commit freely; push or open a PR only when the user says so after their review.
 The four steps cover the exact commit you share: a commit made after them (even a review fix)
 needs them again before a push or PR. The PR description lists the review result, the test
