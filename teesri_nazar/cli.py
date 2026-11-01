@@ -271,9 +271,11 @@ def finish_run(quiet: bool = False, reason: str | None = None) -> Run | None:
     run.update_meta(finished_at=now_iso(), **({"map_learned": learned} if learned else {}))
     clear_active()
     live.set_paused(False)
-    paths = rpt.write(run)
+    summary = rpt.summarize(run)
+    if summary["requirements"]:
+        run.update_meta(requirements_ok=not rpt.incomplete(summary))
+    paths = rpt.write(run, summary)
     if not quiet:
-        summary = rpt.summarize(run)
         print(f"run finished: {run.name}")
         print(rpt.summary_line(summary))
         if summary.get("requirements"):

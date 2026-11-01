@@ -162,6 +162,11 @@ def result_word(s: dict) -> str:
     return "all passed" if t["green"] else "failed" if t["complete"] else "incomplete"
 
 
+def incomplete(s: dict) -> bool:
+    """A plan with requirements whose verdict is not all (in-scope) verified: never a success."""
+    return s["requirements"] is not None and not s["requirements"]["ok"]
+
+
 def coverage_lines(s: dict) -> list[str]:
     """Under the summary: the run's verdict and selection, or that nobody said what was requested."""
     if not s.get("declared"):
@@ -175,16 +180,36 @@ def coverage_lines(s: dict) -> list[str]:
     return out
 
 
+REQ_HEAD = ["Requirement", "Text", "Source", "State", "Proven by / why not"]
+
+
+def _req_cells(x: dict) -> list[str]:
+    return [x["id"], x["text"], x.get("source") or "-", f"{REQ_ICON[x['state']]} {REQ_WORD[x['state']]}", x["detail"]]
+
+
+def _md_row(cells: list[str]) -> str:
+    return "| " + " | ".join(c.replace("|", "\\|") for c in cells) + " |"
+
+
 def requirement_lines(s: dict) -> list[str]:
     """The Requirements table: each requirement, where it comes from, its state and what proved it."""
     r = s.get("requirements")
     if not r:
         return []
     out = ["## Requirements", ""] + ([f"Source: {r['source']}", ""] if r["source"] else [])
-    out += ["| Requirement | Text | Source | State | Proven by / why not |", "|---|---|---|---|---|"]
-    out += [f"| {x['id']} | {x['text']} | {x.get('source') or '-'} | {REQ_ICON[x['state']]} {REQ_WORD[x['state']]} | "
-            f"{x['detail']} |" for x in r["rows"]]
+    out += [_md_row(REQ_HEAD), "|---|---|---|---|---|"] + [_md_row(_req_cells(x)) for x in r["rows"]]
     return out + [""]
+
+
+def _requirements_html(s: dict) -> str:
+    r = s.get("requirements")
+    if not r:
+        return ""
+    e = html.escape
+    head = "<tr>" + "".join(f"<th>{h}</th>" for h in REQ_HEAD) + "</tr>"
+    rows = "".join("<tr>" + "".join(f"<td>{e(c)}</td>" for c in _req_cells(x)) + "</tr>" for x in r["rows"])
+    source = f"<p class='muted'>Source: {e(r['source'])}</p>" if r["source"] else ""
+    return f"<h2>Requirements</h2>{source}<table>{head}{rows}</table>\n"
 
 
 EXPECT_ICON = {"verified": "✅", "failed": "❌", "unverified": "○"}
@@ -307,7 +332,7 @@ def _nav_markdown(run: Run, m: dict) -> list[str]:
     out = ["## Navigation map", ""]
     if rows:
         out += ["| " + " | ".join(NAV_HEAD) + " |", "|---|---|---|---|---|"]
-        out += ["| " + " | ".join(c.replace("|", "\\|") for c in r) + " |" for r in rows] + [""]
+        out += [_md_row(r) for r in rows] + [""]
     for n in notes:
         out += [n, ""]
     return out
@@ -387,7 +412,7 @@ def to_html(run: Run, s: dict) -> str:
 · {e(m.get('started_at', ''))} · {_duration(m.get('started_at'), m.get('finished_at')) or 'running'}</div>
 {prompt}<div class="tiles">{tiles}</div>
 <p class="muted">checks {s['checks_total'] - s['checks_failed']}/{s['checks_total']} passed</p>
-{verdict}<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th>{'<th>Tokens</th>' if tokens else ''}<th>Reason</th></tr>{''.join(rows)}</table>
+{verdict}{_requirements_html(s)}<table><tr><th>Case</th><th>Title</th><th>Result</th><th>Checks</th>{'<th>Tokens</th>' if tokens else ''}<th>Reason</th></tr>{''.join(rows)}</table>
 <h2>Details</h2>{''.join(cards)}{_nav_html(run, m)}{_slow_html(s)}
 </main></body></html>
 """
@@ -438,8 +463,8 @@ def _slow_html(s: dict) -> str:
             f"{rows}</table>")
 
 
-def write(run: Run) -> list[Path]:
-    s = summarize(run)
+def write(run: Run, s: dict | None = None) -> list[Path]:
+    s = s or summarize(run)
     md = run.path / "report.md"
     page = run.path / "report.html"
     md.write_text(to_markdown(run, s))

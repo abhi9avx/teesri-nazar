@@ -70,6 +70,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import coverage
 from .commands import NOT_IN_PLANS, PLAN_STEPS as STEPS
 from .errors import UserError
 from .targets import selector_of
@@ -199,8 +200,8 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
                 fail(n, f"`{head} <value>` belongs at the top of the plan")
             app, name = (args[0], name) if head == "app" else (app, args[0])
         elif head in ("source", "approved"):
-            if top is not None or len(args) != 1:
-                fail(n, f"`{head} <value>` belongs at the top of the plan")
+            if top is not None or cases or flows or len(args) != 1:
+                fail(n, f"`{head} <value>` belongs at the top of the plan, before the first `case` or `flow`")
             if (spec if head == "source" else approved):
                 fail(n, f"`{head}` is given twice")
             if head == "source":
@@ -350,14 +351,22 @@ def parse(text: str, source: str = "plan", flows_only: bool = False, draft: bool
     return Plan(app, name or Path(source).stem, flows, cases, gaps, requirements, spec, approved)
 
 
+def _claim_cases(p: Plan) -> list[dict]:
+    return [{"id": c.id, "expects": [{"text": t, "reqs": q} for t, q in zip(c.expects, c.expect_reqs)]}
+            for c in p.cases]
+
+
 def links(p: Plan) -> dict[str, list[tuple[str, int]]]:
     """Per requirement id: the expected results that prove it, as (case id, E number), in plan order."""
-    out: dict[str, list[tuple[str, int]]] = {r.id: [] for r in p.requirements}
-    for c in p.cases:
-        for i, reqs in enumerate(c.expect_reqs, 1):
-            for rid in reqs:
-                out[rid].append((c.id, i))
-    return out
+    return coverage.link_map([r.id for r in p.requirements], _claim_cases(p))
+
+
+def claim(p: Plan) -> dict:
+    """What a requirements plan claims, as the run's `scope` event records it."""
+    return {"source": p.source, "fingerprint": fingerprint(p), "approved": p.approved,
+            "requirements": [{"id": r.id, "text": r.text, "source": r.source, "out_of_scope": r.out_of_scope}
+                             for r in p.requirements],
+            "cases": _claim_cases(p)}
 
 
 def fingerprint(p: Plan) -> str:
@@ -421,12 +430,12 @@ def review(p: Plan) -> tuple[str, bool]:
     prove it, then every gap: (text, ready)."""
     out = []
     if p.requirements:
-        proof = links(p)
+        linked = links(p)
         out.append(f"requirements (source: {p.source or 'not named'})")
         for r in p.requirements:
             src = f" [{r.source}]" if r.source else ""
             by = ("OUT OF SCOPE: " + r.out_of_scope if r.out_of_scope else
-                  "<- " + "; ".join(f"{cid} E{n}" for cid, n in proof[r.id]) if proof[r.id] else "<- NOT COVERED")
+                  "<- " + "; ".join(f"{cid} E{n}" for cid, n in linked[r.id]) if linked[r.id] else "<- NOT COVERED")
             out.append(f"  {r.id} {r.text}{src}  {by}")
         now = fingerprint(p)
         out += [f"  fingerprint {now}" + (" (approved)" if p.approved == now else ""), ""]
@@ -436,9 +445,8 @@ def review(p: Plan) -> tuple[str, bool]:
         for step in _checks(c.body):
             for eid in _for_ids(step.argv):
                 proof.setdefault(eid, []).append(f"line {step.line}: {step.summary()}")
-        for i, text in enumerate(c.expects, 1):
+        for i, (text, reqs) in enumerate(zip(c.expects, c.expect_reqs), 1):
             by = proof.get(f"E{i}")
-            reqs = c.expect_reqs[i - 1] if i <= len(c.expect_reqs) else []
             tag = f" [{', '.join(reqs)}]" if reqs else ""
             out.append(f"  E{i} {text}{tag}  <- " + ("; ".join(by) if by else "NOT PROVEN"))
         if not c.expects:

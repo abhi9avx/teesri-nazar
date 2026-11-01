@@ -22,10 +22,10 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-from . import cli, coverage, live, report
+from . import cli, coverage, live
 from . import device as dev
 from .judge import blocked_end
-from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, approval_gaps, fingerprint, load, uncovered
+from .plan import Case, If, Plan, PlanError, Retry, RunFlow, Step, approval_gaps, claim, load, uncovered
 from .session import Run, claim_active, get_active
 from .targets import selector_of
 
@@ -90,7 +90,7 @@ def run(args) -> int:
     for case in cases:  # requested before any runs, so a case that never starts still has a row
         the_run.log(coverage.case_plan(case.id, case.title, case.expects))
     if p.requirements:
-        _log_scope(the_run, p, cases)
+        the_run.log(coverage.scope(claim(p), [c.id for c in cases]))
     print(f"plan {p.name}: {len(cases)} case(s) on {p.app}")
     if p.requirements:
         _warn_scope(p)
@@ -147,19 +147,9 @@ def run(args) -> int:
                 the_run.update_meta(stop_reason=f"--stop-on-fail after {case.id}")
                 break
     _stop()
-    if p.requirements:
-        reqs = report.summarize(the_run)["requirements"]
-        print(f"requirements: {reqs['line']}")
-        failed = failed or not reqs["ok"]  # an incomplete feature never exits 0
+    if p.requirements:  # `stop` judged them once; an incomplete feature never exits 0
+        failed = failed or not the_run.meta().get("requirements_ok")
     return cli.EXIT_FAIL if failed else 0
-
-
-def _log_scope(the_run: Run, p, cases: list[Case]) -> None:
-    the_run.log(coverage.scope(
-        p.source, fingerprint(p), p.approved,
-        [{"id": r.id, "text": r.text, "source": r.source, "out_of_scope": r.out_of_scope} for r in p.requirements],
-        [{"id": c.id, "expects": [{"text": t, "reqs": q} for t, q in zip(c.expects, c.expect_reqs)]} for c in p.cases],
-        [c.id for c in cases]))
 
 
 def _warn_scope(p: Plan) -> None:
@@ -173,7 +163,7 @@ def _warn_scope(p: Plan) -> None:
 
 def _stop() -> None:
     _, out = call(["stop"])
-    print("\n".join(ln for ln in out.splitlines() if ln.startswith(("report:", " ")) or "case(s)" in ln))
+    print("\n".join(ln for ln in out.splitlines() if ln.startswith(("report:", "requirements:", " ")) or "case(s)" in ln))
 
 
 class Executor:

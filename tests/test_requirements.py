@@ -83,6 +83,11 @@ class RequirementSyntaxTest(unittest.TestCase):
         self.assertIn("twice", self.error('app a.b\nsource "a"\nsource "b"\ncase T1\n  check X\n'))
         self.assertIn("twice", self.error('app a.b\napproved abc\napproved def\ncase T1\n  check X\n'))
 
+    def test_source_and_approved_belong_above_every_case_and_flow(self):
+        for head in ('source "PRD"', "approved abc123"):
+            msg = self.error(f'app a.b\nflow f\n  key back\nend\n{head}\ncase T1\n  check X\n')
+            self.assertIn("line 5", msg)
+
     def test_req_needs_a_requirement_id(self):
         self.assertIn("line 8", self.error(HEAD + 'case T1\n  expect X --req\n  check X --for E1\n'))
 
@@ -308,6 +313,21 @@ class RunRequirementsTest(RequirementRunBase):
         self.assertIn("**Requirements:** all in-scope requirements verified; 1 excluded "
                       "(R2: needs backend fault injection)", md)
         self.assertNotIn("all requirements verified", md)
+
+    def test_the_html_report_has_the_requirements_table(self):
+        self.run_req(TRANSFER_HEAD + TRANSFER_CASES, expect=1)
+        run = Run.load(sorted(p.name for p in runs_dir().iterdir())[-1])
+        page = (run.path / "report.html").read_text()
+        self.assertIn("<h2>Requirements</h2>", page)
+        self.assertIn("<td>R2</td><td>Second submit creates no second transfer</td><td>§2.4</td>"
+                      "<td>○ not covered</td><td>no expected result links to it</td>", page)
+        self.assertIn("TC-01 E1 ← &quot;Pay now&quot; is visible", page)
+
+    def test_a_bar_in_a_requirement_keeps_the_markdown_table_whole(self):
+        text = (TRANSFER_HEAD.replace("Login reaches home", "Login | home").replace('"§1"', '"§1 | AC-1"')
+                + TRANSFER_CASES)
+        _, _, _, md = self.run_req(text, expect=1)
+        self.assertIn("| R1 | Login \\| home | §1 \\| AC-1 | ✅ verified |", md)
 
     def test_every_requirement_verified_says_so_and_exits_0(self):
         text = TRANSFER_HEAD + TRANSFER_CASES.replace('expect "Login again"', 'expect "Login again" --req R2')

@@ -268,9 +268,9 @@ def run(args) -> int:
         if meta["animations_before"] is not None:
             dev.animations_restore(adb, meta["animations_before"])
         target.update_meta(finished_at=now_iso())
-        paths = rpt.write(target)
+        summary = rpt.summarize(target)
+        paths = rpt.write(target, summary)
 
-    summary = rpt.summarize(target)
     print(rpt.summary_line(summary))
     if summary["requirements"]:
         print(f"requirements: {summary['requirements']['line']}")
@@ -278,6 +278,5 @@ def run(args) -> int:
         print(f"report: {p}")
     failed = (summary["counts"].get("fail", 0) + summary["counts"].get("blocked", 0)
               + summary["counts"].get("not_run", 0) + summary["checks_failed"])
-    incomplete = summary["requirements"] is not None and not summary["requirements"]["ok"]
-    return 0 if failed == 0 and not incomplete else EXIT_FAIL
+    return 0 if failed == 0 and not rpt.incomplete(summary) else EXIT_FAIL
 

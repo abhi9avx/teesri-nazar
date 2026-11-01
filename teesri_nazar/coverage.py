@@ -58,12 +58,22 @@ def tally(statuses: list[str], checks_failed: int) -> dict:
             "green": complete and all(s == "pass" for s in statuses) and not checks_failed}
 
 
-def scope(source: str, fingerprint: str, approved: str, requirements: list[dict], cases: list[dict],
-          selected: list[str]) -> dict:
-    """The event that records what a requirements plan claims: every requirement, every case's links
-    (selected or not) and the cases this `run` call selected. `case_plan` stays selected-only."""
-    return {"type": "scope", "source": source, "fingerprint": fingerprint, "approved": approved,
-            "requirements": requirements, "cases": cases, "selected": selected}
+def scope(claim: dict, selected: list[str]) -> dict:
+    """The event that records what a requirements plan claims (`plan.claim`: source, fingerprint,
+    approved, every requirement and every case's links, selected or not) and the cases this `run`
+    call selected. `case_plan` stays selected-only."""
+    return {"type": "scope", **claim, "selected": selected}
+
+
+def link_map(requirement_ids: list[str], cases: list[dict]) -> dict[str, list[tuple[str, int]]]:
+    """Per requirement id: the expected results that prove it, as (case id, E number), in plan order.
+    `cases` are a claim's cases: [{"id", "expects": [{"text", "reqs"}]}]."""
+    out: dict[str, list[tuple[str, int]]] = {rid: [] for rid in requirement_ids}
+    for c in cases:
+        for n, x in enumerate(c["expects"], 1):
+            for rid in x.get("reqs", []):
+                out[rid].append((c["id"], n))
+    return out
 
 
 def requirement_states(events: list[dict], cases: list[dict], case_label) -> dict | None:
@@ -80,11 +90,7 @@ def requirement_states(events: list[dict], cases: list[dict], case_label) -> dic
     last = scopes[-1]
     selected = {cid for s in scopes for cid in s.get("selected", [])}
     built = {c["id"]: c for c in cases}
-    links: dict[str, list[tuple[str, int]]] = {r["id"]: [] for r in last["requirements"]}
-    for c in last["cases"]:
-        for n, x in enumerate(c["expects"], 1):
-            for rid in x.get("reqs", []):
-                links[rid].append((c["id"], n))
+    links = link_map([r["id"] for r in last["requirements"]], last["cases"])
 
     def link(cid: str, n: int) -> tuple[str, str]:
         c = built.get(cid)
