@@ -27,6 +27,16 @@ finishing a run on their own app.
   spreadsheet, or a Markdown table) into a draft plan, keeping their IDs, sections and
   accounts; `tnazar plan review` shows every expected result and what proves it, and all
   that is still missing, before a run.
+- Requirements: give it a spec and the plan lists what the feature must do
+  (`requirement R1 "…" --source "§2.4"`), each expected result says which one it proves
+  (`expect "…" --req R1`), and you approve the list with `tnazar plan approve`. The report
+  says `requirements 4/5 verified` and names any requirement nothing tested, so six passing
+  cases never read as a tested feature. A plan with requirements exits 1 until every one in
+  scope is verified; plans without them work as before.
+- Only evidence about the app fails a case. A step that could not run, a device that
+  stopped answering or an expected result never proven blocks the case and says why;
+  `require` in a plan names the state the setup must reach, and when it does not hold the
+  case is blocked as *precondition not met*, never failed.
 - A shared step that keeps failing (such as login) no longer makes every later case time
   out as failed: after two failures in a row, the cases needing it are blocked at once,
   with the reason.
