@@ -5,7 +5,7 @@ are built from this file, so every version shipped here shows up there too.
 
 ## v4: Easy to set up, honest to trust
 
-In progress since 21 October 2026, last updated 1 November 2026. Merged so far: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7), [PR #8](https://github.com/abhi9avx/teesri-nazar/pull/8), [PR #9](https://github.com/abhi9avx/teesri-nazar/pull/9), [PR #11](https://github.com/abhi9avx/teesri-nazar/pull/11), [PR #12](https://github.com/abhi9avx/teesri-nazar/pull/12), [PR #13](https://github.com/abhi9avx/teesri-nazar/pull/13), [PR #14](https://github.com/abhi9avx/teesri-nazar/pull/14)
+In progress since 21 October 2026, last updated 2 November 2026. Merged so far: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7), [PR #8](https://github.com/abhi9avx/teesri-nazar/pull/8), [PR #9](https://github.com/abhi9avx/teesri-nazar/pull/9), [PR #11](https://github.com/abhi9avx/teesri-nazar/pull/11), [PR #12](https://github.com/abhi9avx/teesri-nazar/pull/12), [PR #13](https://github.com/abhi9avx/teesri-nazar/pull/13), [PR #14](https://github.com/abhi9avx/teesri-nazar/pull/14)
 
 v4 is about people outside the project installing Teesri Nazar, trusting what it says and
 finishing a run on their own app.
@@ -57,6 +57,14 @@ finishing a run on their own app.
 - The quick start runs `tnazar doctor` before the first test.
 - The website fits small phones: a two-row header, the hero's checks as a grid, one
   scrolling row for the docs menu, and reports that fit a 320px screen.
+- A new home page. The hero is a slowly turning funnel: test cases at the top, the bugs
+  they find dropping into the eye of the AI agent at the tip; move the pointer and it
+  turns. Below it: what you bring and what you get back around a Plan, Drive, Check cube,
+  one case running on a phone beside its commands, the four moves of every step, what
+  changes for QA, developers and PMs, and an example report. The Ram and Ravana artwork
+  and the share image built from it are gone.
+- The website is dark only: one warm-black theme on every page, with the light theme and
+  its toggle removed.
 - The README's "Coming next" (parallel emulators, DB checks, Zephyr) is gone: none of it
   is being built now, so it is no longer promised.
 

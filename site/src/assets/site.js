@@ -1,243 +1,262 @@
-// Two moments on the home page: the hero shot and the run replay. Plus the theme toggle on every page.
-// Without JavaScript, or with reduced motion, both show their finished state.
+// The home page moves in four places: the funnel in the hero, the cube's ticker, the phone in
+// "Watch one case run" and the role tabs. Without JavaScript the page reads in full; with
+// reduced motion the funnel and the phone show their finished state.
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function replay(stage) {
-  const lines = [...stage.querySelectorAll(".log li")];
-  const screens = new Map([...stage.querySelectorAll(".phone-screen")].map((s) => [s.dataset.name, s]));
-  const phone = stage.querySelector(".phone");
-  const ring = stage.querySelector(".tap-ring");
-  const toggle = stage.querySelector("#stage-toggle");
-  let i = 0;
-  let timers = [];
-  let running = false;
-  let heldByUser = false;
+function rng(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
+const ease = (x) => 1 - Math.pow(1 - Math.min(Math.max(x, 0), 1), 3);
 
-  const show = (name) => screens.forEach((s, key) => s.classList.toggle("is-active", key === name));
-  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+// The hero: test cases at the top of a slowly turning cone, the bugs they find in the middle,
+// and each bug dropping into the eye at the tip. The pointer turns and tilts the cone.
+function funnel(canvas) {
+  const YS = [0.16, 0.52, 0.84];
+  const APPEAR = [0, 0.6, 1.2]; // seconds: when each layer settles in
+  const FOCAL = 1100;
+  const css = getComputedStyle(document.documentElement);
+  const col = { dot: css.getPropertyValue("--dot").trim(), edge: css.getPropertyValue("--edge").trim(), bg: css.getPropertyValue("--bg").trim() };
+  const view = { yaw: 0, pitch: 0.34, tYaw: 0, tPitch: 0.34 };
+  const start = performance.now();
+  let s, layers, all, tcs, bugs, edges, pulses, stacked, cy, visible = true;
 
-  function tapAt(id) {
-    const target = phone.querySelector(`[data-id="${id}"]`);
-    if (!target) return;
-    const p = phone.getBoundingClientRect();
-    const t = target.getBoundingClientRect();
-    ring.style.setProperty("--x", `${t.left - p.left + t.width / 2}px`);
-    ring.style.setProperty("--y", `${t.top - p.top + t.height / 2}px`);
-    ring.hidden = false;
-    ring.getAnimations().forEach((a) => { a.cancel(); a.play(); });
+  function build() {
+    const dpr = Math.min(devicePixelRatio || 1, 2), r = canvas.getBoundingClientRect();
+    canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+    const ctx = canvas.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    s = { ctx, w: r.width, h: r.height, cx: r.width / 2 };
+    stacked = innerWidth < 1100;
+    cy = s.h * 0.5;
+    const R = rng(23);
+    const rad = [Math.min(s.w * (stacked ? 0.44 : 0.42), 400), Math.min(s.w * (stacked ? 0.2 : 0.18), 170), 0];
+    const count = stacked ? [170, 26, 1] : [360, 40, 1];
+    const band = [0.07, 0.05, 0];
+    layers = count.map((n, li) => Array.from({ length: n }, () => {
+      const a = R() * Math.PI * 2, rr = n === 1 ? 0 : rad[li] * Math.sqrt(0.08 + 0.92 * R());
+      return { X: Math.cos(a) * rr, Z: Math.sin(a) * rr, a, rr, Y: s.h * (YS[li] + (R() * 2 - 1) * band[li]) - cy,
+        d: R() * 0.35, size: li === 0 ? (R() < 0.15 ? 2.3 : 1.6) : 2.4 };
+    }));
+    s.r0 = rad[0];
+    all = layers.flat();
+    const turn = (q, want) => Math.abs(Math.atan2(Math.sin(q.a - want), Math.cos(q.a - want)));
+    const nearest = (pool, want) => pool.reduce((b, q) => (turn(q, want) < turn(b, want) ? q : b));
+    const nTc = stacked ? 6 : 10, outer = layers[0].filter((p) => p.rr > rad[0] * 0.5);
+    tcs = Array.from({ length: nTc }, (_, i) => ({ p: nearest(outer, (i / nTc) * Math.PI * 2), name: "TC-" + String(i + 1).padStart(2, "0") }));
+    const mid = layers[1].filter((p) => p.rr > rad[1] * 0.35);
+    bugs = [0.3, 2.4, 4.4].map((want, i) => { const p = nearest(mid, want); p.bug = "BUG-" + (i + 1); return p; });
+    const tip = layers[2][0];
+    edges = [];
+    for (const p of layers[0]) {
+      const near = layers[1].slice().sort((a, b) => Math.hypot(a.X - p.X, a.Z - p.Z) - Math.hypot(b.X - p.X, b.Z - p.Z));
+      for (let j = 0; j < 2; j++) edges.push([p, near[Math.floor(R() * 3)], 0]);
+    }
+    for (const p of layers[1]) edges.push([p, tip, p.bug ? 2 : 1]);
+    pulses = Array.from({ length: stacked ? 6 : 12 }, () => ({ e: edges[Math.floor(R() * edges.length * 0.8)], o: R() }));
   }
 
-  function step() {
-    timers = [];
-    if (i === lines.length) i = 0;
-    const line = lines[i];
-    lines.forEach((l, n) => {
-      l.classList.toggle("is-done", n < i);
-      l.classList.toggle("is-current", n === i);
+  function project() {
+    const ca = Math.cos(view.yaw), sa = Math.sin(view.yaw), cb = Math.cos(view.pitch), sb = Math.sin(view.pitch);
+    for (const p of all) {
+      const x1 = p.X * ca + p.Z * sa, z1 = -p.X * sa + p.Z * ca;
+      const y2 = p.Y * cb - z1 * sb, z2 = p.Y * sb + z1 * cb, k = FOCAL / (FOCAL + z2);
+      p.sx = s.cx + x1 * k; p.sy = cy + y2 * k; p.depth = z1;
+    }
+  }
+
+  function eye(ctx, x, y, glow) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 64);
+    g.addColorStop(0, `rgba(242,122,26,${0.4 * glow})`); g.addColorStop(1, "rgba(242,122,26,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 64, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - 18, y); ctx.quadraticCurveTo(x, y - 16, x + 18, y); ctx.quadraticCurveTo(x, y + 16, x - 18, y);
+    ctx.fillStyle = col.bg; ctx.fill();
+    ctx.lineWidth = 1.6; ctx.strokeStyle = "#F27A1A"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 4.8, 0, Math.PI * 2); ctx.fillStyle = "#F27A1A"; ctx.fill();
+  }
+
+  function draw(t) {
+    const { ctx, w, h } = s, tip = layers[2][0];
+    if (!reduceMotion) {
+      view.yaw += (t * 0.07 + view.tYaw - view.yaw) * 0.06;
+      view.pitch += (view.tPitch - view.pitch) * 0.06;
+    }
+    project();
+    ctx.clearRect(0, 0, w, h);
+    const shown = (li) => ease((t - APPEAR[li]) / 0.8);
+    const fog = (p) => 0.45 + 0.55 * (1 - (p.depth / s.r0 + 1) / 2); // the far side of the cone is dimmer
+
+    ctx.lineWidth = 0.6;
+    for (const [a, b, kind] of edges) {
+      const k = shown(kind === 0 ? 1 : 2);
+      if (k <= 0) continue;
+      ctx.strokeStyle = kind === 2 ? `rgba(210,57,43,${0.45 * k})` : `rgba(${col.edge},${(kind === 1 ? 0.2 : 0.1) * k * fog(a)})`;
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(a.sx + (b.sx - a.sx) * k, a.sy + (b.sy - a.sy) * k); ctx.stroke();
+    }
+    layers.slice(0, 2).forEach((L, li) => {
+      for (const p of L) {
+        const k = ease((t - APPEAR[li] - p.d) / 0.7);
+        if (k <= 0) continue;
+        const y = p.sy - (1 - k) * 24;
+        if (p.bug) { ctx.fillStyle = `rgba(210,57,43,${k})`; ctx.fillRect(p.sx - 2.4, y - 2.4, 4.8, 4.8); continue; }
+        ctx.fillStyle = `rgba(${col.dot},${(li === 1 ? 0.9 : 0.6) * k * fog(p)})`;
+        ctx.fillRect(p.sx - p.size / 2, y - p.size / 2, p.size, p.size);
+      }
     });
-    if (line.dataset.tap) {
-      tapAt(line.dataset.tap);
-      later(() => show(line.dataset.screen), 450);
-    } else {
-      show(line.dataset.screen);
+
+    ctx.textAlign = "left";
+    ctx.font = "11px 'IBM Plex Mono', monospace";
+    const tk = reduceMotion ? 1 : ease((t - 2.0) / 0.9);
+    if (tk > 0) for (const { p, name } of tcs) {
+      const a = tk * fog(p);
+      ctx.fillStyle = `rgba(${col.dot},${a})`; ctx.fillRect(p.sx - 1.8, p.sy - 1.8, 3.6, 3.6);
+      const right = p.sx + 6 + ctx.measureText(name).width < w - 4; // near the edge, the label goes on the dot's left
+      ctx.fillStyle = `rgba(${col.dot},${0.7 * a})`; ctx.fillText(name, right ? p.sx + 6 : p.sx - 6 - ctx.measureText(name).width, p.sy - 5);
     }
-    i += 1;
-    const wait = i === lines.length ? 4200 : line.classList.contains("log-you") ? 2200 : 1300;
-    later(step, wait);
+    const bk = reduceMotion ? 1 : ease((t - 1.6) / 0.8);
+    if (bk > 0) { ctx.fillStyle = `rgba(232,96,79,${bk})`; for (const p of bugs) ctx.fillText(p.bug, p.sx + 7, p.sy - 6); }
+
+    if (!reduceMotion && t > 2.4) {
+      for (const p of pulses) {
+        const k = (p.o + (t - 2.4) * 0.09) % 1, [a, b] = p.e;
+        ctx.fillStyle = `rgba(242,122,26,${0.8 * Math.sin(k * Math.PI)})`;
+        ctx.fillRect(a.sx + (b.sx - a.sx) * k - 1.1, a.sy + (b.sy - a.sy) * k - 1.1, 2.2, 2.2);
+      }
+    }
+
+    const te = shown(2);
+    if (te <= 0) return;
+    let flare = 0;
+    if (reduceMotion || t >= 2.4) bugs.forEach((p, i) => {
+      const k = reduceMotion ? 0.55 : ((t - 2.4) * 0.32 + i / bugs.length) % 1;
+      for (let j = 3; j >= 0; j--) {
+        const kk = Math.max(0, k - j * 0.035), sz = 3.6 - j * 0.6;
+        ctx.fillStyle = `rgba(210,57,43,${(1 - j * 0.28) * Math.min(1, k * 6)})`;
+        ctx.fillRect(p.sx + (tip.sx - p.sx) * kk - sz / 2, p.sy + (tip.sy - p.sy) * kk - sz / 2, sz, sz);
+      }
+      if (k > 0.9) flare = Math.max(flare, (k - 0.9) * 10);
+    });
+    ctx.globalAlpha = te;
+    eye(ctx, tip.sx, tip.sy, reduceMotion ? 0.5 : 0.3 + 0.7 * flare);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "center"; ctx.font = "12px 'IBM Plex Mono', monospace";
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "3px";
+    ctx.fillStyle = `rgba(${col.dot},${te})`; ctx.fillText("AI AGENT", tip.sx + 1.5, tip.sy + 32);
+    ctx.fillStyle = `rgba(242,122,26,${te})`; ctx.fillText("TEESRI NAZAR", tip.sx + 1.5, tip.sy + 50);
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
   }
 
-  function start() {
-    if (running) return;
-    running = true;
-    stage.classList.add("is-playing");
-    toggle.textContent = "Pause replay";
-    if (i > 0) show(lines[i - 1].dataset.screen);
-    later(step, 400);
-  }
-
-  function stop() {
-    timers.forEach(clearTimeout);
-    timers = [];
-    running = false;
-    // Paused, every line is visible again so the whole log stays readable.
-    stage.classList.remove("is-playing");
-    toggle.textContent = "Play replay";
-  }
-
-  stage.classList.add("is-ready");
-  show("home");
-  if (reduceMotion) return;
-  toggle.hidden = false;
-  toggle.addEventListener("click", () => {
-    heldByUser = running;
-    if (running) stop();
-    else start();
+  build();
+  new ResizeObserver(() => { build(); if (reduceMotion) draw(9); }).observe(canvas);
+  if (reduceMotion) { draw(9); return; }
+  const hero = canvas.closest(".hero");
+  hero.addEventListener("pointermove", (e) => {
+    const r = hero.getBoundingClientRect();
+    view.tYaw = ((e.clientX - r.left) / r.width - 0.5) * 1.6;
+    view.tPitch = 0.34 + ((e.clientY - r.top) / r.height - 0.5) * 0.4;
   });
-  // Runs only while the replay is on screen, and stays paused once the reader pauses it.
-  new IntersectionObserver(([entry]) => {
-    if (!entry.isIntersecting) stop();
-    else if (!heldByUser) start();
-  }).observe(stage);
+  hero.addEventListener("pointerleave", () => { view.tYaw = 0; view.tPitch = 0.34; });
+  // No frames while the hero is scrolled away.
+  new IntersectionObserver(([e]) => {
+    const was = visible; visible = e.isIntersecting;
+    if (visible && !was) requestAnimationFrame(frame);
+  }).observe(canvas);
+  function frame(now) { if (!visible) return; draw((now - start) / 1000); requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
 }
 
-// The hero shot: the arrow leaves the bow and passes through the ten heads; each head it
-// reaches gets its badge and lights up its check. The finished state is the page default.
-function shot(figure) {
-  const svg = figure.querySelector("svg");
-  const path = svg.querySelector("#shot-path");
-  const trail = svg.querySelector(".trail");
-  const flying = svg.querySelector(".arrow-flying");
-  const hits = [...svg.querySelectorAll(".hit")];
-  const checks = [...figure.querySelectorAll(".checks li")];
-  const button = figure.querySelector("#shoot");
-  const callout = figure.querySelector("#callout");
-  const string = svg.querySelector("#bowstring");
-  const restArrow = svg.querySelector(".arrow-rest use");
-  const [stringTop, nock, stringBottom] = string.getAttribute("points").split(" ");
-  const nockY = Number(nock.split(",")[1]);
-  const drawn = Number(string.dataset.drawn);
-  const rest = Number(string.dataset.rest);
-  const arrowLength = Number(restArrow.getAttribute("transform").match(/translate\(([\d.]+)/)[1]) - drawn;
-  // The nock is where the string meets the arrow; the arrow rides on it until release.
-  const setNock = (x, withArrow) => {
-    string.setAttribute("points", `${stringTop} ${x},${nockY} ${stringBottom}`);
-    if (withArrow) restArrow.setAttribute("transform", `translate(${x + arrowLength} ${nockY})`);
+// "Watch one case run": the phone's elements are looked at one by one, beside the commands that do it.
+function phoneDemo(root) {
+  const SCRIPT = [
+    ["cmd", 'tnazar say "TC-01 pay with saved card"', null],
+    ["cmd", "tnazar observe", [0, "look"]],
+    ["", "6 elements · fast read 0.05 s", [1, "look"]],
+    ["cmd", 'tnazar tap desc="Saved card •• 4242"', [2, "look"]],
+    ["cmd", 'tnazar type "1240" --into id=amount_input', [3, "look"]],
+    ["cmd", "tnazar tap id=btn_pay --wait 10", [4, "look"]],
+    ["cmd", 'tnazar check "Payment successful" --for E1', [5, "look"]],
+    ["pass", "✓ E1 verified · screenshot saved", [5, "ok"]],
+    ["cmd", 'tnazar check "Pay now" --for E2', [4, "look"]],
+    ["fail", "✗ E2 found “Pay Now”, expected “Pay now”", [4, "bad"]],
+    ["cmd", "tnazar case end", null],
+    ["sum", "TC-01 failed · verified 1/2 · report ready", null],
+  ];
+  const term = root.querySelector(".term"), els = [...root.querySelectorAll(".el")];
+  const line = ([cls, text]) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; term.append(d); };
+  if (reduceMotion) {
+    SCRIPT.forEach((row) => { line(row); if (row[2] && row[2][1] !== "look") els[row[2][0]].classList.add(row[2][1]); });
+    return;
+  }
+  let i = 0;
+  const step = () => {
+    if (i === 0) { term.textContent = ""; els.forEach((e) => e.classList.remove("look", "ok", "bad")); }
+    const row = SCRIPT[i];
+    line(row);
+    els.forEach((e) => e.classList.remove("look"));
+    if (row[2]) els[row[2][0]].classList.add(row[2][1]);
+    i = (i + 1) % SCRIPT.length;
+    setTimeout(step, i === 0 ? 3200 : 900);
   };
-  const length = path.getTotalLength();
-  trail.style.strokeDasharray = length;
-
-  let inFlight = false;
-  const verdict = figure.querySelector("#verdict");
-  const verdictText = verdict.textContent;
-  let clearCallout = 0;
-
-  function arm() {
-    clearTimeout(clearCallout);
-    verdict.textContent = "";
-    figure.classList.remove("is-celebrating");
-    figure.classList.remove("is-done");
-    hits.concat(checks).forEach((el) => el.classList.remove("is-hit"));
-    trail.style.strokeDashoffset = length;
-    flying.style.opacity = 0;
-    callout.className = "callout";
-    setNock(drawn, true);
-  }
-
-  function strike(n) {
-    const hit = hits[n];
-    hit.classList.add("is-hit");
-    checks[n].classList.add("is-hit");
-    callout.textContent = `Head ${n + 1}: ${hit.dataset.label}`;
-    callout.className = `callout is-shown ${hit.classList.contains("hit-bug") ? "is-bug" : "is-pass"}`;
-    figure.classList.remove("is-struck");
-    void figure.offsetWidth;
-    figure.classList.add("is-struck");
-  }
-
-  function fire() {
-    if (inFlight) return;
-    inFlight = true;
-    arm();
-    button.setAttribute("aria-disabled", "true");
-    const begin = performance.now() + 500;
-    const duration = 2600;
-    const a = 0.25; // speeds up off the bow, then flies at a steady pace
-    let held = 0; // time spent holding on heads, which does not count as flight
-    let holdUntil = 0;
-    let last = begin;
-    let next = 0;
-    // Draw: the string creeps back for a beat. Release: it snaps past straight and rings down.
-    const pull = 12;
-    const drawStart = performance.now();
-    function bow(now) {
-      const since = now - drawStart;
-      if (since < 450) {
-        const e = since / 450;
-        setNock(drawn - pull * e * e, true);
-      } else {
-        if (!figure.classList.contains("is-firing")) figure.classList.add("is-firing");
-        const r = since - 450;
-        const swing = (drawn - pull - rest) * Math.exp(-r / 70) * Math.cos(r / 22);
-        setNock(rest + swing, false);
-        if (r > 600) { setNock(rest, false); return; }
-      }
-      requestAnimationFrame(bow);
-    }
-    requestAnimationFrame(bow);
-    function frame(now) {
-      if (now < holdUntil) {
-        held += now - last;
-        last = now;
-        requestAnimationFrame(frame);
-        return;
-      }
-      last = now;
-      const t = Math.min(1, Math.max(0, (now - begin - held) / duration));
-      const d = length * (t < a ? (t * t) / (a * (2 - a)) : (2 * t - a) / (2 - a));
-      const p = path.getPointAtLength(d);
-      const q = path.getPointAtLength(Math.min(length, d + 1));
-      const angle = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI;
-      flying.setAttribute("transform", `translate(${p.x} ${p.y}) rotate(${angle})`);
-      flying.style.opacity = t > 0 ? 1 : 0;
-      trail.style.strokeDashoffset = length - d;
-      if (next < hits.length && p.x >= Number(hits[next].dataset.x)) {
-        strike(next);
-        next += 1;
-        holdUntil = now + 420; // a beat on each head, long enough to read what it found
-      }
-      if (t < 1 || (next < hits.length && p.x >= Number(hits[next].dataset.x))) requestAnimationFrame(frame);
-      else {
-        // A head placed past the end of the path is never reached: strike it so the shot ends.
-        while (next < hits.length) strike(next++);
-        // The arrow hangs past the last head for a beat, then fades as the verdict rises.
-        clearCallout = setTimeout(() => {
-          callout.className = "callout";
-          figure.classList.remove("is-firing", "is-struck");
-          figure.classList.add("is-done");
-          figure.classList.add("is-celebrating");
-          verdict.textContent = verdictText;
-          button.removeAttribute("aria-disabled");
-          inFlight = false;
-        }, 700);
-      }
-    }
-    requestAnimationFrame(frame);
-  }
-
-  if (reduceMotion) return;
-  button.hidden = false;
-  button.addEventListener("click", () => { io.disconnect(); fire(); });
-  const io = new IntersectionObserver(([entry]) => {
-    if (!entry.isIntersecting) return;
-    io.disconnect();
-    fire();
-  }, { threshold: 0.4 });
-  arm();
-  // Transitions start only after arming, so the page does not fade from the finished pose on load.
-  requestAnimationFrame(() => figure.classList.add("is-live"));
-  io.observe(svg);
+  step();
 }
 
-function themeToggle(button) {
-  const root = document.documentElement;
-  const sync = () => {
-    const dark = root.dataset.theme === "dark";
-    button.setAttribute("aria-pressed", String(dark));
-    document.querySelector('meta[name="theme-color"]').content = dark ? "#0A0A0A" : "#F27A1A";
+// The cube: which input and device are in play, the case it is on, and the report filling up.
+function cubeTicker(flow) {
+  const STEPS = [
+    ["TC-01 · PAY WITH SAVED CARD", "checking E1", 0, false],
+    ["TC-01 · PAY WITH SAVED CARD", "E1 verified → next case", 1, false],
+    ["TC-04 · PAY ₹0", "checking E1", 2, false],
+    ["TC-04 · PAY ₹0", "app crashed → failed, with the log", 3, true],
+    ["TC-12 · KILL AND REOPEN", "E2 verified", 0, false],
+    ["REPORT", "verified 9/10 → back to you", 1, false],
+  ];
+  const tCase = flow.querySelector(".ticker-case"), tWhat = flow.querySelector(".ticker-what");
+  const ins = [...flow.querySelectorAll(".flow-in .flow-tile")], devs = [...flow.querySelectorAll(".flow-dev .flow-tile")];
+  const hot = flow.querySelector(".wire-hot"), prog = flow.querySelector(".cube-progress");
+  let k = 0;
+  const tick = () => {
+    const [c, w, src, fail] = STEPS[k];
+    tCase.textContent = c; tWhat.textContent = w; tWhat.classList.toggle("fail", fail);
+    ins.forEach((t, i) => t.classList.toggle("live", i === src));
+    devs.forEach((t, i) => t.classList.toggle("live", i === k % 2));
+    hot.setAttribute("d", src % 2 === 0 ? "M250 0 C250 60 500 40 500 100" : "M750 0 C750 60 500 40 500 100");
+    hot.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 900, fill: "forwards", easing: "ease-out" });
+    prog.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 1 - (k + 1) / STEPS.length }], { duration: 900, fill: "forwards", easing: "ease-out" });
+    k = (k + 1) % STEPS.length;
   };
-  button.addEventListener("click", () => {
-    root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
-    try { localStorage.setItem("theme", root.dataset.theme); } catch (e) { /* private mode: the choice lasts this page only */ }
-    sync();
+  if (reduceMotion) { hot.style.strokeDashoffset = 0; prog.style.strokeDashoffset = 0.2; return; }
+  tick();
+  setInterval(tick, 2200);
+}
+
+// "What changes for the team": one panel per role, arrow keys move between tabs.
+function roleTabs(root) {
+  const tabs = [...root.querySelectorAll('[role="tab"]')];
+  const select = (tab) => {
+    tabs.forEach((t) => {
+      const on = t === tab;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    });
+  };
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => select(t));
+    t.addEventListener("keydown", (e) => {
+      const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      const next = tabs[(i + d + tabs.length) % tabs.length];
+      select(next); next.focus();
+    });
   });
-  sync();
 }
 
-const stage = document.getElementById("stage");
-if (stage) replay(stage);
-const hero = document.getElementById("shot");
-if (hero) shot(hero);
-themeToggle(document.getElementById("theme-toggle"));
+const heroCanvas = document.querySelector(".hero canvas");
+if (heroCanvas) funnel(heroCanvas);
+const watch = document.getElementById("watch");
+if (watch) phoneDemo(watch);
+const flow = document.querySelector(".flow");
+if (flow) cubeTicker(flow);
+const roles = document.querySelector(".roles");
+if (roles) roleTabs(roles);
 
 // One reset timer per button, so rapid clicks do not flicker the label.
 function copyButton(button, text, failLabel) {
