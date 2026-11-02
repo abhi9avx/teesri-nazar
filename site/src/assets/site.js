@@ -1,7 +1,19 @@
-// The home page moves in four places: the funnel in the hero, the cube's ticker, the phone in
-// "Watch one case run" and the role tabs. Without JavaScript the page reads in full; with
-// reduced motion the funnel and the phone show their finished state.
+// The home page moves in three places: the funnel in the hero, the cube's ticker and the phone in
+// "Watch one case run". Without JavaScript every section still reads, without the motion; with
+// reduced motion each shows its finished state. "Pause animations" in the hero stops all three.
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const motion = { paused: false, resume: [] };
+
+// Runs fn only while el is on screen and motion is not paused; fn gets called again on resume.
+function whileVisible(el, onShow) {
+  const state = { on: true };
+  new IntersectionObserver(([e]) => {
+    const was = state.on; state.on = e.isIntersecting;
+    if (state.on && !was && !motion.paused) onShow();
+  }).observe(el);
+  motion.resume.push(() => { if (state.on) onShow(); });
+  return () => state.on && !motion.paused;
+}
 
 function rng(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
 const ease = (x) => 1 - Math.pow(1 - Math.min(Math.max(x, 0), 1), 3);
@@ -16,7 +28,7 @@ function funnel(canvas) {
   const col = { dot: css.getPropertyValue("--dot").trim(), edge: css.getPropertyValue("--edge").trim(), bg: css.getPropertyValue("--bg").trim() };
   const view = { yaw: 0, pitch: 0.34, tYaw: 0, tPitch: 0.34 };
   const start = performance.now();
-  let s, layers, all, tcs, bugs, edges, pulses, stacked, cy, visible = true;
+  let s, layers, all, tcs, bugs, edges, pulses, stacked, cy;
 
   function build() {
     const dpr = Math.min(devicePixelRatio || 1, 2), r = canvas.getBoundingClientRect();
@@ -153,12 +165,8 @@ function funnel(canvas) {
     view.tPitch = 0.34 + ((e.clientY - r.top) / r.height - 0.5) * 0.4;
   });
   hero.addEventListener("pointerleave", () => { view.tYaw = 0; view.tPitch = 0.34; });
-  // No frames while the hero is scrolled away.
-  new IntersectionObserver(([e]) => {
-    const was = visible; visible = e.isIntersecting;
-    if (visible && !was) requestAnimationFrame(frame);
-  }).observe(canvas);
-  function frame(now) { if (!visible) return; draw((now - start) / 1000); requestAnimationFrame(frame); }
+  const running = whileVisible(canvas, () => requestAnimationFrame(frame));
+  function frame(now) { if (!running()) return; draw((now - start) / 1000); requestAnimationFrame(frame); }
   requestAnimationFrame(frame);
 }
 
@@ -185,7 +193,9 @@ function phoneDemo(root) {
     return;
   }
   let i = 0;
+  const running = whileVisible(root, () => {});
   const step = () => {
+    if (!running()) { setTimeout(step, 500); return; }
     if (i === 0) { term.textContent = ""; els.forEach((e) => e.classList.remove("look", "ok", "bad")); }
     const row = SCRIPT[i];
     line(row);
@@ -204,7 +214,7 @@ function cubeTicker(flow) {
     ["TC-01 · PAY WITH SAVED CARD", "E1 verified → next case", 1, false],
     ["TC-04 · PAY ₹0", "checking E1", 2, false],
     ["TC-04 · PAY ₹0", "app crashed → failed, with the log", 3, true],
-    ["TC-12 · KILL AND REOPEN", "E2 verified", 0, false],
+    ["TC-08 · KILL AND REOPEN", "E2 verified", 0, false],
     ["REPORT", "verified 9/10 → back to you", 1, false],
   ];
   const tCase = flow.querySelector(".ticker-case"), tWhat = flow.querySelector(".ticker-what");
@@ -221,9 +231,10 @@ function cubeTicker(flow) {
     prog.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 1 - (k + 1) / STEPS.length }], { duration: 900, fill: "forwards", easing: "ease-out" });
     k = (k + 1) % STEPS.length;
   };
-  if (reduceMotion) { hot.style.strokeDashoffset = 0; prog.style.strokeDashoffset = 0.2; return; }
+  if (reduceMotion) { hot.style.strokeDashoffset = 0; prog.style.strokeDashoffset = 0.2; return; } // a report most of the way full
+  const running = whileVisible(flow, () => {});
   tick();
-  setInterval(tick, 2200);
+  setInterval(() => { if (running()) tick(); }, 2200);
 }
 
 // "What changes for the team": one panel per role, arrow keys move between tabs.
@@ -240,12 +251,24 @@ function roleTabs(root) {
   tabs.forEach((t, i) => {
     t.addEventListener("click", () => select(t));
     t.addEventListener("keydown", (e) => {
-      const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-      if (!d) return;
+      const to = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (to === undefined) return;
       e.preventDefault();
-      const next = tabs[(i + d + tabs.length) % tabs.length];
+      const next = tabs[(to + tabs.length) % tabs.length];
       select(next); next.focus();
     });
+  });
+  // Without JavaScript every panel shows; with it, only the selected one.
+  select(tabs[0]);
+}
+
+function motionToggle(button) {
+  button.hidden = false;
+  button.addEventListener("click", () => {
+    motion.paused = !motion.paused;
+    button.setAttribute("aria-pressed", String(motion.paused));
+    button.textContent = motion.paused ? "Play animations" : "Pause animations";
+    if (!motion.paused) motion.resume.forEach((fn) => fn());
   });
 }
 
@@ -257,6 +280,8 @@ const flow = document.querySelector(".flow");
 if (flow) cubeTicker(flow);
 const roles = document.querySelector(".roles");
 if (roles) roleTabs(roles);
+const toggle = document.querySelector(".motion-toggle");
+if (toggle && !reduceMotion) motionToggle(toggle);
 
 // One reset timer per button, so rapid clicks do not flicker the label.
 function copyButton(button, text, failLabel) {

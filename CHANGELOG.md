@@ -61,8 +61,9 @@ finishing a run on their own app.
   they find dropping into the eye of the AI agent at the tip; move the pointer and it
   turns. Below it: what you bring and what you get back around a Plan, Drive, Check cube,
   one case running on a phone beside its commands, the four moves of every step, what
-  changes for QA, developers and PMs, and an example report. The Ram and Ravana artwork
-  and the share image built from it are gone.
+  changes for QA, developers and PMs, and an example report. *Pause animations* stops the
+  motion, and nothing moves while it is scrolled away. The Ram and Ravana artwork and the
+  share image built from it are gone.
 - The website is dark only: one warm-black theme on every page, with the light theme and
   its toggle removed.
 - The README's "Coming next" (parallel emulators, DB checks, Zephyr) is gone: none of it

@@ -17,6 +17,7 @@ description: An open-source AI agent that tests your Android feature on a real p
         <div><dt>packages to install</dt><dd>0</dd></div>
         <div><dt>command to replay a run</dt><dd>1</dd></div>
       </dl>
+      <button type="button" class="link-button motion-toggle" aria-pressed="false" hidden>Pause animations</button>
     </div>
     <div class="hero-art"><canvas role="img" aria-label="Test cases run through the app; the bugs they find drop into the eye of Teesri Nazar, the AI agent."></canvas></div>
   </div>
@@ -141,7 +142,7 @@ description: An open-source AI agent that tests your Android feature on a real p
       <button type="button" role="tab" id="tab-dev" aria-controls="panel-dev" aria-selected="false" tabindex="-1">Developers</button>
       <button type="button" role="tab" id="tab-pm" aria-controls="panel-pm" aria-selected="false" tabindex="-1">Product managers</button>
     </div>
-    <div class="role-panel" role="tabpanel" id="panel-qa" aria-labelledby="tab-qa">
+    <div class="role-panel" role="tabpanel" id="panel-qa" aria-labelledby="tab-qa" tabindex="0">
       <h3>You stop being the release’s fingers.</h3>
       <ul class="swaps">
         <li><s>Tapping every case on every build</s><span>Approving a plan once, replaying it each release</span></li>
@@ -150,7 +151,7 @@ description: An open-source AI agent that tests your Android feature on a real p
         <li><s>“Passed” because nothing looked wrong</s><span>Passed only when every expected result was checked</span></li>
       </ul>
     </div>
-    <div class="role-panel" role="tabpanel" id="panel-dev" aria-labelledby="tab-dev" hidden>
+    <div class="role-panel" role="tabpanel" id="panel-dev" aria-labelledby="tab-dev" tabindex="0">
       <h3>Bugs arrive with steps, not screenshots of screenshots.</h3>
       <ul class="swaps">
         <li><s>“Works on my phone”</s><span>Exact repro steps, recorded and replayable</span></li>
@@ -158,7 +159,7 @@ description: An open-source AI agent that tests your Android feature on a real p
         <li><s>Waiting a day for QA sign-off</s><span>A run on the build you just pushed</span></li>
       </ul>
     </div>
-    <div class="role-panel" role="tabpanel" id="panel-pm" aria-labelledby="tab-pm" hidden>
+    <div class="role-panel" role="tabpanel" id="panel-pm" aria-labelledby="tab-pm" tabindex="0">
       <h3>Check the build against what you promised.</h3>
       <ul class="swaps">
         <li><s>Comparing the app to Figma by eye</s><span>Copy and layout checked against the frame</span></li>
@@ -177,7 +178,7 @@ description: An open-source AI agent that tests your Android feature on a real p
     <p class="report-head"><span>bill-payment.plan · example run</span><b>verified 9/10 · 6 passed · 2 failed · 1 blocked</b></p>
     <ul class="report-rows">
       <li><span class="id">TC-01</span><span>Pay a bill with a saved card<small>E1 “Payment successful” shown · E2 balance updated</small></span><span class="res pass">✓ passed</span></li>
-      <li><span class="id">TC-04</span><span>Pay ₹0<small>Expected an error. The app crashed: ANR at confirm.</small></span><span class="res fail">✗ failed</span></li>
+      <li><span class="id">TC-04</span><span>Pay ₹0<small>Expected an error. The app crashed at confirm.</small></span><span class="res fail">✗ failed</span></li>
       <li><span class="id">TC-06</span><span>Button copy matches Figma<small>Figma “Pay now”, app “Pay Now”</small></span><span class="res fail">✗ failed</span></li>
       <li><span class="id">TC-08</span><span>Kill and reopen mid-payment<small>Lands back on the bill, no double charge</small></span><span class="res pass">✓ passed</span></li>
       <li><span class="id">TC-09</span><span>Pay with UPI<small>Test UPI handle not available on this environment</small></span><span class="res blocked">⛔ blocked</span></li>
