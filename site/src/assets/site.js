@@ -27,7 +27,6 @@ function funnel(canvas) {
   const css = getComputedStyle(document.documentElement);
   const col = { dot: css.getPropertyValue("--dot").trim(), edge: css.getPropertyValue("--edge").trim(), bg: css.getPropertyValue("--bg").trim() };
   const view = { yaw: 0, pitch: 0.34, tYaw: 0, tPitch: 0.34 };
-  const start = performance.now();
   let s, layers, all, tcs, bugs, edges, pulses, stacked, cy;
 
   function build() {
@@ -165,9 +164,18 @@ function funnel(canvas) {
     view.tPitch = 0.34 + ((e.clientY - r.top) / r.height - 0.5) * 0.4;
   });
   hero.addEventListener("pointerleave", () => { view.tYaw = 0; view.tPitch = 0.34; });
-  const running = whileVisible(canvas, () => requestAnimationFrame(frame));
-  function frame(now) { if (!running()) return; draw((now - start) / 1000); requestAnimationFrame(frame); }
-  requestAnimationFrame(frame);
+  // One loop at most, and its clock only runs while it draws, so a pause resumes where it stopped.
+  let looping = false, elapsed = 0, last = 0;
+  const loop = () => { if (!looping) { looping = true; last = 0; requestAnimationFrame(frame); } };
+  const running = whileVisible(canvas, loop);
+  function frame(now) {
+    if (!running()) { looping = false; return; }
+    if (last) elapsed += Math.min(now - last, 50) / 1000;
+    last = now;
+    draw(elapsed);
+    requestAnimationFrame(frame);
+  }
+  loop();
 }
 
 // "Watch one case run": the phone's elements are looked at one by one, beside the commands that do it.
@@ -266,7 +274,6 @@ function motionToggle(button) {
   button.hidden = false;
   button.addEventListener("click", () => {
     motion.paused = !motion.paused;
-    button.setAttribute("aria-pressed", String(motion.paused));
     button.textContent = motion.paused ? "Play animations" : "Pause animations";
     if (!motion.paused) motion.resume.forEach((fn) => fn());
   });
