@@ -5,7 +5,7 @@ are built from this file, so every version shipped here shows up there too.
 
 ## v4: Easy to set up, honest to trust
 
-In progress since 21 October 2026, last updated 2 November 2026. Merged so far: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7), [PR #8](https://github.com/abhi9avx/teesri-nazar/pull/8), [PR #9](https://github.com/abhi9avx/teesri-nazar/pull/9), [PR #11](https://github.com/abhi9avx/teesri-nazar/pull/11), [PR #12](https://github.com/abhi9avx/teesri-nazar/pull/12), [PR #13](https://github.com/abhi9avx/teesri-nazar/pull/13), [PR #14](https://github.com/abhi9avx/teesri-nazar/pull/14)
+In progress since 21 October 2026, last updated 2 November 2026. Merged so far: [PR #7](https://github.com/abhi9avx/teesri-nazar/pull/7), [PR #8](https://github.com/abhi9avx/teesri-nazar/pull/8), [PR #9](https://github.com/abhi9avx/teesri-nazar/pull/9), [PR #11](https://github.com/abhi9avx/teesri-nazar/pull/11), [PR #12](https://github.com/abhi9avx/teesri-nazar/pull/12), [PR #13](https://github.com/abhi9avx/teesri-nazar/pull/13), [PR #14](https://github.com/abhi9avx/teesri-nazar/pull/14), [PR #15](https://github.com/abhi9avx/teesri-nazar/pull/15)
 
 v4 is about people outside the project installing Teesri Nazar, trusting what it says and
 finishing a run on their own app.
